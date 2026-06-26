@@ -1,1 +1,17 @@
+# Secrets / environment
 .env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+venv/
+.venv/
+env/
+
+# pytest
+.pytest_cache/
+
+# Frontend
+node_modules/
