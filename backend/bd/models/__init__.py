@@ -7,6 +7,9 @@ from backend.bd.models.environment import Environment
 from backend.bd.models.environment_validation import EnvironmentValidation, ValidationStatus
 from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
+from backend.bd.models.deployment_request import DeploymentRequest, DeploymentType, RequestStatus
+from backend.bd.models.deployment_version import DeploymentVersion, LifecycleStatus, TriggerSource
+from backend.bd.models.deployment_event import DeploymentEvent, DeploymentEventType, EventSource, Severity
 
 __all__ = [
     "User", "Team", "TeamMember", "TeamMemberRole",
@@ -16,4 +19,7 @@ __all__ = [
     "EnvironmentValidation", "ValidationStatus",
     "Application",
     "ApplicationEnvironment",
+    "DeploymentRequest", "DeploymentType", "RequestStatus",
+    "DeploymentVersion", "LifecycleStatus", "TriggerSource",
+    "DeploymentEvent", "DeploymentEventType", "EventSource", "Severity",
 ]
