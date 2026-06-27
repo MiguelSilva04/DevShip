@@ -2,10 +2,11 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Enum as SAEnum, ForeignKey, Index, String, Text, func, text
+from sqlalchemy import Boolean, Enum as SAEnum, ForeignKey, Index, String, Text, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import DateTime
+import sqlalchemy as sa
 
 from backend.bd.base import Base
 
@@ -44,6 +45,8 @@ class Project(Base):
     )
     name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str | None] = mapped_column(Text)
+    is_archived: Mapped[bool] = mapped_column(Boolean(), server_default=sa.false())
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     setup_status: Mapped[SetupStatus] = mapped_column(
         _setup_status_enum, server_default=text("'PENDING_CLUSTER'")
     )
