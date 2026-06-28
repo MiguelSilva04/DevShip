@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 import sqlalchemy as sa
-from sqlalchemy import Boolean, ForeignKey, Index, String, Text, func
+from sqlalchemy import Boolean, ForeignKey, Index, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import DateTime
@@ -13,6 +13,7 @@ from backend.bd.base import Base
 class Application(Base):
     __tablename__ = "applications"
     __table_args__ = (
+        UniqueConstraint("source_repository", name="uq_applications_source_repository"),
         Index("ix_applications_project_id", "project_id"),
         Index("ix_applications_created_by", "created_by"),
     )

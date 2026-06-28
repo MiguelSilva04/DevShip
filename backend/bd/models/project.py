@@ -47,6 +47,7 @@ class Project(Base):
     description: Mapped[str | None] = mapped_column(Text)
     is_archived: Mapped[bool] = mapped_column(Boolean(), server_default=sa.false())
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    git_ops_repository_url: Mapped[str | None] = mapped_column(String(512))
     setup_status: Mapped[SetupStatus] = mapped_column(
         _setup_status_enum, server_default=text("'PENDING_CLUSTER'")
     )
