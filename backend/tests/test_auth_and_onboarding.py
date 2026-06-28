@@ -94,7 +94,7 @@ class TestAuth:
 
     def test_protected_no_token(self, client):
         r = client.post("/teams", json={"name": "T"})
-        assert r.status_code == 403
+        assert r.status_code in (401, 403)  # HTTPBearer returns 403 on missing creds in some FastAPI versions
 
 
 # ---------------------------------------------------------------------------
@@ -296,8 +296,10 @@ class TestEnvironments:
         with patch("backend.services.cluster_validation.list_namespaces", return_value=MagicMock(items=[])):
             client.post(f"/projects/{project_id}/cluster", json={"cluster_arn": FAKE_ARN, "iam_role_arn": FAKE_ROLE_ARN}, headers=_auth(token))
 
+        ns_item = MagicMock()
+        ns_item.metadata.name = "staging"
         fake_ns = MagicMock()
-        fake_ns.items = [MagicMock(metadata=MagicMock(name="staging"))]
+        fake_ns.items = [ns_item]
         with (
             patch("backend.api.routes.onboarding.list_namespaces", return_value=fake_ns),
             patch("backend.api.routes.onboarding.validate_branch", return_value=True),

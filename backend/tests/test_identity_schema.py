@@ -20,7 +20,8 @@ def make_user(email: str = None, name: str = "Test User") -> User:
 
 
 def make_team(name: str = "Test Team") -> Team:
-    return Team(name=name)
+    import uuid as _uuid
+    return Team(name=name, domain=f"{_uuid.uuid4()}.test")
 
 
 def make_member(

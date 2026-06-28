@@ -23,9 +23,9 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
     user = User(name=body.name, email=body.email, password_hash=hash_password(body.password))
     db.add(user)
     try:
-        db.flush()
+        with db.begin_nested():
+            db.flush()
     except IntegrityError:
-        db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
     auto_team_id = None
@@ -35,9 +35,11 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
         db.commit()
     else:
         # First user from this domain — auto-create Team and make them Cloud Engineer.
+        import uuid as _uuid
         from backend.bd.models.team_member import TeamMember, TeamMemberRole
-        team = Team(name=domain, domain=domain)
-        member = TeamMember(team_id=team.id, user_id=user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None)
+        team_id = _uuid.uuid4()
+        team = Team(id=team_id, name=domain, domain=domain)
+        member = TeamMember(team_id=team_id, user_id=user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None)
         db.add(team)
         db.add(member)
         db.commit()

@@ -36,6 +36,8 @@ from backend.bd.models.team_member import TeamMember, TeamMemberRole
 from backend.bd.models.user import User
 from backend.services import cluster_validation as cv
 from backend.services import gitops_scanner as gs
+from backend.services.gitops_scanner import path_exists, validate_branch
+from backend.services.kubernetes_reader import list_namespaces
 
 router = APIRouter()
 
@@ -76,8 +78,9 @@ def create_team(body: TeamCreate, db: Session = Depends(get_db), current_user: U
     existing = db.query(Team).filter(Team.domain == domain).first()
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A team for this email domain already exists")
-    team = Team(name=body.name, description=body.description, domain=domain)
-    member = TeamMember(team_id=team.id, user_id=current_user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None)
+    team_id = uuid.uuid4()
+    team = Team(id=team_id, name=body.name, description=body.description, domain=domain)
+    member = TeamMember(team_id=team_id, user_id=current_user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None)
     db.add(team)
     db.add(member)
     db.commit()
@@ -140,10 +143,11 @@ def add_team_member(
     )
     db.add(member)
     try:
-        db.commit()
+        with db.begin_nested():
+            db.flush()
     except IntegrityError:
-        db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is already a member of this team")
+    db.commit()
 
     return MemberEntry(user_id=target.id, name=target.name, email=target.email, role=body.role)
 
@@ -308,9 +312,6 @@ def _run_environment_validations(
     cluster: ClusterContext | None,
     git_ops_url: str | None,
 ) -> None:
-    from backend.services.kubernetes_reader import list_namespaces
-    from backend.services.gitops_scanner import validate_branch, path_exists
-
     # 1. Namespace check via K8s
     if cluster and env.namespace:
         try:
@@ -432,9 +433,9 @@ def import_applications(
         )
         db.add(app)
         try:
-            db.flush()
+            with db.begin_nested():
+                db.flush()
         except IntegrityError:
-            db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"source_repository '{item.source_repository}' already belongs to another project",

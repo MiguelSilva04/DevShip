@@ -38,7 +38,7 @@ def make_user(email: str = None) -> User:
 
 
 def make_team() -> Team:
-    return Team(name="Test Team")
+    return Team(name="Test Team", domain=f"{uuid.uuid4()}.test")
 
 
 def make_project(team: Team) -> Project:
