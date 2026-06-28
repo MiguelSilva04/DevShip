@@ -18,8 +18,32 @@ class TeamCreate(BaseModel):
 class TeamResponse(BaseModel):
     id: uuid.UUID
     name: str
+    domain: str
 
     model_config = {"from_attributes": True}
+
+
+class MemberEntry(BaseModel):
+    user_id: uuid.UUID
+    name: str
+    email: str
+    role: TeamMemberRole
+
+
+class CandidateEntry(BaseModel):
+    user_id: uuid.UUID
+    name: str
+    email: str
+
+
+class TeamMembersResponse(BaseModel):
+    members: list[MemberEntry]
+    candidates: list[CandidateEntry]
+
+
+class AddMemberRequest(BaseModel):
+    user_id: uuid.UUID
+    role: TeamMemberRole
 
 
 # --- Project ---

@@ -6,8 +6,11 @@ from sqlalchemy.orm import Session
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.schemas.onboarding import (
+    AddMemberRequest,
+    ApplicationEnvironmentImport,
     ApplicationImportRequest,
     ApplicationResponse,
+    CandidateEntry,
     ClusterConfigRequest,
     ClusterContextResponse,
     ClusterSetupInfo,
@@ -15,11 +18,12 @@ from backend.api.schemas.onboarding import (
     EnvironmentResponse,
     EnvironmentValidationResult,
     GitOpsScanResult,
+    MemberEntry,
     ProjectCreate,
     ProjectResponse,
     TeamCreate,
+    TeamMembersResponse,
     TeamResponse,
-    ApplicationEnvironmentImport,
 )
 from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
@@ -40,17 +44,25 @@ router = APIRouter()
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _require_cloud_engineer(db: Session, project_id: uuid.UUID, user: User) -> Project:
-    project = db.get(Project, project_id)
-    if project is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+def _require_cloud_engineer_of_team(db: Session, team_id: uuid.UUID, user: User) -> Team:
+    team = db.get(Team, team_id)
+    if team is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
     member = (
         db.query(TeamMember)
-        .filter(TeamMember.team_id == project.team_id, TeamMember.user_id == user.id)
+        .filter(TeamMember.team_id == team_id, TeamMember.user_id == user.id)
         .first()
     )
     if member is None or member.role != TeamMemberRole.CLOUD_ENGINEER:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cloud Engineer role required")
+    return team
+
+
+def _require_cloud_engineer(db: Session, project_id: uuid.UUID, user: User) -> Project:
+    project = db.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    _require_cloud_engineer_of_team(db, project.team_id, user)
     return project
 
 
@@ -60,13 +72,80 @@ def _require_cloud_engineer(db: Session, project_id: uuid.UUID, user: User) -> P
 
 @router.post("/teams", response_model=TeamResponse, status_code=status.HTTP_201_CREATED)
 def create_team(body: TeamCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    team = Team(name=body.name, description=body.description)
+    domain = current_user.email.rsplit("@", 1)[-1]
+    existing = db.query(Team).filter(Team.domain == domain).first()
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A team for this email domain already exists")
+    team = Team(name=body.name, description=body.description, domain=domain)
     member = TeamMember(team_id=team.id, user_id=current_user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None)
     db.add(team)
     db.add(member)
     db.commit()
     db.refresh(team)
     return team
+
+
+# ---------------------------------------------------------------------------
+# Team members — list (existing + pending candidates) + add
+# ---------------------------------------------------------------------------
+
+@router.get("/teams/{team_id}/members")
+def list_team_members(
+    team_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    team = _require_cloud_engineer_of_team(db, team_id, current_user)
+
+    members = db.query(TeamMember).filter(TeamMember.team_id == team_id).all()
+
+    member_entries = []
+    for m in members:
+        u = db.get(User, m.user_id)
+        member_entries.append(MemberEntry(user_id=m.user_id, name=u.name, email=u.email, role=m.role))
+
+    # Users sharing the domain with no TeamMember anywhere
+    candidates_q = (
+        db.query(User)
+        .outerjoin(TeamMember, TeamMember.user_id == User.id)
+        .filter(
+            User.email.ilike(f"%@{team.domain}"),
+            TeamMember.id.is_(None),
+        )
+        .all()
+    )
+    candidate_entries = [CandidateEntry(user_id=u.id, name=u.name, email=u.email) for u in candidates_q]
+
+    return TeamMembersResponse(members=member_entries, candidates=candidate_entries)
+
+
+@router.post("/teams/{team_id}/members", status_code=status.HTTP_201_CREATED)
+def add_team_member(
+    team_id: uuid.UUID,
+    body: AddMemberRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_cloud_engineer_of_team(db, team_id, current_user)
+
+    target = db.get(User, body.user_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    member = TeamMember(
+        team_id=team_id,
+        user_id=body.user_id,
+        role=body.role,
+        added_by=current_user.id,
+    )
+    db.add(member)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is already a member of this team")
+
+    return MemberEntry(user_id=target.id, name=target.name, email=target.email, role=body.role)
 
 
 # ---------------------------------------------------------------------------

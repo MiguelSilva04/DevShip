@@ -21,5 +21,6 @@ class UserResponse(BaseModel):
     id: str
     name: str
     email: str
+    team_id: str | None = None  # set when register auto-creates a team (first user of domain)
 
     model_config = {"from_attributes": True}
