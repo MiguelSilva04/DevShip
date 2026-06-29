@@ -51,6 +51,12 @@ class DeploymentRequest(Base):
         Index("ix_deployment_requests_requested_by", "requested_by"),
         Index("ix_deployment_requests_approved_by", "approved_by"),
         Index("ix_deployment_requests_status", "status"),
+        Index(
+            "uq_deployment_requests_in_flight",
+            "application_environment_id",
+            unique=True,
+            postgresql_where=text("status IN ('PENDING', 'APPROVED', 'RUNNING')"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

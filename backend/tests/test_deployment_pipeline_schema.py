@@ -55,6 +55,7 @@ def make_application(project: Project) -> Application:
         name="Test App",
         source_repository="github.com/org/repo",
         container_registry_repository="123456789012.dkr.ecr.us-east-1.amazonaws.com/repo",
+        ci_workflow_file="deploy.yml",
     )
 
 
@@ -150,31 +151,61 @@ def test_create_request_defaults(db_session):
     assert req.github_workflow_run_id is None
 
 
+def _fresh_app_env(db_session, project):
+    """Create a new (env, app, app_env) chain and return the app_env."""
+    from backend.bd.models.environment import Environment
+    env = Environment(project_id=project.id, name=f"e-{uuid.uuid4().hex[:6]}", deployment_order=0)
+    from backend.bd.models.application import Application
+    app = Application(
+        project_id=project.id,
+        name=f"a-{uuid.uuid4().hex[:6]}",
+        source_repository=f"github.com/org/{uuid.uuid4().hex[:6]}",
+        container_registry_repository="ecr/org/x",
+        ci_workflow_file="deploy.yml",
+    )
+    db_session.add_all([env, app])
+    db_session.flush()
+    from backend.bd.models.application_environment import ApplicationEnvironment
+    ae = ApplicationEnvironment(application_id=app.id, environment_id=env.id, deployment_name="d")
+    db_session.add(ae)
+    db_session.flush()
+    return ae
+
+
 def test_request_all_statuses(db_session):
-    _, app_env = setup_chain(db_session)
+    # The partial UNIQUE index only allows one in-flight (PENDING/APPROVED/RUNNING) request
+    # per app_env at a time — use a fresh app_env per status to avoid collision.
+    _, first_app_env = setup_chain(db_session)
+    env = db_session.get(__import__('backend.bd.models.environment', fromlist=['Environment']).Environment,
+                         first_app_env.environment_id)
+    from backend.bd.models.project import Project
+    project = db_session.get(Project, env.project_id)
 
     for s in RequestStatus:
         justification = "reason" if s == RequestStatus.REJECTED else None
+        ae = _fresh_app_env(db_session, project)
         r = DeploymentRequest(
-            application_environment_id=app_env.id,
+            application_environment_id=ae.id,
             deployment_type=DeploymentType.STANDARD,
             status=s,
             justification=justification,
         )
         db_session.add(r)
-    db_session.flush()
+        db_session.flush()
 
 
 def test_request_all_deployment_types(db_session):
-    _, app_env = setup_chain(db_session)
+    _, first_app_env = setup_chain(db_session)
+    env = db_session.get(__import__('backend.bd.models.environment', fromlist=['Environment']).Environment,
+                         first_app_env.environment_id)
+    from backend.bd.models.project import Project
+    project = db_session.get(Project, env.project_id)
 
     for dt in DeploymentType:
-        r = DeploymentRequest(
-            application_environment_id=app_env.id,
-            deployment_type=dt,
-        )
+        ae = _fresh_app_env(db_session, project)
+        r = DeploymentRequest(application_environment_id=ae.id, deployment_type=dt)
         db_session.add(r)
-    db_session.flush()
+        db_session.flush()
 
 
 # ---------------------------------------------------------------------------
@@ -207,18 +238,23 @@ def test_rejected_with_justification_succeeds(db_session):
 
 
 def test_non_rejected_without_justification_allowed(db_session):
-    _, app_env = setup_chain(db_session)
+    _, first_app_env = setup_chain(db_session)
+    env = db_session.get(__import__('backend.bd.models.environment', fromlist=['Environment']).Environment,
+                         first_app_env.environment_id)
+    from backend.bd.models.project import Project
+    project = db_session.get(Project, env.project_id)
 
     for s in (RequestStatus.PENDING, RequestStatus.APPROVED, RequestStatus.RUNNING,
               RequestStatus.SUCCESS, RequestStatus.FAILED, RequestStatus.CANCELLED):
+        ae = _fresh_app_env(db_session, project)
         r = DeploymentRequest(
-            application_environment_id=app_env.id,
+            application_environment_id=ae.id,
             deployment_type=DeploymentType.STANDARD,
             status=s,
             justification=None,
         )
         db_session.add(r)
-    db_session.flush()
+        db_session.flush()
 
 
 # ---------------------------------------------------------------------------

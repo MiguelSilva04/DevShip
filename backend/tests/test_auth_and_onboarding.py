@@ -361,7 +361,7 @@ class TestApplicationImport:
 
         r = client.post(
             f"/projects/{project_id}/applications/import",
-            json={"applications": [{"name": "api", "source_repository": "https://github.com/org/api", "container_registry_repository": "ecr/org/api", "environments": [{"environment_id": env_id, "deployment_name": "api-deploy"}]}]},
+            json={"applications": [{"name": "api", "source_repository": "https://github.com/org/api", "container_registry_repository": "ecr/org/api", "ci_workflow_file": "deploy.yml", "environments": [{"environment_id": env_id, "deployment_name": "api-deploy"}]}]},
             headers=_auth(token),
         )
         assert r.status_code == 201
@@ -372,6 +372,6 @@ class TestApplicationImport:
         proj1 = _project(client, token, team_id, name="P1")
         proj2 = _project(client, token, team_id, name="P2")
 
-        payload = {"applications": [{"name": "api", "source_repository": "https://github.com/org/shared", "container_registry_repository": "ecr/org/api", "environments": []}]}
+        payload = {"applications": [{"name": "api", "source_repository": "https://github.com/org/shared", "container_registry_repository": "ecr/org/api", "ci_workflow_file": "deploy.yml", "environments": []}]}
         assert client.post(f"/projects/{proj1}/applications/import", json=payload, headers=_auth(token)).status_code == 201
         assert client.post(f"/projects/{proj2}/applications/import", json=payload, headers=_auth(token)).status_code == 409

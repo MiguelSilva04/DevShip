@@ -74,6 +74,7 @@ def make_application(project: Project, created_by: User | None = None) -> Applic
         name="Test App",
         source_repository="github.com/org/repo",
         container_registry_repository="123456789012.dkr.ecr.us-east-1.amazonaws.com/repo",
+        ci_workflow_file="deploy.yml",
         created_by=created_by.id if created_by else None,
     )
 

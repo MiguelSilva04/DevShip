@@ -143,6 +143,7 @@ class ApplicationImportItem(BaseModel):
     name: str
     source_repository: str
     container_registry_repository: str
+    ci_workflow_file: str
     environments: list[ApplicationEnvironmentImport]
 
 

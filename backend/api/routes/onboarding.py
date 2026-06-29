@@ -429,6 +429,7 @@ def import_applications(
             name=item.name,
             source_repository=item.source_repository,
             container_registry_repository=item.container_registry_repository,
+            ci_workflow_file=item.ci_workflow_file,
             created_by=current_user.id,
         )
         db.add(app)
