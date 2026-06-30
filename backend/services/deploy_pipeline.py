@@ -14,11 +14,14 @@ import requests as http
 
 from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
+from backend.bd.models.cluster_context import ClusterContext
 from backend.bd.models.deployment_event import DeploymentEvent, DeploymentEventType, EventSource, Severity
 from backend.bd.models.deployment_request import DeploymentRequest, RequestStatus
-from backend.bd.models.deployment_version import DeploymentVersion, LifecycleStatus, TriggerSource
+from backend.bd.models.deployment_version import DeploymentVersion, TriggerSource
 from backend.bd.models.environment import Environment
 from backend.bd.session import SessionLocal
+from backend.services.cluster_validation import get_cluster_token
+from backend.services.kubernetes_reader import get_argocd_application, list_deployment, list_pods_in_namespace
 
 _SEVERITY = {
     DeploymentEventType.WORKFLOW_STARTED: Severity.INFO,
@@ -115,13 +118,6 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
     Polls GitHub → ArgoCD → K8s Deployment → K8s Pods in sequence.
     Timeout: 15 min. On any terminal failure: marks request FAILED, returns.
     """
-    from backend.services.cluster_validation import get_cluster_token
-    from backend.services.kubernetes_reader import (
-        get_argocd_application,
-        list_deployment,
-        list_pods_in_namespace,
-    )
-
     db = SessionLocal()
     try:
         req = db.get(DeploymentRequest, deployment_request_id)
@@ -132,7 +128,6 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
         env = db.get(Environment, app_env.environment_id)
         app = db.get(Application, app_env.application_id)
 
-        from backend.bd.models.cluster_context import ClusterContext
         cluster_ctx = db.query(ClusterContext).filter(ClusterContext.project_id == env.project_id).first()
 
         # Create the DeploymentVersion now (lifecycle_status=Deploying by default, DEV-10 owns the rest)
@@ -163,8 +158,10 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                 if run["status"] == "completed":
                     if run["conclusion"] == "success":
                         # Extract image tag from run name or just use SHA
-                        version.image_tag = run.get("head_sha", "")[:12] or None
-                        version.source_commit_sha = run.get("head_sha")
+                        head_sha = run.get("head_sha", "")
+                        run_number = run.get("run_number")
+                        version.image_tag = f"{head_sha[:7]}-{run_number}" if head_sha and run_number else None
+                        version.source_commit_sha = head_sha
                         db.commit()
                         _emit_event(db, version, DeploymentEventType.BUILD_COMPLETED, EventSource.GITHUB)
                         _emit_event(db, version, DeploymentEventType.IMAGE_PUSHED, EventSource.GITHUB)
@@ -208,7 +205,7 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                 if phase == "Running" and "Running" not in sync_phase_seen:
                     sync_phase_seen.add("Running")
                     _emit_event(db, version, DeploymentEventType.SYNC_STARTED, EventSource.ARGOCD)
-                    version.argocd_sync_revision = argocd_app.status.sync_status
+                    version.argocd_sync_revision = argocd_app.status.sync_revision
                     db.commit()
 
                 if phase == "Succeeded" and "Succeeded" not in sync_phase_seen:
@@ -317,6 +314,7 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
 
     except Exception as e:
         try:
+            db.rollback()  # clear any aborted transaction before trying to write FAILED
             req = db.get(DeploymentRequest, deployment_request_id)
             if req and req.status == RequestStatus.RUNNING:
                 _fail_request(db, req, f"Unexpected error in observer: {e}")

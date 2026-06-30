@@ -109,6 +109,7 @@ def parse_argocd_application(data: dict):
         })(),
         "status": type("Status", (), {
             "sync_status": sync.get("status", "Unknown"),
+            "sync_revision": sync.get("revision"),
             "health_status": health.get("status", "Unknown"),
             "operation_phase": operation_state.get("phase", ""),
         })(),
