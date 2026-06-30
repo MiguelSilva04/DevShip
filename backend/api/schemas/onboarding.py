@@ -134,6 +134,8 @@ class GitOpsScanResult(BaseModel):
 # --- User teams (Lobby) ---
 
 class UserTeamEntry(BaseModel):
+    user_name: str
+    user_email: str
     team_id: uuid.UUID
     team_name: str
     role: TeamMemberRole

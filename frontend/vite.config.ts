@@ -5,10 +5,13 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/auth':     'http://localhost:8000',
-      '/users':    'http://localhost:8000',
-      '/teams':    'http://localhost:8000',
-      '/projects': 'http://localhost:8000',
+      '/auth':                     'http://localhost:8000',
+      '/users':                    'http://localhost:8000',
+      '/teams':                    'http://localhost:8000',
+      '/projects':                 'http://localhost:8000',
+      '/applications':             'http://localhost:8000',
+      '/application-environments': 'http://localhost:8000',
+      '/deployment-requests':      'http://localhost:8000',
     },
   },
 });

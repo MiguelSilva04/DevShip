@@ -78,20 +78,26 @@ def list_my_teams(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    memberships = db.query(TeamMember).filter(TeamMember.user_id == current_user.id).all()
-    result = []
-    for m in memberships:
-        team = db.get(Team, m.team_id)
-        project = db.query(Project).filter(Project.team_id == m.team_id).first()
-        result.append(UserTeamEntry(
+    rows = (
+        db.query(TeamMember, Team, Project)
+        .join(Team, TeamMember.team_id == Team.id)
+        .outerjoin(Project, Project.team_id == Team.id)
+        .filter(TeamMember.user_id == current_user.id)
+        .all()
+    )
+    return [
+        UserTeamEntry(
+            user_name=current_user.name,
+            user_email=current_user.email,
             team_id=team.id,
             team_name=team.name,
-            role=m.role,
+            role=member.role,
             project_id=project.id if project else None,
             project_name=project.name if project else None,
             setup_status=project.setup_status if project else None,
-        ))
-    return result
+        )
+        for member, team, project in rows
+    ]
 
 
 # ---------------------------------------------------------------------------

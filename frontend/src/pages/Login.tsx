@@ -28,9 +28,9 @@ export default function Login() {
       const teams = await apiFetch('/users/me/teams');
       if (teams.length > 0) {
         const t = teams[0];
-        setUser(userFromBackend(email.split('@')[0], email, t.role));
+        setUser(userFromBackend(t.user_name, t.user_email, t.role));
       } else {
-        setUser(userFromBackend(email.split('@')[0], email, 'DEVELOPER'));
+        setUser(userFromBackend(email, email, 'DEVELOPER'));
       }
       nav('/lobby');
     } catch (e: unknown) {
