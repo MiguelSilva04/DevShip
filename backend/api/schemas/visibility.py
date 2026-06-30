@@ -1,0 +1,76 @@
+import uuid
+from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel
+
+from backend.bd.models.deployment_version import LifecycleStatus, TriggerSource
+
+
+class EnvironmentListItem(BaseModel):
+    id: uuid.UUID
+    name: str
+    deployment_order: int
+    requires_approval: bool
+    model_config = {"from_attributes": True}
+
+
+class ApplicationListItem(BaseModel):
+    id: uuid.UUID
+    name: str
+    source_repository: str
+    model_config = {"from_attributes": True}
+
+
+class ApplicationEnvironmentStatus(BaseModel):
+    id: uuid.UUID
+    environment_name: str
+    lifecycle_status: Optional[LifecycleStatus] = None
+
+
+class ApplicationDetailResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    source_repository: str
+    description: Optional[str] = None
+    environments: list[ApplicationEnvironmentStatus]
+    model_config = {"from_attributes": True}
+
+
+class ApplicationWithStatus(BaseModel):
+    id: uuid.UUID
+    name: str
+    environments: list[ApplicationEnvironmentStatus]
+
+
+class HomepageResponse(BaseModel):
+    total_application_environments: int
+    healthy_count: int
+    degraded_count: int
+    deploys_today: int
+    applications: list[ApplicationWithStatus]
+
+
+class DeploymentVersionDetail(BaseModel):
+    id: uuid.UUID
+    image_tag: Optional[str] = None
+    image_digest: Optional[str] = None
+    version_label: Optional[str] = None
+    source_commit_sha: Optional[str] = None
+    argocd_sync_revision: Optional[str] = None
+    kubernetes_deployment_revision: Optional[str] = None
+    lifecycle_status: LifecycleStatus
+    trigger_source: TriggerSource
+    deployed_at: Optional[datetime] = None
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class ApplicationEnvironmentDetail(BaseModel):
+    id: uuid.UUID
+    application_id: uuid.UUID
+    environment_id: uuid.UUID
+    deployment_name: str
+    enabled: bool
+    current_version: Optional[DeploymentVersionDetail] = None
+    model_config = {"from_attributes": True}
