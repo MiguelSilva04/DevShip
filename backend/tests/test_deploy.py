@@ -367,3 +367,140 @@ class TestDeployPipeline:
         assert req.status == RequestStatus.FAILED
         assert req.failure_reason == "boom"
         assert req.completed_at is not None
+
+    def test_observe_deployment_end_to_end_records_correct_version_fields(self, db_session, monkeypatch):
+        """observe_deployment() runs through all 5 stages and writes correct image_tag / argocd_sync_revision."""
+        import backend.services.deploy_pipeline as dp
+        from backend.services.deploy_pipeline import observe_deployment
+
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+
+        # Add ClusterContext so the K8s/ArgoCD stages are exercised
+        cluster_ctx = ClusterContext(
+            project_id=project.id,
+            cluster_arn="arn:aws:eks:us-east-1:123:cluster/c",
+            cluster_name="c",
+            region="us-east-1",
+            eks_endpoint="https://k8s.example.com",
+            ca_certificate="CERT",
+            ca_file_path="/tmp/ca.crt",
+            iam_role_arn="arn:aws:iam::123:role/r",
+            external_id=str(uuid.uuid4()),
+        )
+        db_session.add(cluster_ctx)
+        db_session.flush()
+
+        req = DeploymentRequest(
+            application_environment_id=app_env.id,
+            deployment_type=DeploymentType.STANDARD,
+            status=RequestStatus.RUNNING,
+            github_workflow_run_id=42,
+        )
+        db_session.add(req)
+        db_session.flush()
+
+        # Redirect the BackgroundTask's own SessionLocal to the test session.
+        # Wrap so that close() is a no-op — the conftest transaction must survive.
+        class _NoClose:
+            def __init__(self, s): self._s = s
+            def __getattr__(self, n): return getattr(self._s, n)
+            def close(self): pass
+
+        monkeypatch.setattr(dp, "SessionLocal", lambda: _NoClose(db_session))
+
+        # ── GitHub: run completed successfully ────────────────────────────────
+        github_run_resp = MagicMock()
+        github_run_resp.json.return_value = {
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "abcdef1234567890",
+            "run_number": 7,
+        }
+        github_run_resp.raise_for_status = MagicMock()
+
+        # ── ArgoCD: Running then Succeeded ────────────────────────────────────
+        argocd_running = MagicMock()
+        argocd_running.status.operation_phase = "Running"
+        argocd_running.status.sync_revision = "abcdef1"
+
+        argocd_succeeded = MagicMock()
+        argocd_succeeded.status.operation_phase = "Succeeded"
+        argocd_succeeded.status.sync_revision = "abcdef1"
+
+        # ── K8s Deployment: Progressing → NewReplicaSetAvailable ─────────────
+        cond_updating = MagicMock()
+        cond_updating.type = "Progressing"
+        cond_updating.reason = "ReplicaSetUpdated"
+
+        cond_done = MagicMock()
+        cond_done.type = "Progressing"
+        cond_done.reason = "NewReplicaSetAvailable"
+
+        dep_updating = MagicMock()
+        dep_updating.status.conditions = [cond_updating]
+
+        dep_done = MagicMock()
+        dep_done.status.conditions = [cond_done]
+
+        # ── K8s Pods: one pod, Ready=True ────────────────────────────────────
+        pod = MagicMock()
+        pod.metadata.name = "api-deploy-abc"
+        pod_list = MagicMock()
+        pod_list.items = [pod]
+
+        raw_pods_resp = MagicMock()
+        raw_pods_resp.json.return_value = {
+            "items": [{
+                "metadata": {"name": "api-deploy-abc"},
+                "status": {
+                    "containerStatuses": [],
+                    "conditions": [{"type": "Ready", "status": "True"}],
+                },
+            }]
+        }
+
+        # http.get: first call → GitHub run, subsequent calls → raw pods
+        http_get_calls = iter([github_run_resp, raw_pods_resp])
+
+        monkeypatch.setattr(dp.http, "get", lambda *a, **kw: next(http_get_calls))
+
+        # Service helpers
+        argocd_calls = iter([argocd_running, argocd_succeeded])
+        monkeypatch.setattr(dp, "get_argocd_application", lambda *a, **kw: next(argocd_calls))
+
+        dep_calls = iter([dep_updating, dep_done])
+        monkeypatch.setattr(dp, "list_deployment", lambda *a, **kw: next(dep_calls))
+
+        monkeypatch.setattr(dp, "list_pods_in_namespace", lambda *a, **kw: pod_list)
+
+        fake_eks = MagicMock()
+        monkeypatch.setattr(dp, "get_cluster_token", lambda **kw: fake_eks)
+
+        # Zero out sleeps so the test runs instantly
+        monkeypatch.setattr(dp.time, "sleep", lambda _: None)
+
+        observe_deployment(req.id)
+
+        db_session.refresh(req)
+        assert req.status == RequestStatus.SUCCESS
+        assert req.completed_at is not None
+
+        version = db_session.query(DeploymentVersion).filter(
+            DeploymentVersion.deployment_request_id == req.id
+        ).first()
+        assert version is not None
+        assert version.image_tag == "abcdef1-7"
+        assert version.source_commit_sha == "abcdef1234567890"
+        assert version.argocd_sync_revision == "abcdef1"
+
+        events = db_session.query(DeploymentEvent).filter(
+            DeploymentEvent.deployment_version_id == version.id
+        ).order_by(DeploymentEvent.event_timestamp).all()
+        event_types = [e.event_type for e in events]
+        assert DeploymentEventType.WORKFLOW_STARTED in event_types
+        assert DeploymentEventType.BUILD_COMPLETED in event_types
+        assert DeploymentEventType.SYNC_STARTED in event_types
+        assert DeploymentEventType.SYNC_COMPLETED in event_types
+        assert DeploymentEventType.ROLLOUT_STARTED in event_types
+        assert DeploymentEventType.ROLLOUT_COMPLETED in event_types
+        assert DeploymentEventType.READINESS_PASSED in event_types
