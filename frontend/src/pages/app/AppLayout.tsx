@@ -4,7 +4,7 @@ import { useUser } from '../../context/UserContext';
 export default function AppLayout() {
   const nav = useNavigate();
   const loc = useLocation();
-  const { user, setUser } = useUser();
+  const { user, logout: authLogout } = useUser();
 
   const isCloud = user?.role === 'cloud';
   const canApprove = user?.role === 'cloud' || user?.role === 'tech';
@@ -15,7 +15,7 @@ export default function AppLayout() {
     color: at(path) ? 'var(--text)' : 'var(--text-2)',
   });
 
-  function logout() { setUser(null); nav('/'); }
+  function logout() { authLogout(); nav('/'); }
 
   return (
     <div style={{ display:'flex', alignItems:'flex-start', minHeight:'100vh' }}>

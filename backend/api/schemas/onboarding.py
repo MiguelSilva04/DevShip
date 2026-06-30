@@ -131,6 +131,17 @@ class GitOpsScanResult(BaseModel):
     environments: list[str]
 
 
+# --- User teams (Lobby) ---
+
+class UserTeamEntry(BaseModel):
+    team_id: uuid.UUID
+    team_name: str
+    role: TeamMemberRole
+    project_id: Optional[uuid.UUID] = None
+    project_name: Optional[str] = None
+    setup_status: Optional[SetupStatus] = None
+
+
 # --- Application import ---
 
 class ApplicationEnvironmentImport(BaseModel):

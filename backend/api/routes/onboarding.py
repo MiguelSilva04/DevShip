@@ -24,6 +24,7 @@ from backend.api.schemas.onboarding import (
     TeamCreate,
     TeamMembersResponse,
     TeamResponse,
+    UserTeamEntry,
 )
 from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
@@ -66,6 +67,31 @@ def _require_cloud_engineer(db: Session, project_id: uuid.UUID, user: User) -> P
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     _require_cloud_engineer_of_team(db, project.team_id, user)
     return project
+
+
+# ---------------------------------------------------------------------------
+# Current user's teams (Lobby)
+# ---------------------------------------------------------------------------
+
+@router.get("/users/me/teams", response_model=list[UserTeamEntry])
+def list_my_teams(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    memberships = db.query(TeamMember).filter(TeamMember.user_id == current_user.id).all()
+    result = []
+    for m in memberships:
+        team = db.get(Team, m.team_id)
+        project = db.query(Project).filter(Project.team_id == m.team_id).first()
+        result.append(UserTeamEntry(
+            team_id=team.id,
+            team_name=team.name,
+            role=m.role,
+            project_id=project.id if project else None,
+            project_name=project.name if project else None,
+            setup_status=project.setup_status if project else None,
+        ))
+    return result
 
 
 # ---------------------------------------------------------------------------

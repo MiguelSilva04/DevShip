@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { UserProvider } from './context/UserContext';
+import ProtectedRoute from './routes/ProtectedRoute';
+import PublicRoute    from './routes/PublicRoute';
 
 import Landing    from './pages/Landing';
 import Login      from './pages/Login';
@@ -32,32 +34,38 @@ export default function App() {
     <BrowserRouter>
       <UserProvider>
         <Routes>
-          <Route path="/"          element={<Landing />} />
-          <Route path="/login"     element={<Login />} />
-          <Route path="/register"  element={<Register />} />
-          <Route path="/lobby"     element={<Lobby />} />
-          <Route path="/onboarding" element={<Onboarding />} />
+          <Route path="/" element={<Landing />} />
 
-          <Route path="/app" element={<AppLayout />}>
-            <Route index element={<Navigate to="home" replace />} />
-            <Route path="home"          element={<Home />} />
-            <Route path="environments"  element={<Environments />} />
-            <Route path="approvals"     element={<Approvals />} />
-            <Route path="team"          element={<Team />} />
-            <Route path="team/add"      element={<AddMember />} />
-            <Route path="settings"      element={<Settings />} />
-            <Route path="history"       element={<History />} />
-            <Route path="how"           element={<HowItWorks />} />
-            <Route path=":app"             element={<AppDetail />} />
-            <Route path=":app/:env"        element={<EnvDetail />} />
-            <Route path=":app/:env/deploy"   element={<Deploy />} />
-            <Route path=":app/:env/approval" element={<Approval />} />
-            <Route path=":app/:env/exec"     element={<Execution />} />
-            <Route path=":app/:env/rollback" element={<Rollback />} />
-            <Route path=":app/:env/events"   element={<Events />} />
-            <Route path=":app/:env/health"   element={<Health />} />
-            <Route path=":app/:env/logs"     element={<Logs />} />
-            <Route path=":app/:env/pods"     element={<Pods />} />
+          <Route element={<PublicRoute />}>
+            <Route path="/login"    element={<Login />} />
+            <Route path="/register" element={<Register />} />
+          </Route>
+
+          <Route element={<ProtectedRoute />}>
+            <Route path="/lobby"      element={<Lobby />} />
+            <Route path="/onboarding" element={<Onboarding />} />
+
+            <Route path="/app" element={<AppLayout />}>
+              <Route index element={<Navigate to="home" replace />} />
+              <Route path="home"          element={<Home />} />
+              <Route path="environments"  element={<Environments />} />
+              <Route path="approvals"     element={<Approvals />} />
+              <Route path="team"          element={<Team />} />
+              <Route path="team/add"      element={<AddMember />} />
+              <Route path="settings"      element={<Settings />} />
+              <Route path="history"       element={<History />} />
+              <Route path="how"           element={<HowItWorks />} />
+              <Route path=":app"             element={<AppDetail />} />
+              <Route path=":app/:env"        element={<EnvDetail />} />
+              <Route path=":app/:env/deploy"   element={<Deploy />} />
+              <Route path=":app/:env/approval" element={<Approval />} />
+              <Route path=":app/:env/exec"     element={<Execution />} />
+              <Route path=":app/:env/rollback" element={<Rollback />} />
+              <Route path=":app/:env/events"   element={<Events />} />
+              <Route path=":app/:env/health"   element={<Health />} />
+              <Route path=":app/:env/logs"     element={<Logs />} />
+              <Route path=":app/:env/pods"     element={<Pods />} />
+            </Route>
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
