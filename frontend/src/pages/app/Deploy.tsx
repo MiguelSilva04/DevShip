@@ -25,41 +25,19 @@ export default function Deploy() {
 
   useEffect(() => {
     if (!aeId) return;
-    apiFetch(`/application-environments/${aeId}`)
-      .then((d: AEDetail) => {
-        setAeDetail(d);
-        const projectId = localStorage.getItem('ob_project_id');
-        return Promise.all([
-          apiFetch(`/applications/${d.application_id}`).catch(() => null),
-          projectId ? apiFetch(`/projects/${projectId}/environments`).catch(() => null) : Promise.resolve(null),
-        ]);
-      })
-      .then(([app, envs]) => {
-        if (!app || !aeDetail) return; // aeDetail not yet set in closure, handled below
-        setAppName(app?.name ?? '');
-        if (envs && Array.isArray(envs) && aeDetail) {
-          const env = (envs as { id: string; name: string; requires_approval: boolean }[]).find(e => e.id === aeDetail.environment_id);
-          if (env) { setEnvName(env.name); setRequiresApproval(env.requires_approval); }
-        }
-      })
-      .catch(e => setError(e.message));
-  }, [aeId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // second pass once aeDetail is set — needed because the first .then closure captures stale aeDetail
-  useEffect(() => {
-    if (!aeDetail) return;
     const projectId = localStorage.getItem('ob_project_id');
-    Promise.all([
-      apiFetch(`/applications/${aeDetail.application_id}`).catch(() => null),
-      projectId ? apiFetch(`/projects/${projectId}/environments`).catch(() => null) : Promise.resolve(null),
-    ]).then(([app, envs]) => {
-      if (app) setAppName(app.name);
-      if (envs && Array.isArray(envs)) {
-        const env = (envs as { id: string; name: string; requires_approval: boolean }[]).find(e => e.id === aeDetail.environment_id);
-        if (env) { setEnvName(env.name); setRequiresApproval(env.requires_approval); }
-      }
-    });
-  }, [aeDetail]);
+    (async () => {
+      const d: AEDetail = await apiFetch(`/application-environments/${aeId}`);
+      setAeDetail(d);
+      const [app, envs] = await Promise.all([
+        apiFetch(`/applications/${d.application_id}`),
+        projectId ? apiFetch(`/projects/${projectId}/environments`) : Promise.resolve([]),
+      ]);
+      setAppName(app.name);
+      const env = (envs as { id: string; name: string; requires_approval: boolean }[]).find(e => e.id === d.environment_id);
+      if (env) { setEnvName(env.name); setRequiresApproval(env.requires_approval); }
+    })().catch(e => setError(e.message));
+  }, [aeId]);
 
   async function submit() {
     if (!aeId) return;
