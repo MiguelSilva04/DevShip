@@ -11,10 +11,17 @@ export default function Login() {
   const [pass,  setPass]  = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPass, setShowPass] = useState(false);
 
   function loginAs(role: Role) {
     setUser(USERS[role]);
     nav('/lobby');
+  }
+
+  function translateError(msg: string): string {
+    if (msg.includes('Invalid credentials') || msg.includes('401')) return 'Email ou password incorretos.';
+    if (msg.includes('Sessão expirada')) return msg;
+    return msg;
   }
 
   async function submit() {
@@ -24,17 +31,15 @@ export default function Login() {
     try {
       const { access_token } = await apiLogin(email, pass);
       saveToken(access_token);
-      // Fetch user info from first team membership to determine role
-      const teams = await apiFetch('/users/me/teams');
-      if (teams.length > 0) {
-        const t = teams[0];
-        setUser(userFromBackend(t.user_name, t.user_email, t.role));
-      } else {
-        setUser(userFromBackend(email, email, 'DEVELOPER'));
-      }
+      const [me, teams] = await Promise.all([
+        apiFetch('/auth/me'),
+        apiFetch('/users/me/teams'),
+      ]);
+      const role = teams.length > 0 ? teams[0].role : 'DEVELOPER';
+      setUser(userFromBackend(me.name, me.email, role));
       nav('/lobby');
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Erro ao entrar.');
+      setError(translateError(e instanceof Error ? e.message : 'Erro ao entrar.'));
     } finally {
       setLoading(false);
     }
@@ -75,7 +80,10 @@ export default function Login() {
             </div>
             <div>
               <div style={{ fontSize:12.5, color:'var(--text-2)', marginBottom:7 }}>Password</div>
-              <input className="input-base" type="password" value={pass} onChange={e => setPass(e.target.value)} placeholder="••••••••" onKeyDown={e => e.key === 'Enter' && submit()} />
+              <div style={{ position:'relative' }}>
+                <input className="input-base" type={showPass ? 'text' : 'password'} value={pass} onChange={e => setPass(e.target.value)} placeholder="••••••••" onKeyDown={e => e.key === 'Enter' && submit()} style={{ paddingRight:40 }} />
+                <button type="button" onClick={() => setShowPass(v => !v)} style={{ position:'absolute', right:11, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:13, padding:0 }}>{showPass ? '🙈' : '👁'}</button>
+              </div>
             </div>
             {error && (
               <div style={{ display:'flex', alignItems:'center', gap:9, border:'1px solid rgba(241,85,108,.3)', background:'rgba(241,85,108,.08)', borderRadius:9, padding:'10px 13px', marginTop:14 }}>

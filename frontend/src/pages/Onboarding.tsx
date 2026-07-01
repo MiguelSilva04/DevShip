@@ -201,7 +201,7 @@ export function OnboardingTeam() {
   const [loading, setLoading] = useState(false);
 
   async function submit() {
-    if (!name.trim()) { setErr('O nome da team é obrigatório.'); return; }
+    if (!name.trim()) { setErr('O nome da equipa é obrigatório.'); return; }
     setLoading(true); setErr('');
     try {
       const team = await apiFetch('/teams', { method: 'POST', body: JSON.stringify({ name: name.trim(), description: desc || undefined }) });
@@ -209,15 +209,15 @@ export function OnboardingTeam() {
       localStorage.setItem(OB_TEAM_NAME, team.name);
       nav('/onboarding/project');
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Erro ao criar team.');
+      setErr(e instanceof Error ? e.message : 'Erro ao criar equipa.');
     } finally { setLoading(false); }
   }
 
   return (
     <>
-      <StepLabel n={1} label="Criar Team" sub="Uma Team agrupa pessoas e projetos do mesmo domínio de email." />
+      <StepLabel n={1} label="Criar Team" sub="Uma Team agrupa pessoas e projetos do mesmo domínio de email. Serás o Cloud Engineer desta equipa." />
       <FormCard>
-        <FormField label="Nome *">
+        <FormField label="Nome da equipa *">
           <input className="input-base input-mono" value={name} onChange={e => setName(e.target.value)} placeholder="engineering-team" />
         </FormField>
         <FormField label="Descrição (opcional)">

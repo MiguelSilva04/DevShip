@@ -11,13 +11,15 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
       ...options.headers,
     },
   });
-  if (response.status === 401) {
-    localStorage.removeItem('devship_token');
-    window.location.href = '/login';
-    throw new Error('Session expired');
-  }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
+    // Only treat 401 as session expiry when we actually had a token (i.e. an authenticated call).
+    // On /auth/* routes there's no token — 401 means wrong credentials, not expired session.
+    if (response.status === 401 && token) {
+      localStorage.removeItem('devship_token');
+      window.location.href = '/login';
+      throw new Error('Sessão expirada. Por favor entra novamente.');
+    }
     throw new Error(body.detail || `HTTP ${response.status}`);
   }
   return response.json();

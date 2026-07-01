@@ -51,11 +51,21 @@ const Ctx = createContext<UserCtx>({
   setUser: () => {}, saveToken: () => {}, logout: () => {},
 });
 
+function userFromStorage(): User | null {
+  const raw = localStorage.getItem('devship_user');
+  if (!raw) return null;
+  try { return JSON.parse(raw) as User; } catch { return null; }
+}
+
 export function UserProvider({ children }: { children: ReactNode }) {
-  const [user, setUserState] = useState<User | null>(null);
+  const [user, setUserState] = useState<User | null>(userFromStorage);
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('devship_token'));
 
-  function setUser(u: User | null) { setUserState(u); }
+  function setUser(u: User | null) {
+    setUserState(u);
+    if (u) localStorage.setItem('devship_user', JSON.stringify(u));
+    else localStorage.removeItem('devship_user');
+  }
 
   function saveToken(t: string) {
     localStorage.setItem('devship_token', t);
@@ -64,6 +74,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   function logout() {
     localStorage.removeItem('devship_token');
+    localStorage.removeItem('devship_user');
     setToken(null);
     setUserState(null);
   }

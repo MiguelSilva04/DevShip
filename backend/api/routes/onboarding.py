@@ -57,7 +57,7 @@ def _require_cloud_engineer_of_team(db: Session, team_id: uuid.UUID, user: User)
         .first()
     )
     if member is None or member.role != TeamMemberRole.CLOUD_ENGINEER:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cloud Engineer role required")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="É necessário ter o papel de Cloud Engineer para executar esta ação.")
     return team
 
 
@@ -72,6 +72,17 @@ def _require_cloud_engineer(db: Session, project_id: uuid.UUID, user: User) -> P
 # ---------------------------------------------------------------------------
 # Current user's teams (Lobby)
 # ---------------------------------------------------------------------------
+
+@router.get("/users/me/domain-status")
+def my_domain_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Returns whether the current user's email domain already has a Team."""
+    domain = current_user.email.rsplit("@", 1)[-1]
+    team = db.query(Team).filter(Team.domain == domain).first()
+    return {"domain": domain, "has_team": team is not None, "team_id": str(team.id) if team else None}
+
 
 @router.get("/users/me/teams", response_model=list[UserTeamEntry])
 def list_my_teams(
@@ -107,9 +118,11 @@ def list_my_teams(
 @router.post("/teams", response_model=TeamResponse, status_code=status.HTTP_201_CREATED)
 def create_team(body: TeamCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     domain = current_user.email.rsplit("@", 1)[-1]
-    existing = db.query(Team).filter(Team.domain == domain).first()
-    if existing:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A team for this email domain already exists")
+    if db.query(Team).filter(Team.domain == domain).first():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Já existe uma equipa para este domínio. Pede ao Cloud Engineer que te adicione.",
+        )
     team_id = uuid.uuid4()
     team = Team(id=team_id, name=body.name, description=body.description, domain=domain)
     member = TeamMember(team_id=team_id, user_id=current_user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None)
@@ -201,7 +214,7 @@ def create_project(
         .first()
     )
     if member is None or member.role != TeamMemberRole.CLOUD_ENGINEER:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cloud Engineer role required")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="É necessário ter o papel de Cloud Engineer para executar esta ação.")
 
     project = Project(
         team_id=team_id,

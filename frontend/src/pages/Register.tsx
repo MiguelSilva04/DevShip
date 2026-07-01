@@ -2,6 +2,23 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { register as apiRegister } from '../api/auth';
 
+const PASSWORD_RE = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+
+function passwordError(p: string): string {
+  if (p.length < 8)          return 'A password deve ter no mínimo 8 caracteres.';
+  if (!/[A-Z]/.test(p))      return 'A password deve ter pelo menos uma letra maiúscula.';
+  if (!/[a-z]/.test(p))      return 'A password deve ter pelo menos uma letra minúscula.';
+  if (!/\d/.test(p))         return 'A password deve ter pelo menos um número.';
+  if (!/[^A-Za-z\d]/.test(p)) return 'A password deve ter pelo menos um carácter especial.';
+  return '';
+}
+
+function translateError(msg: string): string {
+  if (msg.includes('Email already registered') || msg.includes('409')) return 'Este email já está registado.';
+  if (msg.includes('401') || msg.includes('Invalid')) return 'Credenciais inválidas.';
+  return msg;
+}
+
 export default function Register() {
   const nav  = useNavigate();
   const [name,  setName]  = useState('');
@@ -10,18 +27,22 @@ export default function Register() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const passErr = pass ? passwordError(pass) : '';
+  const passOk  = PASSWORD_RE.test(pass);
+  const [showPass, setShowPass] = useState(false);
+
   async function submit() {
-    if (!name.trim() || !email.includes('@') || pass.length < 8) {
-      setError('Preenche todos os campos. Password mínimo 8 caracteres.');
-      return;
-    }
+    if (!name.trim()) { setError('Preenche o nome.'); return; }
+    if (!email.includes('@')) { setError('Email inválido.'); return; }
+    const pe = passwordError(pass);
+    if (pe) { setError(pe); return; }
     setLoading(true);
     setError('');
     try {
       await apiRegister(name, email, pass);
       nav('/login');
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Erro ao criar conta.');
+      setError(translateError(e instanceof Error ? e.message : 'Erro ao criar conta.'));
     } finally {
       setLoading(false);
     }
@@ -56,7 +77,21 @@ export default function Register() {
           </div>
           <div>
             <div style={{ fontSize:12.5, color:'var(--text-2)', marginBottom:7 }}>Password</div>
-            <input className="input-base" type="password" value={pass} onChange={e => setPass(e.target.value)} placeholder="••••••••" onKeyDown={e => e.key === 'Enter' && submit()} />
+            <div style={{ position:'relative' }}>
+              <input className="input-base" type={showPass ? 'text' : 'password'} value={pass} onChange={e => setPass(e.target.value)} placeholder="••••••••" onKeyDown={e => e.key === 'Enter' && submit()} style={{ paddingRight:40 }} />
+              <button type="button" onClick={() => setShowPass(v => !v)} style={{ position:'absolute', right:11, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:13, padding:0 }}>{showPass ? '🙈' : '👁'}</button>
+            </div>
+            {pass && (
+              <div style={{ marginTop:8 }}>
+                <div style={{ display:'flex', gap:4, marginBottom:5 }}>
+                  {(['[A-Z]','[a-z]','\\d','[^A-Za-z\\d]','.{8,}'] as const).map((re, i) => (
+                    <div key={i} style={{ flex:1, height:3, borderRadius:99, background: new RegExp(re).test(pass) ? 'var(--teal)' : 'var(--border)' }} />
+                  ))}
+                </div>
+                {passErr && <div style={{ fontSize:11, color: passOk ? '#5dd57b' : '#ecc26b' }}>{passErr}</div>}
+                {passOk  && <div style={{ fontSize:11, color:'#5dd57b' }}>Password válida ✓</div>}
+              </div>
+            )}
           </div>
         </div>
 
