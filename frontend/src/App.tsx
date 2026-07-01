@@ -69,21 +69,21 @@ export default function App() {
               <Route path="home"          element={<Home />} />
               <Route path="environments"  element={<Environments />} />
               <Route path="approvals"     element={<Approvals />} />
+              <Route path="approvals/:reqId" element={<Approval />} />
               <Route path="team"          element={<Team />} />
               <Route path="team/add"      element={<AddMember />} />
               <Route path="settings"      element={<Settings />} />
-              <Route path="history"       element={<History />} />
               <Route path="how"           element={<HowItWorks />} />
-              <Route path=":app"               element={<AppDetail />} />
-              <Route path=":app/:env"          element={<EnvDetail />} />
-              <Route path=":app/:env/deploy"   element={<Deploy />} />
-              <Route path=":app/:env/approval" element={<Approval />} />
-              <Route path=":app/:env/exec"     element={<Execution />} />
-              <Route path=":app/:env/rollback" element={<Rollback />} />
-              <Route path=":app/:env/events"   element={<Events />} />
-              <Route path=":app/:env/health"   element={<Health />} />
-              <Route path=":app/:env/logs"     element={<Logs />} />
-              <Route path=":app/:env/pods"     element={<Pods />} />
+              <Route path=":appId"                         element={<AppDetail />} />
+              <Route path=":appId/:aeId"                   element={<EnvDetail />} />
+              <Route path=":appId/:aeId/deploy"            element={<Deploy />} />
+              <Route path=":appId/:aeId/exec/:reqId"       element={<Execution />} />
+              <Route path=":appId/:aeId/history"           element={<History />} />
+              <Route path=":appId/:aeId/rollback"          element={<Rollback />} />
+              <Route path=":appId/:aeId/events"            element={<Events />} />
+              <Route path=":appId/:aeId/health"            element={<Health />} />
+              <Route path=":appId/:aeId/logs"              element={<Logs />} />
+              <Route path=":appId/:aeId/pods"              element={<Pods />} />
             </Route>
           </Route>
 
