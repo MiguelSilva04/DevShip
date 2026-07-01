@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../context/UserContext';
 import { apiFetch } from '../api/client';
+import { OB_TEAM_ID, OB_PROJECT_ID, OB_TEAM_NAME, OB_PROJ_NAME } from './Onboarding';
 
 interface TeamEntry {
   team_id: string;
@@ -94,10 +95,26 @@ export default function Lobby() {
                   const status = setupStatus(t);
                   const initials = t.team_name.split(/[-_ ]/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '??';
                   const projectLine = t.project_name ?? 'projeto por configurar';
-                  const onClick = t.project_id && t.setup_status === 'CONFIGURED'
+                  function resumeOnboarding() {
+                    // Restore localStorage so onboarding steps can pick up where they left off
+                    localStorage.setItem(OB_TEAM_ID, t.team_id);
+                    localStorage.setItem(OB_TEAM_NAME, t.team_name);
+                    if (t.project_id) localStorage.setItem(OB_PROJECT_ID, t.project_id);
+                    if (t.project_name) localStorage.setItem(OB_PROJ_NAME, t.project_name);
+
+                    if (!t.project_id) { nav('/onboarding/project'); return; }
+                    const dest: Record<string, string> = {
+                      PENDING_CLUSTER:      '/onboarding/aws-setup',
+                      PENDING_ENVIRONMENTS: '/onboarding/environments',
+                      PENDING_APPLICATIONS: '/onboarding/applications',
+                    };
+                    nav(dest[t.setup_status ?? ''] ?? '/onboarding');
+                  }
+
+                  const onClick = t.setup_status === 'CONFIGURED'
                     ? () => nav('/app/home')
                     : t.role === 'CLOUD_ENGINEER'
-                    ? () => nav('/onboarding')
+                    ? resumeOnboarding
                     : undefined;
                   return (
                     <TeamButton
