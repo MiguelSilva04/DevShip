@@ -16,10 +16,13 @@ function initials(name: string) {
   return name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 }
 
+type AllowedRole = 'DEVELOPER' | 'TECH_LEAD';
+
 export default function Team() {
   const nav = useNavigate();
   const [members, setMembers] = useState<Member[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [candidateRoles, setCandidateRoles] = useState<Record<string, AllowedRole>>({});
   const [err, setErr] = useState('');
   const [removing, setRemoving] = useState<string | null>(null);
 
@@ -37,11 +40,12 @@ export default function Team() {
 
   async function addCandidate(candidate: Candidate) {
     if (!teamId) return;
+    const role = candidateRoles[candidate.user_id] ?? 'DEVELOPER';
     setRemoving(candidate.user_id);
     try {
       const member: Member = await apiFetch(`/teams/${teamId}/members`, {
         method: 'POST',
-        body: JSON.stringify({ user_id: candidate.user_id, role: 'DEVELOPER' }),
+        body: JSON.stringify({ user_id: candidate.user_id, role }),
       });
       setMembers(prev => [...prev, member]);
       setCandidates(prev => prev.filter(c => c.user_id !== candidate.user_id));
@@ -117,13 +121,22 @@ export default function Team() {
                   <div style={{ fontSize: 13.5, fontWeight: 500 }}>{c.name}</div>
                   <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{c.email}</div>
                 </div>
+                <select
+                  value={candidateRoles[c.user_id] ?? 'DEVELOPER'}
+                  onChange={e => setCandidateRoles(prev => ({ ...prev, [c.user_id]: e.target.value as AllowedRole }))}
+                  className="select-base"
+                  disabled={removing === c.user_id}
+                >
+                  <option value="DEVELOPER">Developer</option>
+                  <option value="TECH_LEAD">Tech Lead</option>
+                </select>
                 <button
                   onClick={() => addCandidate(c)}
                   disabled={removing === c.user_id}
                   className="btn-primary hover-bright"
                   style={{ fontSize: 12, padding: '7px 14px', borderRadius: 8, opacity: removing === c.user_id ? .6 : 1 }}
                 >
-                  {removing === c.user_id ? 'A adicionar…' : 'Adicionar como Developer'}
+                  {removing === c.user_id ? 'A adicionar…' : 'Adicionar'}
                 </button>
               </div>
             ))}
