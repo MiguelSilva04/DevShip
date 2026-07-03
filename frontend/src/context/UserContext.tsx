@@ -3,7 +3,7 @@ import { createContext, useContext, useState, ReactNode } from 'react';
 export type Role = 'cloud' | 'tech' | 'dev';
 
 export interface User {
-  role: Role;
+  role: Role | null;
   name: string;
   email: string;
   initials: string;
@@ -33,9 +33,9 @@ function roleLabelFrom(role: Role) {
   return 'Developer';
 }
 
-export function userFromBackend(name: string, email: string, backendRole: string): User {
-  const role = roleFromBackend(backendRole);
-  return { role, name, email, initials: initialsFrom(name), roleLabel: roleLabelFrom(role) };
+export function userFromBackend(name: string, email: string, backendRole?: string | null): User {
+  const role = backendRole ? roleFromBackend(backendRole) : null;
+  return { role, name, email, initials: initialsFrom(name), roleLabel: role ? roleLabelFrom(role) : '' };
 }
 
 interface UserCtx {

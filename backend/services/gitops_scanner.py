@@ -25,66 +25,75 @@ def _parse_owner_repo(repo_url: str) -> tuple[str, str]:
     return parts[-2], parts[-1]
 
 
-def scan_gitops_repo(repo_url: str, base_path: str = "") -> list[dict]:
+def _scan_path(owner: str, repo: str, env_name: str, path: str, headers: dict, candidates: list[dict]) -> None:
+    """Scan a single directory path for Deployment manifests and merge into candidates."""
+    path = path.strip("/")
+    resp = requests.get(
+        f"https://api.github.com/repos/{owner}/{repo}/contents/{path}",
+        headers=headers,
+        timeout=15,
+    )
+    if not resp.ok:
+        return
+
+    for file_entry in resp.json():
+        if file_entry["type"] != "file" or not file_entry["name"].endswith((".yaml", ".yml")):
+            continue
+
+        content_resp = requests.get(file_entry["download_url"], timeout=15)
+        if not content_resp.ok:
+            continue
+
+        docs = list(yaml.safe_load_all(content_resp.text))
+        for doc in docs:
+            if not isinstance(doc, dict) or doc.get("kind") != "Deployment":
+                continue
+            app_name = doc.get("metadata", {}).get("name", file_entry["name"])
+            source_repo = doc.get("metadata", {}).get("annotations", {}).get("devship/source-repository", "")
+            existing = next((c for c in candidates if c["name"] == app_name), None)
+            if existing:
+                if env_name not in existing["environments"]:
+                    existing["environments"].append(env_name)
+            else:
+                candidates.append({
+                    "name": app_name,
+                    "source_repository": source_repo,
+                    "manifest_path": file_entry["path"],
+                    "environments": [env_name],
+                })
+
+
+def scan_gitops_repo(repo_url: str, env_paths: list[tuple[str, str]] | None = None) -> list[dict]:
     """
     Returns a list of dicts: {name, source_repository, manifest_path, environments}
-    Environments are inferred from directory names one level below base_path.
+
+    env_paths: list of (env_name, git_ops_base_path) from configured environments.
+    If omitted, falls back to scanning root-level subdirs as environment names (legacy).
     Raises ValueError on GitHub API errors.
     """
     owner, repo = _parse_owner_repo(repo_url)
     headers = _github_headers()
+    candidates: list[dict] = []
 
-    path = base_path.strip("/")
-    contents_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}"
-    resp = requests.get(contents_url, headers=headers, timeout=15)
+    if env_paths:
+        for env_name, base_path in env_paths:
+            _scan_path(owner, repo, env_name, base_path, headers, candidates)
+        return candidates
+
+    # Legacy fallback: treat subdirs of repo root as environment names
+    resp = requests.get(
+        f"https://api.github.com/repos/{owner}/{repo}/contents/",
+        headers=headers,
+        timeout=15,
+    )
     if resp.status_code == 404:
-        raise ValueError(f"GitOps path not found: {repo_url}/{base_path}")
+        raise ValueError(f"GitOps repository not found: {repo_url}")
     resp.raise_for_status()
 
-    candidates = []
     for entry in resp.json():
         if entry["type"] != "dir":
             continue
-        env_name = entry["name"]
-        env_path = entry["path"]
-
-        # List YAML files in this environment dir
-        files_resp = requests.get(
-            f"https://api.github.com/repos/{owner}/{repo}/contents/{env_path}",
-            headers=headers,
-            timeout=15,
-        )
-        if not files_resp.ok:
-            continue
-
-        for file_entry in files_resp.json():
-            if file_entry["type"] != "file" or not file_entry["name"].endswith((".yaml", ".yml")):
-                continue
-
-            content_resp = requests.get(file_entry["download_url"], timeout=15)
-            if not content_resp.ok:
-                continue
-
-            docs = list(yaml.safe_load_all(content_resp.text))
-            for doc in docs:
-                if not isinstance(doc, dict) or doc.get("kind") != "Deployment":
-                    continue
-                app_name = doc.get("metadata", {}).get("name", file_entry["name"])
-                source_repo = (
-                    doc.get("metadata", {}).get("annotations", {}).get("devship/source-repository", "")
-                )
-                # Merge with existing candidate for same app name
-                existing = next((c for c in candidates if c["name"] == app_name), None)
-                if existing:
-                    if env_name not in existing["environments"]:
-                        existing["environments"].append(env_name)
-                else:
-                    candidates.append({
-                        "name": app_name,
-                        "source_repository": source_repo,
-                        "manifest_path": file_entry["path"],
-                        "environments": [env_name],
-                    })
+        _scan_path(owner, repo, entry["name"], entry["path"], headers, candidates)
 
     return candidates
 

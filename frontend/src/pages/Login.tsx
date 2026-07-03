@@ -31,12 +31,9 @@ export default function Login() {
     try {
       const { access_token } = await apiLogin(email, pass);
       saveToken(access_token);
-      const [me, teams] = await Promise.all([
-        apiFetch('/auth/me'),
-        apiFetch('/users/me/teams'),
-      ]);
-      const role = teams.length > 0 ? teams[0].role : 'DEVELOPER';
-      setUser(userFromBackend(me.name, me.email, role));
+      // Role is determined in Lobby from /users/me/teams — store name/email only
+      const me = await apiFetch('/auth/me');
+      setUser(userFromBackend(me.name, me.email, null));
       nav('/lobby');
     } catch (e: unknown) {
       setError(translateError(e instanceof Error ? e.message : 'Erro ao entrar.'));

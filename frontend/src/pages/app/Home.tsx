@@ -33,7 +33,7 @@ function statusPill(s: LifecycleStatus | null) {
     RolledBack: { bg: 'rgba(120,120,180,.13)',col: '#aab4ff', bord: 'rgba(120,120,180,.26)', dot: '#7880cc' },
     Superseded: { bg: 'rgba(150,150,150,.13)',col: 'var(--text-3)', bord: 'rgba(150,150,150,.26)', dot: '#888' },
   };
-  return map[s ?? ''] ?? map['Healthy'];
+  return map[s ?? ''] ?? { bg: 'var(--surface-2)', col: 'var(--text-3)', bord: 'var(--border)', dot: 'var(--text-3)' };
 }
 
 function isActive(s: LifecycleStatus | null) {

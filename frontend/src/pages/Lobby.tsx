@@ -37,7 +37,7 @@ function setupStatus(entry: TeamEntry) {
 
 export default function Lobby() {
   const nav = useNavigate();
-  const { user, token } = useUser();
+  const { user, token, logout } = useUser();
   const [teams, setTeams] = useState<TeamEntry[] | null>(null);
   const [domainStatus, setDomainStatus] = useState<DomainStatus | null>(null);
   const [loadErr, setLoadErr] = useState('');
@@ -92,7 +92,8 @@ export default function Lobby() {
         <div style={{ maxWidth:620, margin:'0 auto', padding:'56px 26px 90px' }}>
           <div style={{ display:'flex', alignItems:'center', gap:13, marginBottom:8 }}>
             <img src="/devship-logo.png" alt="DevShip" style={{ width:38, height:38 }} />
-            <h1 style={{ fontSize:23, fontWeight:600, letterSpacing:'-.01em', margin:0 }}>Bem-vindo, {firstName}</h1>
+            <h1 style={{ fontSize:23, fontWeight:600, letterSpacing:'-.01em', margin:0, flex:1 }}>Bem-vindo, {firstName}</h1>
+            <button onClick={() => { logout(); nav('/login'); }} style={{ background:'none', border:'1px solid var(--border)', borderRadius:8, padding:'6px 12px', fontSize:12, color:'var(--text-3)', cursor:'pointer' }}>Sair</button>
           </div>
           <p style={{ fontSize:13, color:'var(--text-2)', lineHeight:1.7, margin:'0 0 26px' }}>{subtitle}</p>
 

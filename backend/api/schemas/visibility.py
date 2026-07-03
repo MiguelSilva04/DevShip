@@ -10,8 +10,13 @@ from backend.bd.models.deployment_version import LifecycleStatus, TriggerSource
 class EnvironmentListItem(BaseModel):
     id: uuid.UUID
     name: str
+    display_name: Optional[str] = None
+    namespace: Optional[str] = None
+    git_ops_base_path: Optional[str] = None
+    source_branch: Optional[str] = None
     deployment_order: int
     requires_approval: bool
+    approval_required_role: Optional[str] = None
     model_config = {"from_attributes": True}
 
 

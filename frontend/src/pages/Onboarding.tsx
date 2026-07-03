@@ -200,8 +200,18 @@ export function OnboardingTeam() {
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Pre-fill if team was already created (idempotency on back-navigation)
+  useEffect(() => {
+    const teamId = localStorage.getItem(OB_TEAM_ID);
+    const teamName = localStorage.getItem(OB_TEAM_NAME);
+    if (teamId && teamName) setName(teamName);
+  }, []);
+
   async function submit() {
     if (!name.trim()) { setErr('O nome da equipa é obrigatório.'); return; }
+    // If team already exists in localStorage, skip creation and advance
+    const existingId = localStorage.getItem(OB_TEAM_ID);
+    if (existingId) { nav('/onboarding/project'); return; }
     setLoading(true); setErr('');
     try {
       const team = await apiFetch('/teams', { method: 'POST', body: JSON.stringify({ name: name.trim(), description: desc || undefined }) });
@@ -243,6 +253,18 @@ export function OnboardingProject() {
 
   const teamId = localStorage.getItem(OB_TEAM_ID);
 
+  // Pre-fill if project was already created (idempotency on back-navigation)
+  useEffect(() => {
+    const projectId = localStorage.getItem(OB_PROJECT_ID);
+    if (!projectId) return;
+    apiFetch(`/projects/${projectId}`)
+      .then((p: { name: string; git_ops_repository_url?: string }) => {
+        setName(p.name);
+        if (p.git_ops_repository_url) setGitops(p.git_ops_repository_url);
+      })
+      .catch(() => { /* project not found, ignore */ });
+  }, []);
+
   async function submit() {
     if (!name.trim()) { setErr('O nome do projeto é obrigatório.'); return; }
     if (!teamId) { setErr('Team não encontrada — volta ao passo 1.'); return; }
@@ -256,7 +278,13 @@ export function OnboardingProject() {
       localStorage.setItem(OB_PROJ_NAME, project.name);
       nav('/onboarding/aws-setup');
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Erro ao criar projeto.');
+      const msg = e instanceof Error ? e.message : '';
+      if (msg.includes('já tem um projeto')) {
+        // Project already exists — just advance
+        nav('/onboarding/aws-setup');
+        return;
+      }
+      setErr(msg || 'Erro ao criar projeto.');
     } finally { setLoading(false); }
   }
 
@@ -284,8 +312,10 @@ export function OnboardingProject() {
 // PASSO 3 — AWS Setup
 // ═══════════════════════════════════════════════════════════════════════════════
 interface ClusterSetupInfo {
+  devship_account_id: string;
   external_id: string;
   trust_policy: Record<string, unknown>;
+  permission_policy: Record<string, unknown>;
   access_entry_commands: string[];
 }
 
@@ -310,43 +340,69 @@ export function OnboardingAwsSetup() {
     setTimeout(() => setCopied(null), 1500);
   }
 
-  const trustJson = info ? JSON.stringify(info.trust_policy, null, 2) : '';
-  const cliCode = info ? info.access_entry_commands.join('\n\n') : '';
+  const trustJson        = info ? JSON.stringify(info.trust_policy, null, 2) : '';
+  const permissionJson   = info ? JSON.stringify(info.permission_policy, null, 2) : '';
+  const cliCode          = info ? info.access_entry_commands.join('\n\n') : '';
 
   return (
     <>
-      <StepLabel n={3} label="Preparar AWS / EKS" sub="Cria uma IAM role para a DevShip aceder ao cluster." />
+      <StepLabel n={3} label="Preparar AWS / EKS" sub="Cria uma IAM Role para a DevShip aceder ao cluster e configura as permissões necessárias." />
       <ErrBanner msg={err} />
       {!info && !err && <div style={{ color: 'var(--text-3)', fontSize: 13 }}>A carregar…</div>}
       {info && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {/* ExternalId */}
+
+          {/* Passo 1 — Criar a IAM Role */}
           <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '20px 22px' }}>
-            <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 13 }}>1 · ExternalId</div>
+            <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 10 }}>1 · Criar a IAM Role</div>
+            <p style={{ fontSize: 12.5, color: 'var(--text-2)', margin: '0 0 12px', lineHeight: 1.6 }}>
+              Na consola AWS, vai a <strong>IAM → Roles → Create role</strong>. Escolhe <em>Custom trust policy</em> como tipo de entidade confiável — não seleciones nenhum serviço AWS.
+            </p>
+            <div style={{ fontSize: 12, color: 'var(--text-3)', padding: '10px 14px', borderRadius: 9, background: 'var(--bg-2)', border: '1px solid var(--border-soft)', lineHeight: 1.6 }}>
+              Dá um nome reconhecível à role, por exemplo <code className="mono">DevShipAccess</code>. Vai precisar do ARN desta role no passo 4.
+            </div>
+          </div>
+
+          {/* Passo 2 — ExternalId */}
+          <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '20px 22px' }}>
+            <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 13 }}>2 · ExternalId</div>
+            <p style={{ fontSize: 12.5, color: 'var(--text-2)', margin: '0 0 12px', lineHeight: 1.6 }}>
+              Este ID é único para o teu projeto. Vai ser necessário na Trust Policy abaixo.
+            </p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 9, padding: '9px 9px 9px 14px' }}>
               <code className="mono" style={{ fontSize: 13, color: 'var(--teal)', flex: 1 }}>{info.external_id}</code>
               <CopyBtn text={info.external_id} copyKey="ext" copied={copied} onCopy={copy} />
             </div>
           </div>
 
-          {/* Trust Policy */}
+          {/* Passo 3 — Trust Policy */}
           <CodeBlock
-            title="2 · Trust Policy"
-            desc="Cola este JSON na Trust Policy da IAM role que crias para a DevShip."
+            title="3 · Trust Policy"
+            desc={`Cola este JSON na Trust Policy da role. A conta AWS da DevShip é ${info.devship_account_id}.`}
             filename="trust-policy.json"
             code={trustJson}
             copyKey="trust" copied={copied} onCopy={copy}
             why={{ title: 'Trust Policy — o quê e porquê', body: 'Define quem pode assumir esta IAM Role. O ExternalId protege contra o ataque confused deputy — só a DevShip, com o ID correto, consegue assumir a role.' }}
           />
 
-          {/* EKS Access Entry */}
+          {/* Passo 4 — Permission Policy */}
           <CodeBlock
-            title="3 · EKS Access Entry"
-            desc="Corre estes comandos AWS CLI para registar a role no cluster."
+            title="4 · Permission Policy"
+            desc="Na aba Permissions da role, cria uma política inline com este JSON. Dá apenas as permissões mínimas que a DevShip precisa."
+            filename="devship-permission-policy.json"
+            code={permissionJson}
+            copyKey="perm" copied={copied} onCopy={copy}
+            why={{ title: 'Permission Policy — o quê e porquê', body: 'A Trust Policy define quem pode assumir a role. A Permission Policy define o que essa role pode fazer. A DevShip só precisa de descrever clusters EKS — nada mais.' }}
+          />
+
+          {/* Passo 5 — EKS Access Entry */}
+          <CodeBlock
+            title="5 · EKS Access Entry"
+            desc="Corre estes comandos AWS CLI para registar a role no cluster. Substitui CLUSTER_NAME, ROLE_ARN e REGION pelos valores reais."
             filename="eks-access.sh"
             code={cliCode}
             copyKey="cli" copied={copied} onCopy={copy}
-            why={{ title: 'EKS Access Entry — o quê e porquê', body: 'A Trust Policy dá acesso à AWS API — mas o cluster Kubernetes tem autorização própria. O EKS Access Entry regista a IAM Role diretamente no cluster.' }}
+            why={{ title: 'EKS Access Entry — o quê e porquê', body: 'A Trust Policy dá acesso à AWS API — mas o cluster Kubernetes tem autorização própria. O EKS Access Entry regista a IAM Role diretamente no cluster com permissões de leitura (AmazonEKSViewPolicy).' }}
           />
         </div>
       )}
@@ -372,9 +428,21 @@ export function OnboardingCluster() {
 
   useEffect(() => {
     if (!projectId) return;
+    // Load ExternalId for display
     apiFetch(`/projects/${projectId}/cluster-setup-info`)
       .then((d: ClusterSetupInfo) => setExtId(d.external_id))
       .catch(() => {});
+    // Check if cluster already configured (idempotency — e.g. after refresh)
+    apiFetch(`/projects/${projectId}/cluster`)
+      .then((d: { cluster_name: string; region: string }) => {
+        // Cluster exists — mark success so user can proceed; ARNs not returned by GET but not needed again
+        setSuccess(true);
+        setErr('');
+        // Show a hint about which cluster is configured
+        setExtId(prev => prev); // keep extId
+        setArn(`(cluster configurado: ${d.cluster_name} · ${d.region})`);
+      })
+      .catch(() => {}); // 404 = not configured yet, normal state
   }, [projectId]);
 
   function copy(key: string, text: string) {
@@ -394,7 +462,14 @@ export function OnboardingCluster() {
       });
       setSuccess(true);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Erro ao validar cluster.');
+      const msg = e instanceof Error ? e.message : '';
+      // 409 means already configured — treat as success so user can proceed
+      if (msg.includes('já está configurado') || msg.includes('409')) {
+        setSuccess(true);
+        setErr('');
+      } else {
+        setErr(msg || 'Erro ao validar cluster.');
+      }
     } finally { setLoading(false); }
   }
 
@@ -490,6 +565,32 @@ export function OnboardingEnvironments() {
   const [loading, setLoading] = useState(false);
 
   const projectId = localStorage.getItem(OB_PROJECT_ID);
+
+  // Pre-fill from existing environments (idempotency on back-navigation)
+  useEffect(() => {
+    if (!projectId) return;
+    apiFetch(`/projects/${projectId}/environments`)
+      .then((existing: Array<{
+        name: string; display_name?: string; namespace?: string;
+        git_ops_base_path?: string; source_branch?: string;
+        deployment_order: number; requires_approval: boolean;
+        approval_required_role?: string;
+      }>) => {
+        if (existing.length === 0) return;
+        setEnvs(existing.map(e => ({
+          key: e.name,
+          name: e.name,
+          display_name: e.display_name ?? '',
+          namespace: e.namespace ?? '',
+          git_ops_base_path: e.git_ops_base_path ?? '',
+          source_branch: e.source_branch ?? 'main',
+          deployment_order: e.deployment_order,
+          requires_approval: e.requires_approval,
+          approval_required_role: e.approval_required_role ?? 'TECH_LEAD',
+        })));
+      })
+      .catch(() => {});
+  }, [projectId]);
 
   function addPill(pill: typeof PILLS[0]) {
     if (!envs.find(e => e.key === pill.name)) setEnvs(prev => [...prev, mkEnv(pill)]);
@@ -709,7 +810,7 @@ export function OnboardingApplications() {
         name: c.name,
         source_repository: c.source_repository,
         container_registry_repository: registry[c.name] ?? '',
-        ci_workflow_file: ciWorkflow[c.name] ?? `.github/workflows/${c.name}.yml`,
+        ci_workflow_file: ciWorkflow[c.name] ?? `${c.name}.yml`,
         environments: c.environments
           .filter(envName => envIds[envName])
           .map(envName => ({ environment_id: envIds[envName], deployment_name: c.name, manifest_path: c.manifest_path })),
@@ -796,7 +897,7 @@ export function OnboardingApplications() {
                         <input className="input-base input-mono" value={registry[c.name] ?? ''} onChange={e => setRegistry(p => ({ ...p, [c.name]: e.target.value }))} placeholder="company/backend" />
                       </FormField>
                       <FormField label="CI Workflow File">
-                        <input className="input-base input-mono" value={ciWorkflow[c.name] ?? `.github/workflows/${c.name}.yml`} onChange={e => setCiWorkflow(p => ({ ...p, [c.name]: e.target.value }))} placeholder=".github/workflows/backend.yml" />
+                        <input className="input-base input-mono" value={ciWorkflow[c.name] ?? `${c.name}.yml`} onChange={e => setCiWorkflow(p => ({ ...p, [c.name]: e.target.value }))} placeholder="gitops-deploy.yml" />
                       </FormField>
                     </div>
                   )}

@@ -66,8 +66,10 @@ class ProjectResponse(BaseModel):
 # --- Cluster setup info (GET, no write) ---
 
 class ClusterSetupInfo(BaseModel):
+    devship_account_id: str
     external_id: str
     trust_policy: dict
+    permission_policy: dict
     access_entry_commands: list[str]
 
 

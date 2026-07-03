@@ -216,6 +216,10 @@ def create_project(
     if member is None or member.role != TeamMemberRole.CLOUD_ENGINEER:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="É necessário ter o papel de Cloud Engineer para executar esta ação.")
 
+    existing = db.query(Project).filter(Project.team_id == team_id).first()
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esta equipa já tem um projeto criado.")
+
     project = Project(
         team_id=team_id,
         created_by=current_user.id,
@@ -239,26 +243,41 @@ def cluster_setup_info(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    import os
     project = _require_cloud_engineer(db, project_id, current_user)
     external_id = f"ext-{project.id}"
+    devship_account_id = os.environ["DEVSHIP_AWS_ACCOUNT_ID"]
     return ClusterSetupInfo(
+        devship_account_id=devship_account_id,
         external_id=external_id,
         trust_policy={
             "Version": "2012-10-17",
             "Statement": [
                 {
                     "Effect": "Allow",
-                    "Principal": {"AWS": "arn:aws:iam::DEVSHIP_ACCOUNT_ID:root"},
+                    "Principal": {"AWS": f"arn:aws:iam::{devship_account_id}:root"},
                     "Action": "sts:AssumeRole",
                     "Condition": {"StringEquals": {"sts:ExternalId": external_id}},
                 }
             ],
         },
+        permission_policy={
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "eks:DescribeCluster",
+                    ],
+                    "Resource": "*",
+                }
+            ],
+        },
         access_entry_commands=[
-            f"aws eks create-access-entry --cluster-name CLUSTER_NAME --principal-arn ROLE_ARN --region REGION",
-            f"aws eks associate-access-policy --cluster-name CLUSTER_NAME --principal-arn ROLE_ARN "
-            f"--policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy "
-            f"--access-scope type=cluster --region REGION",
+            "aws eks create-access-entry --cluster-name CLUSTER_NAME --principal-arn ROLE_ARN --region REGION",
+            "aws eks associate-access-policy --cluster-name CLUSTER_NAME --principal-arn ROLE_ARN "
+            "--policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSViewPolicy "
+            "--access-scope type=cluster --region REGION",
         ],
     )
 
@@ -266,6 +285,19 @@ def cluster_setup_info(
 # ---------------------------------------------------------------------------
 # Cluster validation + persist
 # ---------------------------------------------------------------------------
+
+@router.get("/projects/{project_id}/cluster", response_model=ClusterContextResponse)
+def get_cluster(
+    project_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_cloud_engineer(db, project_id, current_user)
+    cluster = db.query(ClusterContext).filter(ClusterContext.project_id == project_id).first()
+    if not cluster:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cluster ainda não configurado.")
+    return cluster
+
 
 @router.post("/projects/{project_id}/cluster", response_model=ClusterContextResponse, status_code=status.HTTP_201_CREATED)
 def configure_cluster(
@@ -277,17 +309,14 @@ def configure_cluster(
     project = _require_cloud_engineer(db, project_id, current_user)
 
     if db.query(ClusterContext).filter(ClusterContext.project_id == project_id).first():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cluster already configured for this project")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="O cluster já está configurado para este projeto.")
 
     external_id = f"ext-{project.id}"
 
     try:
         info = cv.validate_cluster(body.cluster_arn, body.iam_role_arn, external_id)
     except ValueError as e:
-        # 401 for STS/credential failures, 403 for access permission failures
-        detail = str(e)
-        code = status.HTTP_401_UNAUTHORIZED if "AssumeRole" in detail else status.HTTP_403_FORBIDDEN
-        raise HTTPException(status_code=code, detail=detail)
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
     cluster = ClusterContext(
         project_id=project_id,
@@ -325,23 +354,29 @@ def create_environments(
 
     results = []
     for env_data in body:
-        env = Environment(
-            project_id=project_id,
-            name=env_data.name,
-            display_name=env_data.display_name,
-            namespace=env_data.namespace,
-            git_ops_base_path=env_data.git_ops_base_path,
-            source_branch=env_data.source_branch,
-            requires_approval=env_data.requires_approval,
-            approval_required_role=env_data.approval_required_role,
-            deployment_order=env_data.deployment_order,
-        )
-        db.add(env)
-        db.flush()  # get env.id before creating validation row
+        # Upsert by (project_id, name) — idempotent on re-submit
+        env = db.query(Environment).filter(
+            Environment.project_id == project_id,
+            Environment.name == env_data.name,
+        ).first()
+        if env is None:
+            env = Environment(project_id=project_id, name=env_data.name)
+            db.add(env)
 
-        validation = EnvironmentValidation(environment_id=env.id)
+        env.display_name = env_data.display_name
+        env.namespace = env_data.namespace
+        env.git_ops_base_path = env_data.git_ops_base_path
+        env.source_branch = env_data.source_branch
+        env.requires_approval = env_data.requires_approval
+        env.approval_required_role = env_data.approval_required_role
+        env.deployment_order = env_data.deployment_order
+        db.flush()
+
+        validation = db.query(EnvironmentValidation).filter(EnvironmentValidation.environment_id == env.id).first()
+        if validation is None:
+            validation = EnvironmentValidation(environment_id=env.id)
+            db.add(validation)
         _run_environment_validations(validation, env, cluster, git_ops_url)
-        db.add(validation)
         db.flush()
 
         results.append(_env_response(env, validation))
@@ -446,8 +481,11 @@ def gitops_scan(
             detail="Project has no git_ops_repository_url — set it when creating the project",
         )
 
+    environments = db.query(Environment).filter(Environment.project_id == project_id).all()
+    env_paths = [(e.name, e.git_ops_base_path) for e in environments if e.git_ops_base_path]
+
     try:
-        candidates = gs.scan_gitops_repo(project.git_ops_repository_url)
+        candidates = gs.scan_gitops_repo(project.git_ops_repository_url, env_paths)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 

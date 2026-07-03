@@ -1,9 +1,12 @@
 import boto3
+import os
 from botocore.exceptions import ClientError
 
 
 def assume_user_role(role_arn: str, external_id: str, region: str) -> boto3.Session:
     sts_client = boto3.client("sts")
+    session = boto3.Session(profile_name=os.environ.get("DEVSHIP_AWS_PROFILE", "default"))
+    sts_client = session.client("sts")
 
     try:
         response = sts_client.assume_role(

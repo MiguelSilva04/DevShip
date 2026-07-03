@@ -83,12 +83,13 @@ def trigger_deploy(db, request: DeploymentRequest, environment: Environment, app
 
     request.source_commit_sha = _resolve_branch_head(owner, repo, environment.source_branch or "main")
 
+    workflow_file = application.ci_workflow_file.removeprefix(".github/workflows/")
     response = http.post(
-        f"https://api.github.com/repos/{owner}/{repo}/actions/workflows/{application.ci_workflow_file}/dispatches",
+        f"https://api.github.com/repos/{owner}/{repo}/actions/workflows/{workflow_file}/dispatches",
         headers=_github_headers(),
         json={
             "ref": environment.source_branch or "main",
-            "inputs": {"environment": environment.name, "action": "deploy"},
+            "inputs": {"environment": environment.name.lower(), "action": "deploy"},
             "return_run_details": True,
         },
         timeout=15,
