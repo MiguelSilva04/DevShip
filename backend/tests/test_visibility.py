@@ -309,6 +309,58 @@ class TestGetApplicationEnvironment:
 
 
 # ---------------------------------------------------------------------------
+# POST /application-environments/{id}/refresh — live K8s read
+# ---------------------------------------------------------------------------
+
+class TestRefreshApplicationEnvironment:
+    def test_no_cluster_configured_marks_degraded(self, client, db_session):
+        _, _, _, _, _, ae = _setup_chain(db_session)
+        _make_version(db_session, ae, LifecycleStatus.HEALTHY)
+        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+
+        r = client.post(f"/application-environments/{ae.id}/refresh", headers=_auth(token))
+        assert r.status_code == 200
+        assert r.json()["current_version"]["lifecycle_status"] == "Degraded"
+
+    def test_cluster_unreachable_marks_degraded_not_left_stale(self, client, db_session):
+        """Reproduces: terraform destroy removed the cluster, but a stale Healthy stuck
+        around because the failure path used to be a silent no-op."""
+        _, _, project, env, _, ae = _setup_chain(db_session)
+        from backend.bd.models.cluster_context import ClusterContext
+        db_session.add(ClusterContext(
+            project_id=project.id, cluster_arn="arn:aws:eks:us-east-1:1:cluster/x",
+            cluster_name="x", region="us-east-1", eks_endpoint="https://x", ca_certificate="x",
+            ca_file_path="/tmp/x", iam_role_arn="arn:aws:iam::1:role/x", external_id="ext",
+        ))
+        db_session.flush()
+        _make_version(db_session, ae, LifecycleStatus.HEALTHY)
+        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+
+        with patch("backend.api.routes.visibility.get_cluster_token", side_effect=Exception("cluster destroyed")):
+            r = client.post(f"/application-environments/{ae.id}/refresh", headers=_auth(token))
+        assert r.status_code == 200
+        assert r.json()["current_version"]["lifecycle_status"] == "Degraded"
+
+    def test_get_after_refresh_does_not_revert_to_stale_healthy(self, client, db_session):
+        """The read-time recompute-from-events must not overwrite a fresher live-check result."""
+        _, _, _, _, _, ae = _setup_chain(db_session)
+        _make_version(db_session, ae, LifecycleStatus.HEALTHY)  # backs Healthy with a ROLLOUT_COMPLETED event
+        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+
+        r = client.post(f"/application-environments/{ae.id}/refresh", headers=_auth(token))
+        assert r.json()["current_version"]["lifecycle_status"] == "Degraded"
+
+        r2 = client.get(f"/application-environments/{ae.id}", headers=_auth(token))
+        assert r2.status_code == 200
+        assert r2.json()["current_version"]["lifecycle_status"] == "Degraded"
+
+    def test_404_on_unknown_ae(self, client, db_session):
+        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        r = client.post(f"/application-environments/{uuid.uuid4()}/refresh", headers=_auth(token))
+        assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
 # GET /application-environments/{id}/history
 # ---------------------------------------------------------------------------
 

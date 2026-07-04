@@ -50,7 +50,13 @@ _TERMINAL_STATUSES = {LifecycleStatus.FAILED, LifecycleStatus.ROLLED_BACK, Lifec
 
 
 def _refresh_lifecycle_from_events(db: Session, versions: list[DeploymentVersion]) -> None:
-    """Recompute lifecycle_status from stored events for non-terminal versions. No K8s call."""
+    """
+    Recompute lifecycle_status from stored events for non-terminal versions. No K8s call.
+    Skips any version whose last live cluster check (health_checked_at, set by the manual
+    refresh endpoint) is newer than its latest event — otherwise this would silently
+    overwrite "cluster is unreachable/degraded" with a stale Healthy derived from old events
+    every time the page reloads.
+    """
     pending = [v for v in versions if v.lifecycle_status not in _TERMINAL_STATUSES]
     if not pending:
         return
@@ -63,7 +69,11 @@ def _refresh_lifecycle_from_events(db: Session, versions: list[DeploymentVersion
         events_by_version[e.deployment_version_id].append(e)
     dirty = False
     for v in pending:
-        new_status = compute_lifecycle_status(events_by_version[v.id])
+        events = events_by_version[v.id]
+        latest_event_ts = max((e.event_timestamp for e in events), default=None)
+        if v.health_checked_at is not None and (latest_event_ts is None or v.health_checked_at >= latest_event_ts):
+            continue  # a live check is more recent than any event — trust it
+        new_status = compute_lifecycle_status(events)
         if new_status != v.lifecycle_status:
             v.lifecycle_status = new_status
             dirty = True
@@ -276,7 +286,10 @@ def refresh_application_environment(
     if latest is not None and latest.lifecycle_status not in _TERMINAL_STATUSES:
         env = db.get(Environment, ae.environment_id)
         cluster_ctx = db.query(ClusterContext).filter(ClusterContext.project_id == env.project_id).first()
-        if cluster_ctx is not None:
+        if cluster_ctx is None:
+            # No cluster configured at all — can't claim Healthy with nothing to check.
+            latest.lifecycle_status = LifecycleStatus.DEGRADED
+        else:
             try:
                 eks_info = get_cluster_token(
                     iam_role_arn=cluster_ctx.iam_role_arn,
@@ -285,13 +298,14 @@ def refresh_application_environment(
                 )
                 namespace = env.namespace or env.name.lower()
                 any_ready, fatal_pods = pod_health_snapshot(eks_info, namespace)
-                if fatal_pods or not any_ready:
-                    latest.lifecycle_status = LifecycleStatus.DEGRADED
-                else:
-                    latest.lifecycle_status = LifecycleStatus.HEALTHY
-                db.commit()
+                latest.lifecycle_status = LifecycleStatus.HEALTHY if (any_ready and not fatal_pods) else LifecycleStatus.DEGRADED
             except Exception:
-                pass  # cluster unreachable — leave lifecycle_status as last known
+                # Cluster unreachable (destroyed, auth broken, network down, ...) — this is
+                # itself a health signal, not a no-op. Silently keeping the last known status
+                # would show "Healthy" for a cluster that no longer exists.
+                latest.lifecycle_status = LifecycleStatus.DEGRADED
+        latest.health_checked_at = datetime.now(timezone.utc)
+        db.commit()
 
     return ApplicationEnvironmentDetail(
         id=ae.id,

@@ -66,6 +66,10 @@ class DeploymentVersion(Base):
         _trigger_source_enum, server_default=text("'DEVSHIP'")
     )
     deployed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set whenever a live cluster read (manual refresh) determines lifecycle_status.
+    # Lets read-time recompute-from-events know not to overwrite a live result with a
+    # stale one derived from events older than the last live check.
+    health_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
