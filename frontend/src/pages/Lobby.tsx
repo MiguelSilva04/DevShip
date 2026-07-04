@@ -63,19 +63,6 @@ export default function Lobby() {
       .catch((e: unknown) => setLoadErr(e instanceof Error ? e.message : 'Erro ao carregar informação.'));
   }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Demo mode: token absent, user set via demo button
-  const isDemo = !token && !!user;
-  const isCloud = user?.role === 'cloud';
-  const isDev   = user?.role === 'dev';
-
-  const firstName = user?.name.split(' ')[0] ?? 'utilizador';
-  const title    = `Bem-vindo, ${firstName}`;
-  const subtitle = isCloud
-    ? 'Escolhe um projeto para entrar ou cria uma nova equipa.'
-    : isDev
-    ? 'Escolhe o projeto em que participas.'
-    : 'Escolhe o projeto ou cria uma nova equipa.';
-
   // Real teams: token present
   if (token) {
     const firstName = user?.name.split(' ')[0] ?? '…';
@@ -190,62 +177,16 @@ export default function Lobby() {
     );
   }
 
-  // Demo mode (mock user set via demo buttons, no real token)
+  // Sem token — não autenticado
   return (
     <div style={{ minHeight:'100vh', background:'var(--bg)', color:'var(--text)' }}>
       <div style={{ maxWidth:620, margin:'0 auto', padding:'56px 26px 90px' }}>
         <div style={{ display:'flex', alignItems:'center', gap:13, marginBottom:8 }}>
           <img src="/devship-logo.png" alt="DevShip" style={{ width:38, height:38 }} />
-          <h1 style={{ fontSize:23, fontWeight:600, letterSpacing:'-.01em', margin:0 }}>{isDemo ? title : 'Bem-vindo à DevShip'}</h1>
+          <h1 style={{ fontSize:23, fontWeight:600, letterSpacing:'-.01em', margin:0 }}>Bem-vindo à DevShip</h1>
         </div>
-        <p style={{ fontSize:13, color:'var(--text-2)', lineHeight:1.7, margin:'0 0 26px' }}>{isDemo ? subtitle : 'Faz login para ver as tuas teams.'}</p>
-
-        {!isDemo && (
-          <button onClick={() => nav('/login')} className="btn-primary hover-bright" style={{ fontSize:13, padding:'10px 20px', borderRadius:8 }}>Entrar →</button>
-        )}
-
-        {isDemo && (
-          <>
-            <div className="mono" style={{ fontSize:10.5, letterSpacing:'.14em', textTransform:'uppercase', color:'var(--text-3)', marginBottom:13 }}>As tuas teams</div>
-            <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
-              <TeamButton
-                initials="ET"
-                name="engineering-team"
-                project="my-project"
-                badge={isCloud
-                  ? { bg:'rgba(43,199,180,.12)', col:'var(--teal)', bord:'rgba(43,199,180,.3)', label:'Cloud Engineer' }
-                  : user?.role === 'tech'
-                  ? { bg:'rgba(77,156,246,.12)', col:'#7fb6f9', bord:'rgba(77,156,246,.3)', label:'Tech Lead' }
-                  : { bg:'var(--surface-2)', col:'var(--text-2)', bord:'var(--border)', label:'Developer' }}
-                status={{ label:'Configurado', color:'#5dd57b', bg:'rgba(52,199,89,.13)', bord:'rgba(52,199,89,.24)', dot:'#34C759' }}
-                onClick={() => nav('/app/home')}
-              />
-              {isCloud && (
-                <TeamButton
-                  initials="NT"
-                  name="new-team"
-                  project="projeto por configurar"
-                  badge={{ bg:'rgba(43,199,180,.12)', col:'var(--teal)', bord:'rgba(43,199,180,.3)', label:'Cloud Engineer' }}
-                  status={{ label:'Onboarding por concluir', color:'var(--text-3)', bg:'transparent', bord:'var(--border)', dot:'', dashed:true }}
-                  onClick={() => nav('/onboarding')}
-                />
-              )}
-              {isDev && (
-                <TeamButton
-                  initials="PT"
-                  name="platform-team"
-                  project="infra-tools · 1 application"
-                  badge={{ bg:'var(--surface-2)', col:'var(--text-2)', bord:'var(--border)', label:'Developer' }}
-                  status={{ label:'Configurado', color:'#5dd57b', bg:'rgba(52,199,89,.13)', bord:'rgba(52,199,89,.24)', dot:'#34C759' }}
-                  onClick={() => nav('/app/home')}
-                />
-              )}
-            </div>
-            <div style={{ fontSize:11, color:'var(--text-3)', marginTop:14, lineHeight:1.6 }}>
-              {isCloud ? 'Como Cloud Engineer podes criar e gerir múltiplas teams.' : 'Contacta o Cloud Engineer da tua equipa para seres adicionado a outros projetos.'}
-            </div>
-          </>
-        )}
+        <p style={{ fontSize:13, color:'var(--text-2)', lineHeight:1.7, margin:'0 0 26px' }}>Faz login para ver as tuas teams.</p>
+        <button onClick={() => nav('/login')} className="btn-primary hover-bright" style={{ fontSize:13, padding:'10px 20px', borderRadius:8 }}>Entrar →</button>
       </div>
     </div>
   );

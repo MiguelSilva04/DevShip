@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, ReactNode } from 'react';
 
-export type Role = 'cloud' | 'tech' | 'dev';
+type Role = 'cloud' | 'tech' | 'dev';
 
 export interface User {
   role: Role | null;
@@ -9,13 +9,6 @@ export interface User {
   initials: string;
   roleLabel: string;
 }
-
-// ponytail: demo users kept for the mock login buttons in Login.tsx
-export const USERS: Record<Role, User> = {
-  cloud: { role: 'cloud', name: 'Jane Smith',  email: 'jane.smith@horizonlabs.io',  initials: 'JS', roleLabel: 'Cloud Engineer' },
-  tech:  { role: 'tech',  name: 'John Doe',    email: 'john.doe@horizonlabs.io',    initials: 'JD', roleLabel: 'Tech Lead'      },
-  dev:   { role: 'dev',   name: 'Bob Johnson', email: 'bob.johnson@horizonlabs.io', initials: 'BJ', roleLabel: 'Developer'      },
-};
 
 function roleFromBackend(r: string): Role {
   if (r === 'CLOUD_ENGINEER') return 'cloud';
