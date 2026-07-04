@@ -308,7 +308,7 @@ class TestEnvironments:
         ):
             r = client.post(
                 f"/projects/{project_id}/environments",
-                json=[{"name": "staging", "namespace": "staging", "source_branch": "main", "git_ops_base_path": "envs/staging", "deployment_order": 1}],
+                json=[{"name": "staging", "namespace": "staging", "source_branch": "main", "gitops_branch": "main", "git_ops_base_path": "envs/staging", "deployment_order": 1}],
                 headers=_auth(token),
             )
 

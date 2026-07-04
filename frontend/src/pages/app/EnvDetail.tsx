@@ -1,8 +1,25 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 
 type LifecycleStatus = 'Deploying' | 'Healthy' | 'Degraded' | 'Failed' | 'RolledBack' | 'Superseded';
+type UpToDateStatus = 'UpToDate' | 'Outdated' | 'Unknown';
+
+interface UpToDateResult {
+  status: UpToDateStatus;
+  gitops_head_sha: string | null;
+  argocd_sync_revision: string | null;
+  reason: string | null;
+}
+
+function upToDatePill(s: UpToDateStatus) {
+  const map: Record<UpToDateStatus, { bg: string; col: string; bord: string; label: string }> = {
+    UpToDate: { bg: 'rgba(52,199,89,.13)',  col: '#5dd57b', bord: 'rgba(52,199,89,.24)',  label: 'Up to date' },
+    Outdated: { bg: 'rgba(224,169,59,.13)', col: '#ecc26b', bord: 'rgba(224,169,59,.26)', label: 'Outdated' },
+    Unknown:  { bg: 'var(--surface)',       col: 'var(--text-3)', bord: 'var(--border)',  label: 'Unknown' },
+  };
+  return map[s];
+}
 
 interface DeploymentVersionDetail {
   id: string;
@@ -44,6 +61,19 @@ export default function EnvDetail() {
   const [requiresApproval, setRequiresApproval] = useState(false);
   const [error, setError] = useState('');
   const [techOpen, setTechOpen] = useState(false);
+  const [upToDate, setUpToDate] = useState<UpToDateResult | null>(null);
+  const [utdLoading, setUtdLoading] = useState(false);
+
+  const loadUpToDate = useCallback(() => {
+    if (!aeId) return;
+    setUtdLoading(true);
+    apiFetch(`/application-environments/${aeId}/up-to-date`)
+      .then(setUpToDate)
+      .catch(() => setUpToDate(null))
+      .finally(() => setUtdLoading(false));
+  }, [aeId]);
+
+  useEffect(() => { loadUpToDate(); }, [loadUpToDate]);
 
   useEffect(() => {
     if (!aeId) return;
@@ -92,6 +122,25 @@ export default function EnvDetail() {
             {status}
           </span>
         )}
+        {upToDate && (() => {
+          const u = upToDatePill(upToDate.status);
+          return (
+            <span
+              title={upToDate.reason ?? undefined}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 12px', borderRadius: 999, fontSize: 12, background: u.bg, color: u.col, border: `1px solid ${u.bord}` }}
+            >
+              {u.label}
+            </span>
+          );
+        })()}
+        <button
+          onClick={loadUpToDate}
+          disabled={utdLoading}
+          className="btn-ghost"
+          style={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border)', cursor: utdLoading ? 'not-allowed' : 'pointer', color: 'var(--text-3)' }}
+        >
+          {utdLoading ? '…' : '↻'}
+        </button>
       </div>
 
       <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap', marginBottom: 22 }}>

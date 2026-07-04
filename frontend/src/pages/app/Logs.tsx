@@ -1,56 +1,85 @@
-import { useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
+import { apiFetch } from '../../api/client';
 
-const LOG_LINES = [
-  { t:'16:03:05', level:'INFO',  msg:'Server listening on :8080' },
-  { t:'16:03:05', level:'INFO',  msg:'Database connection pool initialized (max=20)' },
-  { t:'16:03:06', level:'INFO',  msg:'Redis connection established at redis:6379' },
-  { t:'16:03:06', level:'INFO',  msg:'Starting background job scheduler' },
-  { t:'16:03:07', level:'INFO',  msg:'GET /healthz/startup 200 12ms' },
-  { t:'16:03:07', level:'INFO',  msg:'GET /healthz/ready 200 8ms' },
-  { t:'16:03:10', level:'INFO',  msg:'GET /api/v1/users 200 45ms user_id=42' },
-  { t:'16:03:12', level:'WARN',  msg:'Slow query detected: SELECT * FROM deployments (340ms > 200ms threshold)' },
-  { t:'16:03:15', level:'INFO',  msg:'POST /api/v1/deployments 201 67ms' },
-  { t:'16:03:18', level:'ERROR', msg:'Failed to publish event to queue: connection timeout after 5000ms' },
-  { t:'16:03:18', level:'WARN',  msg:'Retrying event publish (attempt 1/3)' },
-  { t:'16:03:19', level:'INFO',  msg:'Event published successfully on retry' },
-  { t:'16:03:22', level:'INFO',  msg:'GET /api/v1/environments 200 29ms' },
-  { t:'16:03:25', level:'INFO',  msg:'Scheduled job "cleanup-old-builds" started' },
-  { t:'16:03:25', level:'INFO',  msg:'Cleaned up 12 old build artifacts' },
-];
+interface LogLine {
+  timestamp: string | null;
+  level: string | null;
+  message: string;
+}
 
-type Level = 'ALL' | 'INFO' | 'WARN' | 'ERROR';
+type Level = 'ALL' | 'INFO' | 'WARN' | 'WARNING' | 'ERROR' | 'DEBUG' | 'RAW';
 
 const levelColor: Record<string,string> = {
   INFO: 'var(--text-2)',
+  DEBUG: 'var(--text-3)',
   WARN: '#ecc26b',
+  WARNING: '#ecc26b',
   ERROR: '#ff8497',
-};
-const levelBg: Record<string,string> = {
-  INFO: 'transparent',
-  WARN: 'rgba(224,169,59,.06)',
-  ERROR: 'rgba(241,85,108,.06)',
+  CRITICAL: '#ff8497',
+  FATAL: '#ff8497',
+  RAW: 'var(--text-3)',
 };
 
 export default function Logs() {
-  const { app='backend', env='dev' } = useParams<{ app:string; env:string }>();
+  const { appId, aeId } = useParams<{ appId: string; aeId: string }>();
+  const [pods, setPods] = useState<string[]>([]);
+  const [pod, setPod] = useState('');
+  const [lines, setLines] = useState<LogLine[]>([]);
   const [filter, setFilter] = useState<Level>('ALL');
   const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const visible = LOG_LINES.filter(l =>
-    (filter === 'ALL' || l.level === filter) &&
-    (!search || l.msg.toLowerCase().includes(search.toLowerCase()))
+  useEffect(() => {
+    if (!aeId) return;
+    apiFetch(`/application-environments/${aeId}/pods`)
+      .then(d => {
+        const names: string[] = d.pods.map((p: { name: string }) => p.name);
+        setPods(names);
+        if (names.length > 0) setPod(names[0]);
+      })
+      .catch(e => setError(e.message));
+  }, [aeId]);
+
+  const load = useCallback(() => {
+    if (!aeId || !pod) return;
+    setLoading(true);
+    setError('');
+    apiFetch(`/application-environments/${aeId}/logs?pod=${encodeURIComponent(pod)}`)
+      .then(d => setLines(d.lines))
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [aeId, pod]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const visible = lines.filter(l =>
+    (filter === 'ALL' || (l.level ?? 'RAW') === filter) &&
+    (!search || l.message.toLowerCase().includes(search.toLowerCase()))
   );
 
   return (
     <div>
-      <div className="mono" style={{ fontSize:11, color:'var(--text-3)', marginBottom:6 }}>{app} / {env.toUpperCase()} / logs</div>
-      <h1 style={{ fontSize:22, fontWeight:600, margin:'0 0 18px' }}>Logs</h1>
+      <div className="mono" style={{ fontSize:11, color:'var(--text-3)', marginBottom:6 }}>{appId} / logs</div>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18 }}>
+        <h1 style={{ fontSize:22, fontWeight:600, margin:0 }}>Logs</h1>
+        <button onClick={load} disabled={loading || !pod} className="btn-ghost" style={{ fontSize:12, padding:'7px 14px', borderRadius:8, border:'1px solid var(--border)', cursor: loading ? 'not-allowed' : 'pointer' }}>
+          {loading ? 'A atualizar…' : 'Atualizar ↻'}
+        </button>
+      </div>
+
+      {error && (
+        <div style={{ marginBottom:14, padding:'10px 14px', borderRadius:9, background:'rgba(241,85,108,.08)', border:'1px solid rgba(241,85,108,.3)', fontSize:12.5, color:'#ff8497' }}>{error}</div>
+      )}
 
       {/* Controls */}
       <div style={{ display:'flex', gap:10, alignItems:'center', marginBottom:14, flexWrap:'wrap' }}>
+        <select value={pod} onChange={e => setPod(e.target.value)} className="mono" style={{ fontSize:12, padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', background:'var(--bg-2)', color:'var(--text)' }}>
+          {pods.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
         <div style={{ display:'flex', gap:6 }}>
-          {(['ALL','INFO','WARN','ERROR'] as Level[]).map(l => (
+          {(['ALL','INFO','WARN','ERROR','RAW'] as Level[]).map(l => (
             <button key={l} onClick={() => setFilter(l)} className="mono" style={{ fontSize:11.5, padding:'6px 12px', borderRadius:8, cursor:'pointer', border: filter===l ? '1px solid var(--teal)' : '1px solid var(--border)', background: filter===l ? 'rgba(43,199,180,.1)' : 'var(--bg-2)', color: filter===l ? 'var(--teal)' : 'var(--text-2)' }}>{l}</button>
           ))}
         </div>
@@ -63,13 +92,15 @@ export default function Logs() {
         <div className="mono" style={{ background:'var(--bg-2)', maxHeight:520, overflowY:'auto' }}>
           {visible.map((line, i) => (
             <div key={i} style={{ display:'flex', gap:14, padding:'5px 18px', background: i%2===0 ? 'transparent' : 'rgba(255,255,255,.013)', fontSize:12, lineHeight:1.6, borderBottom:'1px solid rgba(255,255,255,.03)' }}>
-              <span style={{ color:'var(--text-3)', flex:'none', width:54 }}>{line.t}</span>
-              <span style={{ flex:'none', width:38, fontWeight:600, color:levelColor[line.level]??'var(--text-2)' }}>{line.level}</span>
-              <span style={{ color:levelColor[line.level]??'var(--text-2)', flex:1 }}>{line.msg}</span>
+              <span style={{ color:'var(--text-3)', flex:'none', width:74 }}>{line.timestamp ?? ''}</span>
+              <span style={{ flex:'none', width:38, fontWeight:600, color:levelColor[line.level ?? 'RAW']??'var(--text-2)' }}>{line.level ?? ''}</span>
+              <span style={{ color:levelColor[line.level ?? 'RAW']??'var(--text-2)', flex:1 }}>{line.message}</span>
             </div>
           ))}
           {visible.length === 0 && (
-            <div style={{ padding:'28px 18px', textAlign:'center', color:'var(--text-3)', fontSize:12.5 }}>Nenhuma linha encontrada com os filtros actuais.</div>
+            <div style={{ padding:'28px 18px', textAlign:'center', color:'var(--text-3)', fontSize:12.5 }}>
+              {pod ? 'Nenhuma linha encontrada com os filtros actuais.' : 'Sem pods disponíveis para consultar logs.'}
+            </div>
           )}
         </div>
       </div>

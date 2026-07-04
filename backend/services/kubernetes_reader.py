@@ -85,13 +85,23 @@ def parse_deployment(deployment):
 def parse_pods(data: dict):
     pods = []
     for item in data.get("items", []):
+        container_statuses = item.get("status", {}).get("containerStatuses", [])
+        restart_count = sum(cs.get("restartCount", 0) for cs in container_statuses)
+        ready_count = sum(1 for cs in container_statuses if cs.get("ready"))
         pod = type("Pod", (), {
             "metadata": type("Metadata", (), {
                 "name": item["metadata"]["name"],
                 "namespace": item["metadata"].get("namespace", "default"),
+                "creation_timestamp": item["metadata"].get("creationTimestamp"),
+            })(),
+            "spec": type("Spec", (), {
+                "node_name": item.get("spec", {}).get("nodeName"),
             })(),
             "status": type("Status", (), {
                 "phase": item.get("status", {}).get("phase", "Unknown"),
+                "restart_count": restart_count,
+                "ready_count": ready_count,
+                "container_count": len(container_statuses),
             })(),
         })()
         pods.append(pod)
@@ -153,6 +163,61 @@ def list_deployments(cluster: EKSClusterInfo, namespace: str):
 
 def get_argocd_application(cluster: EKSClusterInfo, app_name: str):
     return _list_items(cluster, f"/apis/argoproj.io/v1alpha1/namespaces/argocd/applications/{app_name}", parse_argocd_application)
+
+
+def pod_metrics(cluster: EKSClusterInfo, namespace: str) -> dict[str, dict[str, str]]:
+    """
+    CPU/mem per pod from the Metrics API (requires metrics-server in-cluster).
+    Raises on failure — callers show "—" rather than swallow the error here.
+    Values are returned as raw Kubernetes quantities (e.g. "42m", "128Mi").
+    """
+    data = api_request(
+        endpoint=cluster.endpoint,
+        path=f"/apis/metrics.k8s.io/v1beta1/namespaces/{namespace}/pods",
+        token=cluster.bearer_token,
+        cluster_name=cluster.name,
+        ca_file=cluster.ca_file_path,
+    )
+    result = {}
+    for item in data.get("items", []):
+        pod_name = item["metadata"]["name"]
+        containers = item.get("containers", [])
+        cpu = containers[0]["usage"]["cpu"] if containers else None
+        mem = containers[0]["usage"]["memory"] if containers else None
+        result[pod_name] = {"cpu": cpu, "memory": mem}
+    return result
+
+
+def parse_events(data: dict):
+    events = []
+    for item in data.get("items", []):
+        involved = item.get("involvedObject", {}) or {}
+        event = type("Event", (), {
+            "type": item.get("type", "Normal"),
+            "reason": item.get("reason", ""),
+            "message": item.get("message", ""),
+            "object_ref": f"{involved.get('kind', '')}/{involved.get('name', '')}",
+            "last_timestamp": item.get("lastTimestamp") or item.get("eventTime"),
+        })()
+        events.append(event)
+    return type("EventList", (), {"items": events})()
+
+
+def list_events_in_namespace(cluster: EKSClusterInfo, namespace: str):
+    return _list_items(cluster, f"/api/v1/namespaces/{namespace}/events", parse_events)
+
+
+def get_pod_logs(cluster: EKSClusterInfo, namespace: str, pod_name: str, tail_lines: int = 500) -> str:
+    """Plain-text pod log read — /log does not return JSON, so it bypasses api_request()."""
+    url = f"{cluster.endpoint}/api/v1/namespaces/{namespace}/pods/{pod_name}/log?tailLines={tail_lines}"
+    headers = {
+        "Authorization": f"Bearer {cluster.bearer_token}",
+        "x-k8s-aws-id": cluster.name,
+    }
+    response = requests.get(url, headers=headers, verify=cluster.ca_file_path)
+    if response.status_code >= 400:
+        raise Exception(f"HTTP {response.status_code}: {response.text}")
+    return response.text
 
 
 _FATAL_POD_REASONS = {"CrashLoopBackOff", "ErrImagePull", "ImagePullBackOff", "OOMKilled", "Error"}

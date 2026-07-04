@@ -1,38 +1,73 @@
+import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
+import { apiFetch } from '../../api/client';
 
-const EVENTS = [
-  { type:'Normal',  reason:'Scheduled',       obj:'Pod/backend-6c8f9b4d5-xkp7q', msg:'Successfully assigned app-dev/backend-6c8f9b4d5-xkp7q to node-2',              age:'2m' },
-  { type:'Normal',  reason:'Pulling',          obj:'Pod/backend-6c8f9b4d5-xkp7q', msg:'Pulling image "horizonlabs/backend:a3f5b8c"',                                  age:'2m' },
-  { type:'Normal',  reason:'Pulled',           obj:'Pod/backend-6c8f9b4d5-xkp7q', msg:'Successfully pulled image in 1.24s',                                           age:'1m' },
-  { type:'Normal',  reason:'Created',          obj:'Pod/backend-6c8f9b4d5-xkp7q', msg:'Created container backend',                                                    age:'1m' },
-  { type:'Normal',  reason:'Started',          obj:'Pod/backend-6c8f9b4d5-xkp7q', msg:'Started container backend',                                                    age:'1m' },
-  { type:'Warning', reason:'Unhealthy',        obj:'Pod/backend-6c8f9b4d5-xkp7q', msg:'Startup probe failed: HTTP probe failed with statuscode: 503',                 age:'58s' },
-  { type:'Warning', reason:'Unhealthy',        obj:'Pod/backend-6c8f9b4d5-xkp7q', msg:'Startup probe failed: HTTP probe failed with statuscode: 503',                 age:'55s' },
-  { type:'Normal',  reason:'SuccessfulCreate', obj:'ReplicaSet/backend-6c8f9b4d5',msg:'Created pod: backend-6c8f9b4d5-xkp7q',                                        age:'2m' },
-  { type:'Normal',  reason:'ScalingReplicaSet',obj:'Deployment/backend',           msg:'Scaled up replica set backend-6c8f9b4d5 to 1',                                age:'2m' },
-];
+interface K8sEvent {
+  type: string;
+  reason: string;
+  object_ref: string;
+  message: string;
+  last_timestamp: string | null;
+}
+
+function age(iso: string | null): string {
+  if (!iso) return '—';
+  const ms = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
 
 export default function Events() {
-  const { app='backend', env='dev' } = useParams<{ app:string; env:string }>();
+  const { appId, aeId } = useParams<{ appId: string; aeId: string }>();
+  const [events, setEvents] = useState<K8sEvent[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = useCallback(() => {
+    if (!aeId) return;
+    setLoading(true);
+    setError('');
+    apiFetch(`/application-environments/${aeId}/events`)
+      .then(setEvents)
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [aeId]);
+
+  useEffect(() => { load(); }, [load]);
 
   return (
     <div>
-      <div className="mono" style={{ fontSize:11, color:'var(--text-3)', marginBottom:6 }}>{app} / {env.toUpperCase()} / events</div>
-      <h1 style={{ fontSize:22, fontWeight:600, margin:'0 0 20px' }}>Kubernetes Events</h1>
+      <div className="mono" style={{ fontSize:11, color:'var(--text-3)', marginBottom:6 }}>{appId} / events</div>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
+        <h1 style={{ fontSize:22, fontWeight:600, margin:0 }}>Kubernetes Events</h1>
+        <button onClick={load} disabled={loading} className="btn-ghost" style={{ fontSize:12, padding:'7px 14px', borderRadius:8, border:'1px solid var(--border)', cursor: loading ? 'not-allowed' : 'pointer' }}>
+          {loading ? 'A atualizar…' : 'Atualizar ↻'}
+        </button>
+      </div>
+
+      {error && (
+        <div style={{ marginBottom:14, padding:'10px 14px', borderRadius:9, background:'rgba(241,85,108,.08)', border:'1px solid rgba(241,85,108,.3)', fontSize:12.5, color:'#ff8497' }}>{error}</div>
+      )}
 
       <div style={{ border:'1px solid var(--border)', borderRadius:14, background:'var(--surface)', overflow:'hidden' }}>
         <div style={{ display:'grid', gridTemplateColumns:'70px 110px 220px 1fr 50px', gap:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:10.5, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-3)' }}>
           <span>Type</span><span>Reason</span><span>Object</span><span>Message</span><span style={{ textAlign:'right' }}>Age</span>
         </div>
-        {EVENTS.map((e, i) => (
-          <div key={i} style={{ display:'grid', gridTemplateColumns:'70px 110px 220px 1fr 50px', gap:12, padding:'11px 18px', borderBottom: i < EVENTS.length-1 ? '1px solid var(--border-soft)' : 'none', alignItems:'start', fontSize:12 }}>
+        {events.map((e, i) => (
+          <div key={i} style={{ display:'grid', gridTemplateColumns:'70px 110px 220px 1fr 50px', gap:12, padding:'11px 18px', borderBottom: i < events.length-1 ? '1px solid var(--border-soft)' : 'none', alignItems:'start', fontSize:12 }}>
             <span style={{ color: e.type==='Warning' ? '#ecc26b' : '#5dd57b', fontSize:11, fontWeight:600 }}>{e.type}</span>
             <span className="mono" style={{ fontSize:11.5 }}>{e.reason}</span>
-            <span className="mono" style={{ fontSize:11, color:'var(--text-2)', wordBreak:'break-all' }}>{e.obj}</span>
-            <span style={{ fontSize:12, color: e.type==='Warning' ? '#ecc26b' : 'var(--text-2)', lineHeight:1.5 }}>{e.msg}</span>
-            <span className="mono" style={{ fontSize:11, color:'var(--text-3)', textAlign:'right' }}>{e.age}</span>
+            <span className="mono" style={{ fontSize:11, color:'var(--text-2)', wordBreak:'break-all' }}>{e.object_ref}</span>
+            <span style={{ fontSize:12, color: e.type==='Warning' ? '#ecc26b' : 'var(--text-2)', lineHeight:1.5 }}>{e.message}</span>
+            <span className="mono" style={{ fontSize:11, color:'var(--text-3)', textAlign:'right' }}>{age(e.last_timestamp)}</span>
           </div>
         ))}
+        {events.length === 0 && !loading && (
+          <div style={{ padding:'28px 18px', textAlign:'center', color:'var(--text-3)', fontSize:12.5 }}>Sem eventos recentes.</div>
+        )}
       </div>
     </div>
   );

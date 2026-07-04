@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -15,6 +16,13 @@ from backend.api.schemas.visibility import (
     DeploymentVersionDetail,
     EnvironmentListItem,
     HomepageResponse,
+    K8sEvent,
+    LogLine,
+    LogsResponse,
+    PodListResponse,
+    PodStatus,
+    UpToDateResponse,
+    UpToDateStatus,
 )
 from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
@@ -26,7 +34,15 @@ from backend.bd.models.project import Project
 from backend.bd.models.user import User
 from backend.services.cluster_validation import get_cluster_token
 from backend.services.deploy_pipeline import compute_lifecycle_status
-from backend.services.kubernetes_reader import pod_health_snapshot
+from backend.services.eks_discovery import EKSClusterInfo
+from backend.services.gitops_scanner import resolve_branch_head
+from backend.services.kubernetes_reader import (
+    get_pod_logs,
+    list_events_in_namespace,
+    list_pods_in_namespace,
+    pod_health_snapshot,
+    pod_metrics,
+)
 
 router = APIRouter(tags=["visibility"])
 
@@ -60,6 +76,32 @@ def _get_project_or_404(db: Session, project_id: uuid.UUID) -> Project:
     if p is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     return p
+
+
+def _get_ae_or_404(db: Session, ae_id: uuid.UUID) -> ApplicationEnvironment:
+    ae = db.get(ApplicationEnvironment, ae_id)
+    if ae is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ApplicationEnvironment not found")
+    return ae
+
+
+def _resolve_cluster_and_namespace(db: Session, ae: ApplicationEnvironment) -> tuple[EKSClusterInfo, str]:
+    """Live-read prerequisite shared by refresh/pods/logs/events: auth to the project's
+    cluster and resolve the environment's namespace. Raises HTTPException(503) if unset up."""
+    env = db.get(Environment, ae.environment_id)
+    cluster_ctx = db.query(ClusterContext).filter(ClusterContext.project_id == env.project_id).first()
+    if cluster_ctx is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Cluster não configurado")
+    try:
+        eks_info = get_cluster_token(
+            iam_role_arn=cluster_ctx.iam_role_arn,
+            external_id=cluster_ctx.external_id,
+            cluster_arn=cluster_ctx.cluster_arn,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Falha ao ligar ao cluster: {e}")
+    namespace = env.namespace or env.name.lower()
+    return eks_info, namespace
 
 
 def _latest_versions_subquery(db: Session, app_env_ids: list[uuid.UUID] | None = None):
@@ -176,9 +218,7 @@ def get_application_environment(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    ae = db.get(ApplicationEnvironment, ae_id)
-    if ae is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ApplicationEnvironment not found")
+    ae = _get_ae_or_404(db, ae_id)
 
     latest = _latest_versions_subquery(db, [ae_id]).first()
     if latest is not None:
@@ -206,9 +246,7 @@ def get_ae_history(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    ae = db.get(ApplicationEnvironment, ae_id)
-    if ae is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ApplicationEnvironment not found")
+    _get_ae_or_404(db, ae_id)
 
     return (
         db.query(DeploymentVersion)
@@ -232,9 +270,7 @@ def refresh_application_environment(
 ):
     """Live pod read for the current version's health — only source that catches a pod
     that died and restarted between deploys, since no observer runs after a request ends."""
-    ae = db.get(ApplicationEnvironment, ae_id)
-    if ae is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ApplicationEnvironment not found")
+    ae = _get_ae_or_404(db, ae_id)
 
     latest = _latest_versions_subquery(db, [ae_id]).first()
     if latest is not None and latest.lifecycle_status not in _TERMINAL_STATUSES:
@@ -265,6 +301,110 @@ def refresh_application_environment(
         enabled=ae.enabled,
         current_version=DeploymentVersionDetail.model_validate(latest) if latest else None,
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /application-environments/{id}/pods — live K8s read
+# ---------------------------------------------------------------------------
+
+@router.get("/application-environments/{ae_id}/pods", response_model=PodListResponse)
+def get_pods(
+    ae_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ae = _get_ae_or_404(db, ae_id)
+    eks_info, namespace = _resolve_cluster_and_namespace(db, ae)
+
+    pod_list = list_pods_in_namespace(eks_info, namespace)
+
+    metrics_available = True
+    try:
+        metrics = pod_metrics(eks_info, namespace)
+    except Exception:
+        metrics_available = False
+        metrics = {}
+
+    pods = [
+        PodStatus(
+            name=p.metadata.name,
+            phase=p.status.phase,
+            ready=f"{p.status.ready_count}/{p.status.container_count}",
+            restart_count=p.status.restart_count,
+            node_name=p.spec.node_name,
+            creation_timestamp=p.metadata.creation_timestamp,
+            cpu=metrics.get(p.metadata.name, {}).get("cpu"),
+            memory=metrics.get(p.metadata.name, {}).get("memory"),
+        )
+        for p in pod_list.items
+    ]
+    return PodListResponse(pods=pods, metrics_available=metrics_available)
+
+
+# ---------------------------------------------------------------------------
+# GET /application-environments/{id}/events — live K8s read
+# ---------------------------------------------------------------------------
+
+@router.get("/application-environments/{ae_id}/events", response_model=list[K8sEvent])
+def get_events(
+    ae_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ae = _get_ae_or_404(db, ae_id)
+    eks_info, namespace = _resolve_cluster_and_namespace(db, ae)
+
+    event_list = list_events_in_namespace(eks_info, namespace)
+    return [
+        K8sEvent(
+            type=e.type,
+            reason=e.reason,
+            object_ref=e.object_ref,
+            message=e.message,
+            last_timestamp=e.last_timestamp,
+        )
+        for e in event_list.items
+    ]
+
+
+# ---------------------------------------------------------------------------
+# GET /application-environments/{id}/logs?pod=...&tail=... — live K8s read
+# ---------------------------------------------------------------------------
+
+# ISO-ish timestamp ("2024-01-05T16:03:05" or "16:03:05") followed by an optional
+# level word, then the rest of the line. Best-effort per line — no match means "RAW".
+_LOG_LINE_RE = re.compile(
+    r"^(?P<ts>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?|\d{2}:\d{2}:\d{2})?"
+    r"\s*(?P<level>DEBUG|INFO|WARN(?:ING)?|ERROR|CRITICAL|FATAL)?\s*[:\-]?\s*(?P<msg>.*)$",
+    re.IGNORECASE,
+)
+
+
+def _parse_log_line(line: str) -> LogLine:
+    m = _LOG_LINE_RE.match(line)
+    if not m or (not m.group("ts") and not m.group("level")):
+        return LogLine(timestamp=None, level="RAW", message=line)
+    return LogLine(
+        timestamp=m.group("ts"),
+        level=m.group("level").upper() if m.group("level") else None,
+        message=m.group("msg") or line,
+    )
+
+
+@router.get("/application-environments/{ae_id}/logs", response_model=LogsResponse)
+def get_logs(
+    ae_id: uuid.UUID,
+    pod: str = Query(..., description="Pod name — from GET .../pods"),
+    tail: int = Query(default=500, ge=1, le=5000),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ae = _get_ae_or_404(db, ae_id)
+    eks_info, namespace = _resolve_cluster_and_namespace(db, ae)
+
+    raw = get_pod_logs(eks_info, namespace, pod, tail_lines=tail)
+    lines = [_parse_log_line(line) for line in raw.splitlines() if line]
+    return LogsResponse(pod_name=pod, lines=lines)
 
 
 # ---------------------------------------------------------------------------
@@ -363,4 +503,48 @@ def get_homepage(
         degraded_count=degraded_count,
         deploys_today=deploys_today,
         applications=applications,
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /application-environments/{id}/up-to-date — DEV-10.3, one live GitHub call
+# ---------------------------------------------------------------------------
+
+def compute_up_to_date(argocd_sync_revision: str | None, gitops_head_sha: str | None) -> UpToDateStatus:
+    """Pure: three-state comparison. A missing input on either side means we can't
+    know — never collapse that into Outdated, that would read as a false alarm."""
+    if argocd_sync_revision is None or gitops_head_sha is None:
+        return UpToDateStatus.UNKNOWN
+    return UpToDateStatus.UP_TO_DATE if argocd_sync_revision == gitops_head_sha else UpToDateStatus.OUTDATED
+
+
+@router.get("/application-environments/{ae_id}/up-to-date", response_model=UpToDateResponse)
+def get_up_to_date(
+    ae_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ae = _get_ae_or_404(db, ae_id)
+
+    latest = _latest_versions_subquery(db, [ae_id]).first()
+    if latest is None or latest.argocd_sync_revision is None:
+        return UpToDateResponse(status=UpToDateStatus.UNKNOWN, reason="Sem argocd_sync_revision para esta versão")
+
+    env = db.get(Environment, ae.environment_id)
+    project = db.get(Project, env.project_id)
+    if not project.git_ops_repository_url or not env.gitops_branch:
+        return UpToDateResponse(status=UpToDateStatus.UNKNOWN, reason="GitOps branch ou repositório não configurados")
+
+    head_sha = resolve_branch_head(project.git_ops_repository_url, env.gitops_branch)
+    if head_sha is None:
+        return UpToDateResponse(
+            status=UpToDateStatus.UNKNOWN,
+            argocd_sync_revision=latest.argocd_sync_revision,
+            reason="Não foi possível resolver o HEAD da branch GitOps via GitHub",
+        )
+
+    return UpToDateResponse(
+        status=compute_up_to_date(latest.argocd_sync_revision, head_sha),
+        gitops_head_sha=head_sha,
+        argocd_sync_revision=latest.argocd_sync_revision,
     )

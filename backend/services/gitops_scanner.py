@@ -116,3 +116,19 @@ def path_exists(repo_url: str, path: str, branch: str = "main") -> bool:
         timeout=10,
     )
     return resp.status_code == 200
+
+
+def resolve_branch_head(repo_url: str, branch: str) -> str | None:
+    """Current HEAD commit SHA for a branch. Returns None on any failure (network,
+    rate limit, unknown repo/branch) — callers must not treat None as a real mismatch."""
+    owner, repo = _parse_owner_repo(repo_url)
+    try:
+        resp = requests.get(
+            f"https://api.github.com/repos/{owner}/{repo}/commits/{branch}",
+            headers=_github_headers(),
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return resp.json()["sha"]
+    except Exception:
+        return None

@@ -367,6 +367,7 @@ def create_environments(
         env.namespace = env_data.namespace
         env.git_ops_base_path = env_data.git_ops_base_path
         env.source_branch = env_data.source_branch
+        env.gitops_branch = env_data.gitops_branch
         env.requires_approval = env_data.requires_approval
         env.approval_required_role = env_data.approval_required_role
         env.deployment_order = env_data.deployment_order
@@ -409,13 +410,13 @@ def _run_environment_validations(
     else:
         v.namespace_status = ValidationStatus.VALID  # skipped — no cluster yet or no namespace set
 
-    # 2. Branch check via GitHub
-    if git_ops_url and env.source_branch:
+    # 2. Branch check via GitHub — gitops_branch, this validates the GitOps repo, not the app repo
+    if git_ops_url and env.gitops_branch:
         try:
-            ok = validate_branch(git_ops_url, env.source_branch)
+            ok = validate_branch(git_ops_url, env.gitops_branch)
             v.branch_status = ValidationStatus.VALID if ok else ValidationStatus.INVALID
             if not ok:
-                v.branch_error = f"Branch '{env.source_branch}' not found in {git_ops_url}"
+                v.branch_error = f"Branch '{env.gitops_branch}' not found in {git_ops_url}"
         except Exception as e:
             v.branch_status = ValidationStatus.INVALID
             v.branch_error = str(e)
@@ -423,12 +424,12 @@ def _run_environment_validations(
         v.branch_status = ValidationStatus.VALID
 
     # 3. GitOps path check via GitHub
-    if git_ops_url and env.git_ops_base_path and env.source_branch:
+    if git_ops_url and env.git_ops_base_path and env.gitops_branch:
         try:
-            ok = path_exists(git_ops_url, env.git_ops_base_path, env.source_branch)
+            ok = path_exists(git_ops_url, env.git_ops_base_path, env.gitops_branch)
             v.git_ops_path_status = ValidationStatus.VALID if ok else ValidationStatus.INVALID
             if not ok:
-                v.git_ops_path_error = f"Path '{env.git_ops_base_path}' not found on branch '{env.source_branch}'"
+                v.git_ops_path_error = f"Path '{env.git_ops_base_path}' not found on branch '{env.gitops_branch}'"
         except Exception as e:
             v.git_ops_path_status = ValidationStatus.INVALID
             v.git_ops_path_error = str(e)

@@ -36,6 +36,7 @@ class Environment(Base):
     namespace: Mapped[str | None] = mapped_column(String(255))
     git_ops_base_path: Mapped[str | None] = mapped_column(String(512))
     source_branch: Mapped[str | None] = mapped_column(String(255))
+    gitops_branch: Mapped[str | None] = mapped_column(String(255))
     requires_approval: Mapped[bool] = mapped_column(Boolean(), server_default="false")
     approval_required_role: Mapped[TeamMemberRole | None] = mapped_column(_approval_role_enum)
     deployment_order: Mapped[int] = mapped_column(Integer())

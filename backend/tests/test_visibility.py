@@ -8,6 +8,7 @@ Covers: _latest_versions_subquery correctness, all 6 endpoints, edge cases
 import os
 import uuid
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -407,3 +408,136 @@ class TestHomepage:
         token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
         r = client.get(f"/projects/{uuid.uuid4()}/homepage", headers=_auth(token))
         assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# DEV-10.2 — best-effort log line parser
+# ---------------------------------------------------------------------------
+
+class TestParseLogLine:
+    def test_structured_iso_timestamp_and_level(self):
+        from backend.api.routes.visibility import _parse_log_line
+
+        line = _parse_log_line("2024-01-05T16:03:05Z INFO Server listening on :8080")
+        assert line.level == "INFO"
+        assert line.timestamp == "2024-01-05T16:03:05Z"
+        assert "Server listening" in line.message
+
+    def test_time_only_with_colon_separator(self):
+        from backend.api.routes.visibility import _parse_log_line
+
+        line = _parse_log_line("16:03:18 ERROR: Failed to publish event")
+        assert line.level == "ERROR"
+        assert line.timestamp == "16:03:18"
+
+    def test_unstructured_print_falls_back_to_raw(self):
+        from backend.api.routes.visibility import _parse_log_line
+
+        line = _parse_log_line("just a raw stdout line with no timestamp")
+        assert line.level == "RAW"
+        assert line.timestamp is None
+        assert line.message == "just a raw stdout line with no timestamp"
+
+
+# ---------------------------------------------------------------------------
+# DEV-10.3 — Up To Date three-state comparison
+# ---------------------------------------------------------------------------
+
+class TestComputeUpToDate:
+    def test_matching_shas_is_up_to_date(self):
+        from backend.api.routes.visibility import compute_up_to_date
+        from backend.api.schemas.visibility import UpToDateStatus
+
+        assert compute_up_to_date("abc123", "abc123") == UpToDateStatus.UP_TO_DATE
+
+    def test_different_shas_is_outdated(self):
+        from backend.api.routes.visibility import compute_up_to_date
+        from backend.api.schemas.visibility import UpToDateStatus
+
+        assert compute_up_to_date("abc123", "def456") == UpToDateStatus.OUTDATED
+
+    def test_missing_argocd_sync_revision_is_unknown(self):
+        from backend.api.routes.visibility import compute_up_to_date
+        from backend.api.schemas.visibility import UpToDateStatus
+
+        assert compute_up_to_date(None, "def456") == UpToDateStatus.UNKNOWN
+
+    def test_missing_gitops_head_is_unknown_not_outdated(self):
+        """A failed/unresolved GitHub lookup must never read as a real mismatch."""
+        from backend.api.routes.visibility import compute_up_to_date
+        from backend.api.schemas.visibility import UpToDateStatus
+
+        assert compute_up_to_date("abc123", None) == UpToDateStatus.UNKNOWN
+
+
+class TestUpToDateEndpoint:
+    def test_no_current_version_returns_unknown(self, client, db_session):
+        _, _, _, _, _, ae = _setup_chain(db_session)
+        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+
+        r = client.get(f"/application-environments/{ae.id}/up-to-date", headers=_auth(token))
+        assert r.status_code == 200
+        assert r.json()["status"] == "Unknown"
+
+    def test_no_argocd_sync_revision_returns_unknown(self, client, db_session):
+        _, _, _, _, _, ae = _setup_chain(db_session)
+        _make_version(db_session, ae, LifecycleStatus.HEALTHY)
+        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+
+        r = client.get(f"/application-environments/{ae.id}/up-to-date", headers=_auth(token))
+        assert r.status_code == 200
+        assert r.json()["status"] == "Unknown"
+
+    def test_missing_gitops_branch_returns_unknown(self, client, db_session):
+        _, _, project, _, _, ae = _setup_chain(db_session)
+        project.git_ops_repository_url = "https://github.com/org/gitops"
+        v = _make_version(db_session, ae, LifecycleStatus.HEALTHY)
+        v.argocd_sync_revision = "abc123"
+        db_session.flush()
+        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+
+        r = client.get(f"/application-environments/{ae.id}/up-to-date", headers=_auth(token))
+        assert r.status_code == 200
+        assert r.json()["status"] == "Unknown"
+
+    def test_matching_head_returns_up_to_date(self, client, db_session):
+        _, _, project, env, _, ae = _setup_chain(db_session)
+        project.git_ops_repository_url = "https://github.com/org/gitops"
+        env.gitops_branch = "main"
+        v = _make_version(db_session, ae, LifecycleStatus.HEALTHY)
+        v.argocd_sync_revision = "abc123"
+        db_session.flush()
+        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+
+        with patch("backend.api.routes.visibility.resolve_branch_head", return_value="abc123"):
+            r = client.get(f"/application-environments/{ae.id}/up-to-date", headers=_auth(token))
+        assert r.status_code == 200
+        assert r.json()["status"] == "UpToDate"
+
+    def test_diverging_head_returns_outdated(self, client, db_session):
+        _, _, project, env, _, ae = _setup_chain(db_session)
+        project.git_ops_repository_url = "https://github.com/org/gitops"
+        env.gitops_branch = "main"
+        v = _make_version(db_session, ae, LifecycleStatus.HEALTHY)
+        v.argocd_sync_revision = "abc123"
+        db_session.flush()
+        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+
+        with patch("backend.api.routes.visibility.resolve_branch_head", return_value="def456"):
+            r = client.get(f"/application-environments/{ae.id}/up-to-date", headers=_auth(token))
+        assert r.status_code == 200
+        assert r.json()["status"] == "Outdated"
+
+    def test_github_lookup_failure_returns_unknown(self, client, db_session):
+        _, _, project, env, _, ae = _setup_chain(db_session)
+        project.git_ops_repository_url = "https://github.com/org/gitops"
+        env.gitops_branch = "main"
+        v = _make_version(db_session, ae, LifecycleStatus.HEALTHY)
+        v.argocd_sync_revision = "abc123"
+        db_session.flush()
+        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+
+        with patch("backend.api.routes.visibility.resolve_branch_head", return_value=None):
+            r = client.get(f"/application-environments/{ae.id}/up-to-date", headers=_auth(token))
+        assert r.status_code == 200
+        assert r.json()["status"] == "Unknown"
