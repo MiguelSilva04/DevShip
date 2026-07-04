@@ -95,10 +95,30 @@ def trigger_deploy(db, request: DeploymentRequest, environment: Environment, app
         timeout=15,
     )
     response.raise_for_status()
-    data = response.json()
-    request.github_workflow_run_id = data.get("workflow_run_id") or data.get("id")
+    # workflow_dispatch returns 204 No Content — resolve the run_id by polling for the newest run
+    request.github_workflow_run_id = _resolve_run_id(owner, repo, workflow_file, environment.source_branch or "main")
     request.status = RequestStatus.RUNNING
     db.commit()
+
+
+def _resolve_run_id(owner: str, repo: str, workflow_file: str, branch: str) -> int | None:
+    """Poll until GitHub registers the new workflow run (usually < 5s after dispatch)."""
+    for _ in range(10):
+        time.sleep(2)
+        try:
+            r = http.get(
+                f"https://api.github.com/repos/{owner}/{repo}/actions/workflows/{workflow_file}/runs",
+                headers=_github_headers(),
+                params={"branch": branch, "per_page": 1},
+                timeout=10,
+            )
+            r.raise_for_status()
+            runs = r.json().get("workflow_runs", [])
+            if runs:
+                return runs[0]["id"]
+        except Exception:
+            pass
+    return None
 
 
 def _emit_event(db, version: DeploymentVersion, event_type: DeploymentEventType, source: EventSource, message: str = None) -> None:
@@ -113,11 +133,17 @@ def _emit_event(db, version: DeploymentVersion, event_type: DeploymentEventType,
     db.commit()
 
 
+_ARGOCD_MAX_MISSES = 20   # ~60s of consecutive failures before giving up on ArgoCD
+_FATAL_POD_REASONS = {"CrashLoopBackOff", "ErrImagePull", "ImagePullBackOff", "OOMKilled", "Error"}
+
+
 def observe_deployment(deployment_request_id: uuid.UUID) -> None:
     """
-    BackgroundTask entry point. Opens its own SessionLocal — the request session is gone.
-    Polls GitHub → ArgoCD → K8s Deployment → K8s Pods in sequence.
-    Timeout: 15 min. On any terminal failure: marks request FAILED, returns.
+    BackgroundTask entry point. Opens its own SessionLocal.
+    Phases: GitHub CI → (ArgoCD sync, optional) → K8s rollout → Pod readiness.
+    ArgoCD is treated as optional: if unreachable for _ARGOCD_MAX_MISSES polls,
+    we skip to K8s observation and emit GITOPS_UPDATED as a best-effort event.
+    All errors are emitted as events so the UI shows what went wrong.
     """
     db = SessionLocal()
     try:
@@ -128,10 +154,8 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
         app_env = db.get(ApplicationEnvironment, req.application_environment_id)
         env = db.get(Environment, app_env.environment_id)
         app = db.get(Application, app_env.application_id)
-
         cluster_ctx = db.query(ClusterContext).filter(ClusterContext.project_id == env.project_id).first()
 
-        # Create the DeploymentVersion now (lifecycle_status=Deploying by default, DEV-10 owns the rest)
         version = DeploymentVersion(
             application_environment_id=app_env.id,
             deployment_request_id=req.id,
@@ -143,10 +167,16 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
         deadline = time.monotonic() + _TIMEOUT
         owner, repo = _parse_github_repo(app.source_repository)
 
-        # ── 1. Wait for GitHub Actions run to complete ────────────────────────
+        # ── 1. GitHub Actions CI ──────────────────────────────────────────────
         _emit_event(db, version, DeploymentEventType.WORKFLOW_STARTED, EventSource.GITHUB)
 
         run_id = req.github_workflow_run_id
+        if not run_id:
+            _emit_event(db, version, DeploymentEventType.IMAGE_BUILD_FAILED, EventSource.GITHUB,
+                        message="Não foi possível obter o run_id do workflow — verifica o GITHUB_TOKEN.")
+            _fail_request(db, req, "github_workflow_run_id não resolvido")
+            return
+
         while time.monotonic() < deadline:
             time.sleep(_POLL_INTERVAL)
             try:
@@ -158,7 +188,6 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                 run = r.json()
                 if run["status"] == "completed":
                     if run["conclusion"] == "success":
-                        # Extract image tag from run name or just use SHA
                         head_sha = run.get("head_sha", "")
                         run_number = run.get("run_number")
                         version.image_tag = f"{head_sha[:7]}-{run_number}" if head_sha and run_number else None
@@ -169,8 +198,8 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                         break
                     else:
                         _emit_event(db, version, DeploymentEventType.IMAGE_BUILD_FAILED, EventSource.GITHUB,
-                                    message=f"Run {run_id} concluded: {run['conclusion']}")
-                        _fail_request(db, req, f"GitHub Actions run {run_id} failed: {run['conclusion']}")
+                                    message=f"Workflow run {run_id} terminou com: {run['conclusion']}")
+                        _fail_request(db, req, f"GitHub Actions falhou: {run['conclusion']}")
                         return
             except Exception as e:
                 _emit_event(db, version, DeploymentEventType.IMAGE_BUILD_FAILED, EventSource.GITHUB, message=str(e))
@@ -181,26 +210,36 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
             return
 
         if cluster_ctx is None:
-            # No cluster configured — can't observe K8s/ArgoCD, mark success as far as we can tell
+            _emit_event(db, version, DeploymentEventType.GITOPS_UPDATED, EventSource.GITHUB,
+                        message="Cluster não configurado — pipeline termina após CI.")
             req.status = RequestStatus.SUCCESS
             req.completed_at = datetime.now(timezone.utc)
             db.commit()
             return
 
-        eks_info = get_cluster_token(
-            iam_role_arn=cluster_ctx.iam_role_arn,
-            external_id=cluster_ctx.external_id,
-            cluster_arn=cluster_ctx.cluster_arn,
-        )
+        try:
+            eks_info = get_cluster_token(
+                iam_role_arn=cluster_ctx.iam_role_arn,
+                external_id=cluster_ctx.external_id,
+                cluster_arn=cluster_ctx.cluster_arn,
+            )
+        except Exception as e:
+            _emit_event(db, version, DeploymentEventType.SYNC_FAILED, EventSource.KUBERNETES,
+                        message=f"Erro ao obter token do cluster: {e}")
+            _fail_request(db, req, f"Falha de autenticação no cluster: {e}")
+            return
 
-        # ── 2. ArgoCD sync ────────────────────────────────────────────────────
+        # ── 2. ArgoCD sync (opcional) ─────────────────────────────────────────
         argocd_app_name = f"{app.name}-{env.name}"
-        sync_phase_seen = set()
+        sync_phase_seen: set[str] = set()
+        argocd_misses = 0
+        argocd_available = True
 
-        while time.monotonic() < deadline:
+        while time.monotonic() < deadline and argocd_available:
             time.sleep(_POLL_INTERVAL)
             try:
                 argocd_app = get_argocd_application(eks_info, argocd_app_name)
+                argocd_misses = 0
                 phase = argocd_app.status.operation_phase
 
                 if phase == "Running" and "Running" not in sync_phase_seen:
@@ -217,27 +256,35 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
 
                 if phase in ("Failed", "Error"):
                     _emit_event(db, version, DeploymentEventType.SYNC_FAILED, EventSource.ARGOCD,
-                                message=f"ArgoCD sync phase: {phase}")
-                    _fail_request(db, req, f"ArgoCD sync failed: {phase}")
+                                message=f"ArgoCD sync: {phase}")
+                    _fail_request(db, req, f"ArgoCD sync falhou: {phase}")
                     return
-            except Exception as e:
-                # ArgoCD Application may not exist yet — keep waiting until timeout
-                pass
-        else:
+
+            except Exception:
+                argocd_misses += 1
+                if argocd_misses >= _ARGOCD_MAX_MISSES:
+                    # ArgoCD não está disponível — continua para K8s directamente
+                    argocd_available = False
+                    _emit_event(db, version, DeploymentEventType.GITOPS_UPDATED, EventSource.KUBERNETES,
+                                message="ArgoCD não detectado — a observar K8s directamente.")
+
+        if argocd_available and time.monotonic() >= deadline:
             _timeout(db, req)
             return
 
         # ── 3. K8s Deployment rollout ─────────────────────────────────────────
-        namespace = env.namespace or env.name
+        namespace = env.namespace or env.name.lower()
         deployment_name = app_env.deployment_name
         rollout_started = False
         rollout_done = False
+        k8s_misses = 0
 
         while time.monotonic() < deadline:
             time.sleep(_POLL_INTERVAL)
             try:
                 dep = list_deployment(eks_info, namespace, deployment_name)
-                for c in dep.status.conditions:
+                k8s_misses = 0
+                for c in dep.status.conditions or []:
                     if c.type == "Progressing":
                         if not rollout_started and c.reason == "ReplicaSetUpdated":
                             rollout_started = True
@@ -247,16 +294,19 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                             _emit_event(db, version, DeploymentEventType.ROLLOUT_COMPLETED, EventSource.KUBERNETES)
                 if rollout_done:
                     break
-            except Exception:
-                pass
+            except Exception as e:
+                k8s_misses += 1
+                if k8s_misses == 5:
+                    _emit_event(db, version, DeploymentEventType.SYNC_FAILED, EventSource.KUBERNETES,
+                                message=f"Erro ao observar Deployment/{deployment_name}: {e}")
         else:
             _timeout(db, req)
             return
 
-        # ── 4 + 5. Pod readiness + CrashLoopBackOff ──────────────────────────
+        # ── 4. Pod readiness + erros de container ────────────────────────────
         known_pods: set[str] = set()
         ready_seen = False
-        crash_seen = False
+        failed_pods: set[str] = set()
 
         while time.monotonic() < deadline:
             time.sleep(_POLL_INTERVAL)
@@ -269,7 +319,6 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                         _emit_event(db, version, DeploymentEventType.POD_CREATED, EventSource.KUBERNETES,
                                     message=pod_name)
 
-                # Re-fetch with full detail for ready/crash checks via raw API
                 raw = http.get(
                     f"{eks_info.endpoint}/api/v1/namespaces/{namespace}/pods",
                     headers={"Authorization": f"Bearer {eks_info.bearer_token}", "x-k8s-aws-id": eks_info.name},
@@ -277,48 +326,53 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                 ).json()
 
                 for item in raw.get("items", []):
-                    # CrashLoopBackOff
+                    pod_name = item["metadata"]["name"]
+
+                    # Container waiting reasons — fatal errors
                     for cs in item.get("status", {}).get("containerStatuses", []):
                         waiting = (cs.get("state") or {}).get("waiting") or {}
-                        if not crash_seen and waiting.get("reason") == "CrashLoopBackOff":
-                            crash_seen = True
+                        reason = waiting.get("reason", "")
+                        if reason in _FATAL_POD_REASONS and pod_name not in failed_pods:
+                            failed_pods.add(pod_name)
+                            msg = waiting.get("message") or reason
                             _emit_event(db, version, DeploymentEventType.CRASH_LOOP_BACKOFF, EventSource.KUBERNETES,
-                                        message=item["metadata"]["name"])
-                            _fail_request(db, req, "CrashLoopBackOff detected")
+                                        message=f"{pod_name}: {msg}")
+                            _fail_request(db, req, f"{reason} em {pod_name}: {msg}")
                             return
 
-                    # Ready condition
+                    # Readiness
                     for cond in item.get("status", {}).get("conditions", []):
                         if cond.get("type") == "Ready":
                             if cond.get("status") == "True" and not ready_seen:
                                 ready_seen = True
                                 _emit_event(db, version, DeploymentEventType.READINESS_PASSED, EventSource.KUBERNETES,
-                                            message=item["metadata"]["name"])
+                                            message=pod_name)
                             elif cond.get("status") == "False" and ready_seen:
                                 _emit_event(db, version, DeploymentEventType.READINESS_FAILED, EventSource.KUBERNETES,
-                                            message=item["metadata"]["name"])
-                                _fail_request(db, req, "Pod readiness lost after passing")
+                                            message=f"{pod_name}: {cond.get('message', '')}")
+                                _fail_request(db, req, f"Pod {pod_name} perdeu readiness")
                                 return
 
                 if ready_seen:
                     break
-            except Exception:
-                pass
+            except Exception as e:
+                _emit_event(db, version, DeploymentEventType.READINESS_FAILED, EventSource.KUBERNETES,
+                            message=f"Erro ao observar pods: {e}")
         else:
             _timeout(db, req)
             return
 
-        # ── All stages passed → SUCCESS ───────────────────────────────────────
+        # ── SUCCESS ───────────────────────────────────────────────────────────
         req.status = RequestStatus.SUCCESS
         req.completed_at = datetime.now(timezone.utc)
         db.commit()
 
     except Exception as e:
         try:
-            db.rollback()  # clear any aborted transaction before trying to write FAILED
+            db.rollback()
             req = db.get(DeploymentRequest, deployment_request_id)
             if req and req.status == RequestStatus.RUNNING:
-                _fail_request(db, req, f"Unexpected error in observer: {e}")
+                _fail_request(db, req, f"Erro inesperado no observer: {e}")
         except Exception:
             pass
     finally:
