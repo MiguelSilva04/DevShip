@@ -22,6 +22,7 @@ class EnvironmentListItem(BaseModel):
     git_ops_base_path: Optional[str] = None
     source_branch: Optional[str] = None
     gitops_branch: Optional[str] = None
+    argocd_application_name: Optional[str] = None
     deployment_order: int
     requires_approval: bool
     approval_required_role: Optional[str] = None
@@ -35,10 +36,22 @@ class ApplicationListItem(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ProjectSummary(BaseModel):
+    id: uuid.UUID
+    name: str
+    team_name: str
+
+
 class ApplicationEnvironmentStatus(BaseModel):
     id: uuid.UUID
     environment_name: str
     lifecycle_status: Optional[LifecycleStatus] = None
+    version_label: Optional[str] = None
+    previous_version_label: Optional[str] = None
+    # Set only when there's no DeploymentVersion yet (nothing deployed via DevShip) — a
+    # live K8s read of whatever's already running in the namespace, so a freshly onboarded
+    # cluster with real workloads doesn't show "Unknown" for pods that are actually healthy.
+    discovered_status: Optional[LifecycleStatus] = None
 
 
 class ApplicationDetailResponse(BaseModel):
@@ -76,6 +89,7 @@ class DeploymentVersionDetail(BaseModel):
     trigger_source: TriggerSource
     deployed_at: Optional[datetime] = None
     created_at: datetime
+    requested_by_email: Optional[str] = None
     model_config = {"from_attributes": True}
 
 
@@ -86,6 +100,7 @@ class ApplicationEnvironmentDetail(BaseModel):
     deployment_name: str
     enabled: bool
     current_version: Optional[DeploymentVersionDetail] = None
+    discovered_status: Optional[LifecycleStatus] = None
     model_config = {"from_attributes": True}
 
 
@@ -129,3 +144,37 @@ class UpToDateResponse(BaseModel):
     gitops_head_sha: Optional[str] = None
     argocd_sync_revision: Optional[str] = None
     reason: Optional[str] = None
+
+
+class ProbeSpec(BaseModel):
+    path: Optional[str] = None
+    port: Optional[int] = None
+    initial_delay_seconds: int
+    period_seconds: int
+    timeout_seconds: int
+    success_threshold: int
+    failure_threshold: int
+
+
+class ContainerProbeStatus(BaseModel):
+    """
+    What the Kubernetes API actually exposes per container: probe config (from the pod
+    spec) plus current readiness/state (running/waiting/terminated) — not a history of
+    individual startup/readiness/liveness pass/fail results, which the API does not report.
+    """
+    pod_name: str
+    container_name: str
+    ready: bool
+    restart_count: int
+    state: str  # "Running" | "Waiting" | "Terminated"
+    reason: Optional[str] = None
+    message: Optional[str] = None
+    error_at: Optional[str] = None
+    ready_transition_at: Optional[str] = None
+    startup_probe: Optional[ProbeSpec] = None
+    readiness_probe: Optional[ProbeSpec] = None
+    liveness_probe: Optional[ProbeSpec] = None
+
+
+class HealthProbesResponse(BaseModel):
+    containers: list[ContainerProbeStatus]

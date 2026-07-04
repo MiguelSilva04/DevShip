@@ -12,6 +12,7 @@ from backend.api.schemas.deploy import (
     DeploymentRequestWithEvents,
     DeployRequest,
     RejectRequest,
+    RollbackRequest,
 )
 from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
@@ -98,6 +99,73 @@ def create_deploy(
         application_environment_id=app_env_id,
         requested_by=current_user.id,
         deployment_type=DeploymentType.STANDARD,
+        justification=body.justification,
+    )
+    db.add(req)
+    try:
+        with db.begin_nested():
+            db.flush()
+    except IntegrityError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A deploy is already in progress for this ApplicationEnvironment",
+        )
+
+    if not env.requires_approval:
+        try:
+            dp.trigger_deploy(db, req, env, app)
+        except Exception as e:
+            req.status = RequestStatus.FAILED
+            req.failure_reason = str(e)
+            req.completed_at = datetime.now(timezone.utc)
+            db.commit()
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
+        background_tasks.add_task(dp.observe_deployment, req.id)
+    else:
+        db.commit()
+
+    db.refresh(req)
+    return req
+
+
+# ---------------------------------------------------------------------------
+# POST /application-environments/{id}/rollback
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/application-environments/{app_env_id}/rollback",
+    response_model=DeploymentRequestResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_rollback(
+    app_env_id: uuid.UUID,
+    body: RollbackRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _, env, app = _require_team_member(db, app_env_id, current_user)
+
+    target = db.get(DeploymentVersion, body.deployment_version_id)
+    if target is None or target.application_environment_id != app_env_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="DeploymentVersion not found for this ApplicationEnvironment")
+    if not target.image_tag:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Target version has no image_tag — nothing to roll back to")
+
+    current = (
+        db.query(DeploymentVersion)
+        .filter(DeploymentVersion.application_environment_id == app_env_id)
+        .order_by(DeploymentVersion.created_at.desc())
+        .first()
+    )
+    if current is not None and current.id == target.id:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Target version is already the current version")
+
+    req = DeploymentRequest(
+        application_environment_id=app_env_id,
+        requested_by=current_user.id,
+        deployment_type=DeploymentType.ROLLBACK,
+        rollback_target_version_id=target.id,
         justification=body.justification,
     )
     db.add(req)

@@ -99,6 +99,7 @@ class EnvironmentCreate(BaseModel):
     git_ops_base_path: Optional[str] = None
     source_branch: Optional[str] = None
     gitops_branch: Optional[str] = None
+    argocd_application_name: Optional[str] = None
     requires_approval: bool = False
     approval_required_role: Optional[TeamMemberRole] = None
     deployment_order: int

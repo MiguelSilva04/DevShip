@@ -1,10 +1,19 @@
+import { useEffect, useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { apiFetch } from '../../api/client';
 import { useUser } from '../../context/UserContext';
 
 export default function AppLayout() {
   const nav = useNavigate();
   const loc = useLocation();
   const { user, logout: authLogout } = useUser();
+  const [project, setProject] = useState<{ name: string; team_name: string } | null>(null);
+
+  useEffect(() => {
+    const projectId = localStorage.getItem('ob_project_id');
+    if (!projectId) return;
+    apiFetch(`/projects/${projectId}`).then(setProject).catch(() => setProject(null));
+  }, []);
 
   const isCloud = user?.role === 'cloud';
   const canApprove = user?.role === 'cloud' || user?.role === 'tech';
@@ -59,9 +68,11 @@ export default function AppLayout() {
       <main style={{ flex:1, minWidth:0 }}>
         {/* Topbar */}
         <div style={{ position:'sticky', top:0, zIndex:30, display:'flex', alignItems:'center', gap:14, padding:'14px 26px', background:'rgba(15,17,23,.85)', backdropFilter:'blur(12px)', borderBottom:'1px solid var(--border)' }}>
-          <span className="mono" style={{ fontSize:13, color:'var(--text-2)' }}>
-            engineering-team <span style={{ color:'var(--text-3)' }}>/</span> <span style={{ color:'var(--text)' }}>my-project</span>
-          </span>
+          {project && (
+            <span className="mono" style={{ fontSize:13, color:'var(--text-2)' }}>
+              {project.team_name} <span style={{ color:'var(--text-3)' }}>/</span> <span style={{ color:'var(--text)' }}>{project.name}</span>
+            </span>
+          )}
           <div style={{ marginLeft:'auto', display:'flex', gap:8 }}>
             {canApprove && (
               <button onClick={() => nav('/app/approvals')} className="btn-secondary" style={{ display:'inline-flex', alignItems:'center', gap:7, fontSize:12, padding:'7px 12px', borderRadius:8 }}>

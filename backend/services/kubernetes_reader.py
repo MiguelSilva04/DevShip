@@ -223,10 +223,12 @@ def get_pod_logs(cluster: EKSClusterInfo, namespace: str, pod_name: str, tail_li
 _FATAL_POD_REASONS = {"CrashLoopBackOff", "ErrImagePull", "ImagePullBackOff", "OOMKilled", "Error"}
 
 
-def pod_health_snapshot(cluster: EKSClusterInfo, namespace: str) -> tuple[bool, list[str]]:
+def pod_health_snapshot(cluster: EKSClusterInfo, namespace: str, deployment_name: str) -> tuple[bool, list[str]]:
     """
     Raw pod read (containerStatuses/conditions aren't in parse_pods). Returns
-    (any_ready, fatal_pod_messages) for the namespace's current pods.
+    (any_ready, fatal_pod_messages) for this deployment's pods in the namespace —
+    filtered by the "{deployment_name}-" pod name prefix so one app's crashing pod
+    doesn't drag down every other app sharing the same namespace.
     """
     raw = api_request(
         endpoint=cluster.endpoint,
@@ -239,6 +241,8 @@ def pod_health_snapshot(cluster: EKSClusterInfo, namespace: str) -> tuple[bool, 
     fatal: list[str] = []
     for item in raw.get("items", []):
         pod_name = item["metadata"]["name"]
+        if not pod_name.startswith(f"{deployment_name}-"):
+            continue
         for cs in item.get("status", {}).get("containerStatuses", []):
             waiting = (cs.get("state") or {}).get("waiting") or {}
             reason = waiting.get("reason", "")
@@ -248,3 +252,85 @@ def pod_health_snapshot(cluster: EKSClusterInfo, namespace: str) -> tuple[bool, 
             if cond.get("type") == "Ready" and cond.get("status") == "True":
                 any_ready = True
     return any_ready, fatal
+
+
+def _probe_spec(container: dict, probe_key: str) -> dict | None:
+    """Extract a probe's config (path/port/delay/period/timeout/thresholds) from a
+    container spec. Returns None if the container doesn't define that probe type."""
+    probe = container.get(probe_key)
+    if probe is None:
+        return None
+    http_get = probe.get("httpGet") or {}
+    return {
+        "path": http_get.get("path"),
+        "port": http_get.get("port"),
+        "initial_delay_seconds": probe.get("initialDelaySeconds", 0),
+        "period_seconds": probe.get("periodSeconds", 10),
+        "timeout_seconds": probe.get("timeoutSeconds", 1),
+        "success_threshold": probe.get("successThreshold", 1),
+        "failure_threshold": probe.get("failureThreshold", 3),
+    }
+
+
+def container_probe_statuses(cluster: EKSClusterInfo, namespace: str, deployment_name: str) -> list[dict]:
+    """
+    Per-container probe config + current state for this deployment's pods. Probe pass/fail
+    is inferred from real signals the Kubernetes API exposes (readiness condition, waiting/
+    terminated reason, restart count) — the API does not report per-probe-type pass/fail
+    history, so "Startup"/"Liveness" status is derived, not a literal K8s field.
+    """
+    raw = api_request(
+        endpoint=cluster.endpoint,
+        path=f"/api/v1/namespaces/{namespace}/pods",
+        token=cluster.bearer_token,
+        cluster_name=cluster.name,
+        ca_file=cluster.ca_file_path,
+    )
+    results: list[dict] = []
+    for item in raw.get("items", []):
+        pod_name = item["metadata"]["name"]
+        if not pod_name.startswith(f"{deployment_name}-"):
+            continue
+
+        containers_spec = {c["name"]: c for c in item.get("spec", {}).get("containers", [])}
+        statuses_by_name = {cs.get("name", ""): cs for cs in item.get("status", {}).get("containerStatuses", [])}
+        ready_condition = next(
+            (c for c in item.get("status", {}).get("conditions", []) if c.get("type") == "Ready"),
+            {},
+        )
+
+        for name, cs in statuses_by_name.items():
+            container_spec = containers_spec.get(name, {})
+            state = cs.get("state") or {}
+            last_state = cs.get("lastState") or {}
+
+            if "running" in state:
+                state_name, reason, message, error_at = "Running", None, None, None
+            elif "waiting" in state:
+                state_name = "Waiting"
+                reason = state["waiting"].get("reason")
+                message = state["waiting"].get("message")
+                error_at = last_state.get("terminated", {}).get("finishedAt")
+            elif "terminated" in state:
+                state_name = "Terminated"
+                reason = state["terminated"].get("reason")
+                message = state["terminated"].get("message")
+                error_at = state["terminated"].get("finishedAt")
+            else:
+                state_name, reason, message, error_at = "Unknown", None, None, None
+
+            results.append({
+                "pod_name": pod_name,
+                "container_name": name,
+                "ready": bool(cs.get("ready")),
+                "restart_count": cs.get("restartCount", 0),
+                "state": state_name,
+                "reason": reason,
+                "message": message,
+                "error_at": error_at,
+                "ready_transition_at": ready_condition.get("lastTransitionTime"),
+                "startup_probe": _probe_spec(container_spec, "startupProbe"),
+                "readiness_probe": _probe_spec(container_spec, "readinessProbe"),
+                "liveness_probe": _probe_spec(container_spec, "livenessProbe"),
+            })
+    return results

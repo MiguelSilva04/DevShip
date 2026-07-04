@@ -16,11 +16,12 @@ from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
 from backend.bd.models.cluster_context import ClusterContext
 from backend.bd.models.deployment_event import DeploymentEvent, DeploymentEventType, EventSource, Severity
-from backend.bd.models.deployment_request import DeploymentRequest, RequestStatus
+from backend.bd.models.deployment_request import DeploymentRequest, DeploymentType, RequestStatus
 from backend.bd.models.deployment_version import DeploymentVersion, LifecycleStatus, TriggerSource
 from backend.bd.models.environment import Environment
 from backend.bd.session import SessionLocal
 from backend.services.cluster_validation import get_cluster_token
+from backend.services.gitops_scanner import resolve_branch_head as _resolve_branch_head
 from backend.services.kubernetes_reader import get_argocd_application, list_deployment, list_pods_in_namespace
 
 _SEVERITY = {
@@ -64,24 +65,23 @@ def _parse_github_repo(source_repository: str) -> tuple[str, str]:
     return parts[0], parts[1]
 
 
-def _resolve_branch_head(owner: str, repo: str, branch: str) -> str | None:
-    try:
-        r = http.get(
-            f"https://api.github.com/repos/{owner}/{repo}/commits/{branch}",
-            headers=_github_headers(),
-            timeout=10,
-        )
-        r.raise_for_status()
-        return r.json()["sha"]
-    except Exception:
-        return None
-
-
 def trigger_deploy(db, request: DeploymentRequest, environment: Environment, application: Application) -> None:
-    """Resolve HEAD SHA (audit), dispatch workflow, persist run_id. Commits."""
+    """Resolve HEAD SHA (audit), dispatch workflow, persist run_id. Commits.
+    For ROLLBACK requests, dispatches with action=rollback + rollback_tag instead of
+    action=deploy — the workflow skips build/push and reuses the target version's image."""
     owner, repo = _parse_github_repo(application.source_repository)
 
-    request.source_commit_sha = _resolve_branch_head(owner, repo, environment.source_branch or "main")
+    request.source_commit_sha = _resolve_branch_head(application.source_repository, environment.source_branch or "main")
+
+    if request.deployment_type == DeploymentType.ROLLBACK:
+        target = db.get(DeploymentVersion, request.rollback_target_version_id)
+        inputs = {
+            "environment": environment.name.lower(),
+            "action": "rollback",
+            "rollback_tag": target.image_tag,
+        }
+    else:
+        inputs = {"environment": environment.name.lower(), "action": "deploy"}
 
     workflow_file = application.ci_workflow_file.removeprefix(".github/workflows/")
     response = http.post(
@@ -89,7 +89,7 @@ def trigger_deploy(db, request: DeploymentRequest, environment: Environment, app
         headers=_github_headers(),
         json={
             "ref": environment.source_branch or "main",
-            "inputs": {"environment": environment.name.lower(), "action": "deploy"},
+            "inputs": inputs,
             "return_run_details": True,
         },
         timeout=15,
@@ -230,7 +230,9 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
             return
 
         # ── 2. ArgoCD sync (opcional) ─────────────────────────────────────────
-        argocd_app_name = f"{app.name}-{env.name}"
+        # O nome da Application no ArgoCD é definido pelo Terraform de cada projeto e
+        # não segue nenhuma convenção fixa — por isso é configurável por ambiente.
+        argocd_app_name = env.argocd_application_name or f"demo-app-{env.name.lower()}"
         sync_phase_seen: set[str] = set()
         argocd_misses = 0
         argocd_available = True
@@ -293,6 +295,8 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                             rollout_done = True
                             _emit_event(db, version, DeploymentEventType.ROLLOUT_COMPLETED, EventSource.KUBERNETES)
                             version.lifecycle_status = LifecycleStatus.HEALTHY
+                            version.deployed_at = datetime.now(timezone.utc)
+                            _supersede_previous_version(db, version, req.deployment_type)
                             db.commit()
                 if rollout_done:
                     break
@@ -316,6 +320,8 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                 pod_list = list_pods_in_namespace(eks_info, namespace)
                 for pod in pod_list.items:
                     pod_name = pod.metadata.name
+                    if not pod_name.startswith(f"{deployment_name}-"):
+                        continue
                     if pod_name not in known_pods:
                         known_pods.add(pod_name)
                         _emit_event(db, version, DeploymentEventType.POD_CREATED, EventSource.KUBERNETES,
@@ -329,6 +335,8 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
 
                 for item in raw.get("items", []):
                     pod_name = item["metadata"]["name"]
+                    if not pod_name.startswith(f"{deployment_name}-"):
+                        continue
 
                     # Container waiting reasons — fatal errors
                     for cs in item.get("status", {}).get("containerStatuses", []):
@@ -382,6 +390,34 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
             pass
     finally:
         db.close()
+
+
+_NON_TERMINAL_STATUSES = (LifecycleStatus.DEPLOYING, LifecycleStatus.HEALTHY, LifecycleStatus.DEGRADED)
+
+
+def _supersede_previous_version(db, new_version: DeploymentVersion, deployment_type: DeploymentType) -> None:
+    """
+    Called once the new version's rollout is confirmed complete — the point where it
+    actually replaced whatever was running. The most recent non-terminal version for the
+    same application_environment (Healthy/Degraded/Deploying) is marked RolledBack if this
+    replacement came from a ROLLBACK request, or Superseded otherwise. Versions already
+    terminal (Failed/RolledBack/Superseded) are untouched — they were already resolved.
+    """
+    previous = (
+        db.query(DeploymentVersion)
+        .filter(
+            DeploymentVersion.application_environment_id == new_version.application_environment_id,
+            DeploymentVersion.id != new_version.id,
+            DeploymentVersion.lifecycle_status.in_(_NON_TERMINAL_STATUSES),
+        )
+        .order_by(DeploymentVersion.created_at.desc())
+        .first()
+    )
+    if previous is None:
+        return
+    previous.lifecycle_status = (
+        LifecycleStatus.ROLLED_BACK if deployment_type == DeploymentType.ROLLBACK else LifecycleStatus.SUPERSEDED
+    )
 
 
 def compute_lifecycle_status(events: list[DeploymentEvent]) -> LifecycleStatus:

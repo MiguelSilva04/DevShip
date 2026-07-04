@@ -51,6 +51,7 @@ class DeploymentRequest(Base):
         Index("ix_deployment_requests_requested_by", "requested_by"),
         Index("ix_deployment_requests_approved_by", "approved_by"),
         Index("ix_deployment_requests_status", "status"),
+        Index("ix_deployment_requests_rollback_target_version_id", "rollback_target_version_id"),
         Index(
             "uq_deployment_requests_in_flight",
             "application_environment_id",
@@ -79,6 +80,12 @@ class DeploymentRequest(Base):
     # Commit SHA requested at the time of the request (what the user asked to deploy).
     source_commit_sha: Mapped[str | None] = mapped_column(String(40))
     deployment_type: Mapped[DeploymentType] = mapped_column(_deployment_type_enum)
+    # Only set when deployment_type == ROLLBACK — the DeploymentVersion (TO) chosen to
+    # revert to. trigger_deploy() reads its image_tag as the workflow's rollback_tag input.
+    rollback_target_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("deployment_versions.id", ondelete="SET NULL"),
+    )
     github_workflow_run_id: Mapped[int | None] = mapped_column(BigInteger())
     status: Mapped[RequestStatus] = mapped_column(
         _request_status_enum, server_default=text("'PENDING'")

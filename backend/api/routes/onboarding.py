@@ -368,6 +368,7 @@ def create_environments(
         env.git_ops_base_path = env_data.git_ops_base_path
         env.source_branch = env_data.source_branch
         env.gitops_branch = env_data.gitops_branch
+        env.argocd_application_name = env_data.argocd_application_name
         env.requires_approval = env_data.requires_approval
         env.approval_required_role = env_data.approval_required_role
         env.deployment_order = env_data.deployment_order

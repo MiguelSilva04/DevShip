@@ -29,6 +29,7 @@ interface DeploymentVersionDetail {
   lifecycle_status: LifecycleStatus;
   deployed_at: string | null;
   created_at: string;
+  requested_by_email: string | null;
 }
 
 interface AEDetail {
@@ -38,6 +39,7 @@ interface AEDetail {
   deployment_name: string;
   enabled: boolean;
   current_version: DeploymentVersionDetail | null;
+  discovered_status: LifecycleStatus | null;
 }
 
 function statusPill(s: LifecycleStatus | null) {
@@ -103,7 +105,7 @@ export default function EnvDetail() {
   if (!data) return <Spinner />;
 
   const cv = data.current_version;
-  const status = cv?.lifecycle_status ?? null;
+  const status = cv?.lifecycle_status ?? data.discovered_status ?? null;
   const p = statusPill(status);
   const label = envName || data.deployment_name;
 
@@ -122,35 +124,32 @@ export default function EnvDetail() {
             {status}
           </span>
         )}
-        {upToDate && (() => {
-          const u = upToDatePill(upToDate.status);
-          return (
-            <span
-              title={upToDate.reason ?? undefined}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 12px', borderRadius: 999, fontSize: 12, background: u.bg, color: u.col, border: `1px solid ${u.bord}` }}
-            >
-              {u.label}
-            </span>
-          );
-        })()}
-        <button
-          onClick={loadUpToDate}
-          disabled={utdLoading}
-          className="btn-ghost"
-          style={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border)', cursor: utdLoading ? 'not-allowed' : 'pointer', color: 'var(--text-3)' }}
-        >
-          {utdLoading ? '…' : '↻'}
-        </button>
       </div>
 
-      <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap', marginBottom: 22 }}>
-        <button
-          onClick={() => nav(`/app/${appId}/${aeId}/deploy`)}
-          className="btn-primary hover-bright"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, padding: '9px 16px', borderRadius: 8 }}
-        >
-          <UpArrow /> {requiresApproval ? 'Solicitar deploy →' : 'Deploy →'}
-        </button>
+      <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap', alignItems: 'center', marginBottom: 22 }}>
+        {upToDate?.status === 'UpToDate' ? (() => {
+          const u = upToDatePill(upToDate.status);
+          return (
+            <button
+              onClick={loadUpToDate}
+              disabled={utdLoading}
+              title={upToDate.reason ?? undefined}
+              className="btn-ghost"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, padding: '9px 14px', borderRadius: 8, background: u.bg, color: u.col, border: `1px solid ${u.bord}`, cursor: utdLoading ? 'not-allowed' : 'pointer' }}
+            >
+              {utdLoading ? '…' : u.label}
+            </button>
+          );
+        })() : (
+          <button
+            onClick={() => nav(`/app/${appId}/${aeId}/deploy`)}
+            className="btn-primary hover-bright"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, padding: '9px 16px', borderRadius: 8 }}
+          >
+            <UpArrow /> {requiresApproval ? 'Solicitar deploy →' : 'Deploy →'}
+          </button>
+        )}
+        <button onClick={() => nav(`/app/${appId}/${aeId}/rollback`)} className="btn-ghost" style={{ fontSize: 12.5, padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)' }}>Rollback</button>
         <button onClick={() => nav(`/app/${appId}/${aeId}/history`)} className="btn-ghost" style={{ fontSize: 12.5, padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)' }}>Histórico</button>
         <button onClick={() => setTechOpen(v => !v)} className="btn-ghost" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)' }}>
           <span style={{ color: 'var(--text-3)', fontSize: 10 }}>{techOpen ? '▼' : '▶'}</span> Ver detalhes técnicos
@@ -174,7 +173,9 @@ export default function EnvDetail() {
               {([
                 ['Version', cv.version_label ?? cv.image_tag ?? '—', 'var(--teal)'],
                 ['Commit', cv.source_commit_sha ? cv.source_commit_sha.slice(0, 7) : '—', ''],
-                ['Deployed at', cv.deployed_at ? new Date(cv.deployed_at).toLocaleString() : '—', ''],
+                [`HEAD (${label.toUpperCase()})`, upToDate?.gitops_head_sha ? upToDate.gitops_head_sha.slice(0, 7) : '—', ''],
+                ['Started', cv.deployed_at ? new Date(cv.deployed_at).toLocaleString() : '—', ''],
+                ['Autor', cv.requested_by_email ?? '—', ''],
               ] as [string, string, string][]).map(([k, v, c]) => (
                 <div key={k} style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ color: 'var(--text-3)' }}>{k}</span>

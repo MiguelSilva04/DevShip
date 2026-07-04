@@ -8,6 +8,9 @@ interface AEStatus {
   id: string;
   environment_name: string;
   lifecycle_status: LifecycleStatus | null;
+  version_label: string | null;
+  previous_version_label: string | null;
+  discovered_status: LifecycleStatus | null;
 }
 
 interface AppWithStatus {
@@ -38,6 +41,10 @@ function statusPill(s: LifecycleStatus | null) {
 
 function isActive(s: LifecycleStatus | null) {
   return s === 'Deploying';
+}
+
+function effectiveStatus(ae: AEStatus): LifecycleStatus | null {
+  return ae.lifecycle_status ?? ae.discovered_status;
 }
 
 export default function Home() {
@@ -89,10 +96,10 @@ export default function Home() {
             <span style={{ fontSize: 14.5, fontWeight: 600 }}>{app.name}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
               {app.environments.map(ae => {
-                const p = statusPill(ae.lifecycle_status);
+                const p = statusPill(effectiveStatus(ae));
                 return (
                   <span key={ae.id} className="mono" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10.5, padding: '3px 9px', borderRadius: 6, background: p.bg, border: `1px solid ${p.bord}`, color: p.col }}>
-                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: p.dot, animation: isActive(ae.lifecycle_status) ? 'ds-pulse 1.4s infinite' : 'none' }} />
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: p.dot, animation: isActive(effectiveStatus(ae)) ? 'ds-pulse 1.4s infinite' : 'none' }} />
                     {ae.environment_name}
                   </span>
                 );
@@ -103,7 +110,8 @@ export default function Home() {
           {open[app.id] && (
             <div style={{ borderTop: '1px solid var(--border-soft)' }}>
               {app.environments.map((ae, i) => {
-                const p = statusPill(ae.lifecycle_status);
+                const status = effectiveStatus(ae);
+                const p = statusPill(status);
                 return (
                   <button
                     key={ae.id}
@@ -113,9 +121,12 @@ export default function Home() {
                   >
                     <span className="mono" style={{ fontSize: 12, width: 90, color: 'var(--text-2)' }}>{ae.environment_name}</span>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 10px', borderRadius: 999, fontSize: 11, background: p.bg, color: p.col, border: `1px solid ${p.bord}` }}>
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.dot, animation: isActive(ae.lifecycle_status) ? 'ds-pulse 1.4s infinite' : 'none' }} />
-                      {ae.lifecycle_status ?? 'Unknown'}
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.dot, animation: isActive(status) ? 'ds-pulse 1.4s infinite' : 'none' }} />
+                      {status ?? 'Unknown'}
                     </span>
+                    {isActive(status) && ae.previous_version_label && ae.version_label && (
+                      <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>{ae.previous_version_label} → {ae.version_label}</span>
+                    )}
                     <span style={{ marginLeft: 'auto', color: 'var(--text-3)', fontSize: 13 }}>→</span>
                   </button>
                 );

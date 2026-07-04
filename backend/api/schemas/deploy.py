@@ -12,6 +12,11 @@ class DeployRequest(BaseModel):
     justification: Optional[str] = None  # optional note from requester, NOT the rejection justification
 
 
+class RollbackRequest(BaseModel):
+    deployment_version_id: uuid.UUID  # the version to revert to (TO)
+    justification: Optional[str] = None
+
+
 class RejectRequest(BaseModel):
     justification: str  # required — Pydantic gives 422 before the DB CHECK fires
 
@@ -21,6 +26,7 @@ class DeploymentRequestResponse(BaseModel):
     application_environment_id: uuid.UUID
     status: RequestStatus
     deployment_type: DeploymentType
+    rollback_target_version_id: Optional[uuid.UUID] = None
     source_commit_sha: Optional[str] = None
     github_workflow_run_id: Optional[int] = None
     justification: Optional[str] = None

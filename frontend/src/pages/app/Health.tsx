@@ -1,95 +1,146 @@
-import { useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { apiFetch } from '../../api/client';
+
+interface ProbeSpec {
+  path: string | null;
+  port: number | null;
+  initial_delay_seconds: number;
+  period_seconds: number;
+  timeout_seconds: number;
+  success_threshold: number;
+  failure_threshold: number;
+}
+
+interface ContainerProbeStatus {
+  pod_name: string;
+  container_name: string;
+  ready: boolean;
+  restart_count: number;
+  state: string;
+  reason: string | null;
+  message: string | null;
+  error_at: string | null;
+  ready_transition_at: string | null;
+  startup_probe: ProbeSpec | null;
+  readiness_probe: ProbeSpec | null;
+  liveness_probe: ProbeSpec | null;
+}
+
+function relativeTime(iso: string | null): string {
+  if (!iso) return '';
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 1) return 'agora mesmo';
+  if (mins < 60) return `há ${mins} min`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `há ${hours}h`;
+  return `há ${Math.round(hours / 24)}d`;
+}
 
 export default function Health() {
-  const { app='backend', env='dev' } = useParams<{ app:string; env:string }>();
+  const { appId, aeId } = useParams<{ appId:string; aeId:string }>();
+  const nav = useNavigate();
+  const [containers, setContainers] = useState<ContainerProbeStatus[] | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!aeId) return;
+    apiFetch(`/application-environments/${aeId}/health-probes`)
+      .then(d => setContainers(d.containers))
+      .catch(e => setError(e.message));
+  }, [aeId]);
 
   return (
     <div>
-      <div className="mono" style={{ fontSize:11, color:'var(--text-3)', marginBottom:6 }}>{app} / {env.toUpperCase()} / health</div>
-      <h1 style={{ fontSize:22, fontWeight:600, margin:'0 0 20px' }}>Health Details</h1>
+      <div className="mono" style={{ fontSize:11, color:'var(--text-3)', marginBottom:6 }}>{appId} / {aeId}</div>
+      <h1 style={{ fontSize:22, fontWeight:600, margin:'0 0 20px' }}>Health details</h1>
 
-      <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-        <ProbeCard
-          title="Startup Probe"
-          status="Passing"
-          type="HTTP GET"
-          path="/healthz/startup"
-          port={8080}
-          initialDelay={5}
-          period={3}
-          threshold={10}
-          successCount={1}
-          failureCount={0}
-          lastResult="HTTP 200 OK (12ms)"
-        />
-        <ProbeCard
-          title="Readiness Probe"
-          status="Passing"
-          type="HTTP GET"
-          path="/healthz/ready"
-          port={8080}
-          initialDelay={10}
-          period={5}
-          threshold={3}
-          successCount={1}
-          failureCount={0}
-          lastResult="HTTP 200 OK (8ms)"
-        />
-        <ProbeCard
-          title="Liveness Probe"
-          status="Passing"
-          type="HTTP GET"
-          path="/healthz/live"
-          port={8080}
-          initialDelay={15}
-          period={10}
-          threshold={3}
-          successCount={1}
-          failureCount={0}
-          lastResult="HTTP 200 OK (10ms)"
-        />
+      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 16px', borderRadius:10, background:'var(--bg-2)', border:'1px solid var(--border-soft)', fontSize:12.5, color:'var(--text-2)', marginBottom:20 }}>
+        <span style={{ flex:'none' }}>ⓘ</span>
+        Os dados são lidos em tempo real da Kubernetes API.
       </div>
-    </div>
-  );
-}
 
-function ProbeCard({ title, status, type, path, port, initialDelay, period, threshold, successCount, failureCount, lastResult }: {
-  title:string; status:string; type:string; path:string; port:number;
-  initialDelay:number; period:number; threshold:number; successCount:number; failureCount:number; lastResult:string;
-}) {
-  const isOk = status === 'Passing';
-  return (
-    <div style={{ border:'1px solid var(--border)', borderRadius:14, background:'var(--surface)', padding:'20px 22px' }}>
-      <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:18 }}>
-        <span style={{ fontSize:14, fontWeight:600 }}>{title}</span>
-        <span style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'4px 10px', borderRadius:999, fontSize:11.5,
-          background: isOk ? 'rgba(52,199,89,.13)' : 'rgba(241,85,108,.13)',
-          color: isOk ? '#5dd57b' : '#ff8497',
-          border: isOk ? '1px solid rgba(52,199,89,.24)' : '1px solid rgba(241,85,108,.26)' }}>
-          <span style={{ width:6, height:6, borderRadius:'50%', background: isOk ? '#34C759' : '#F1556C' }}></span>
-          {status}
-        </span>
-      </div>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'12px 20px', fontSize:12.5 }}>
-        <InfoCell label="Type" value={type} />
-        <InfoCell label="Path" value={`${path}:${port}`} mono />
-        <InfoCell label="Initial Delay" value={`${initialDelay}s`} mono />
-        <InfoCell label="Period" value={`${period}s`} mono />
-        <InfoCell label="Success Threshold" value={`${successCount}/${threshold}`} mono />
-        <InfoCell label="Failure Count" value={`${failureCount}`} mono valueColor={failureCount > 0 ? '#ecc26b' : undefined} />
-        <div style={{ gridColumn:'span 2' }}>
-          <InfoCell label="Last Result" value={lastResult} mono valueColor="#5dd57b" />
+      {error && <div style={{ color:'#ff8497', fontSize:13 }}>{error}</div>}
+      {!error && containers === null && <div style={{ color:'var(--text-3)', fontSize:13 }}>A carregar…</div>}
+      {containers && containers.length === 0 && <div style={{ color:'var(--text-3)', fontSize:13 }}>Sem pods em execução.</div>}
+
+      {containers?.map(c => (
+        <div key={`${c.pod_name}-${c.container_name}`} style={{ marginBottom:22 }}>
+          {containers.length > 1 && (
+            <div className="mono" style={{ fontSize:11, color:'var(--text-3)', marginBottom:10 }}>{c.pod_name} / {c.container_name}</div>
+          )}
+          <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+            <ProbeCard
+              title="Startup probe"
+              spec={c.startup_probe}
+              passing={c.state === 'Running' || c.ready}
+              errorInfo={c.state !== 'Running' && c.restart_count === 0 ? { reason: c.reason, message: c.message, at: c.error_at } : null}
+              onViewLog={() => nav(`/app/${appId}/${aeId}/logs?pod=${encodeURIComponent(c.pod_name)}`)}
+            />
+            <ProbeCard
+              title="Readiness probe"
+              spec={c.readiness_probe}
+              passing={c.ready}
+              errorInfo={!c.ready ? { reason: c.reason, message: c.message, at: c.error_at ?? c.ready_transition_at } : null}
+              onViewLog={() => nav(`/app/${appId}/${aeId}/logs?pod=${encodeURIComponent(c.pod_name)}`)}
+            />
+            <ProbeCard
+              title="Liveness probe"
+              spec={c.liveness_probe}
+              passing={c.state === 'Running' && c.restart_count === 0}
+              errorInfo={c.restart_count > 0 ? { reason: c.reason, message: c.message, at: c.error_at } : null}
+              onViewLog={() => nav(`/app/${appId}/${aeId}/logs?pod=${encodeURIComponent(c.pod_name)}`)}
+            />
+          </div>
         </div>
-      </div>
+      ))}
     </div>
   );
 }
 
-function InfoCell({ label, value, mono, valueColor }: { label:string; value:string; mono?:boolean; valueColor?:string }) {
+function ProbeCard({ title, spec, passing, errorInfo, onViewLog }: {
+  title: string;
+  spec: ProbeSpec | null;
+  passing: boolean;
+  errorInfo: { reason: string | null; message: string | null; at: string | null } | null;
+  onViewLog: () => void;
+}) {
+  const lastError = errorInfo && (errorInfo.message || errorInfo.reason)
+    ? `${errorInfo.message ?? errorInfo.reason}${errorInfo.at ? ` (${relativeTime(errorInfo.at)})` : ''}`
+    : null;
+
   return (
-    <div>
-      <span style={{ fontSize:11.5, color:'var(--text-3)' }}>{label}</span>
-      <div className={mono ? 'mono' : ''} style={{ marginTop:3, fontSize:12.5, color: valueColor ?? 'var(--text)' }}>{value}</div>
+    <div style={{
+      border: `1px solid ${passing ? 'var(--border)' : 'rgba(241,85,108,.4)'}`,
+      borderRadius:14, background:'var(--surface)', padding:'18px 20px',
+    }}>
+      <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:10 }}>
+        <span style={{ fontSize:14, fontWeight:600 }}>{title}</span>
+        <span style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'3px 10px', borderRadius:999, fontSize:11.5,
+          background: passing ? 'rgba(52,199,89,.13)' : 'rgba(241,85,108,.13)',
+          color: passing ? '#5dd57b' : '#ff8497',
+          border: passing ? '1px solid rgba(52,199,89,.24)' : '1px solid rgba(241,85,108,.26)' }}>
+          <span style={{ width:6, height:6, borderRadius:'50%', background: passing ? '#34C759' : '#F1556C' }}></span>
+          {passing ? 'Passing' : 'Failing'}
+        </span>
+        <span onClick={onViewLog} style={{ marginLeft:'auto', fontSize:11.5, color:'var(--teal)', cursor:'pointer' }}>Ver log →</span>
+      </div>
+
+      {spec ? (
+        <div className="mono" style={{ fontSize:12, color:'var(--text-3)' }}>
+          {spec.path ?? '—'}{spec.path && spec.port ? `:${spec.port}` : ''}
+          {'  '}delay {spec.initial_delay_seconds}s{'  '}period {spec.period_seconds}s{'  '}timeout {spec.timeout_seconds}s{'  '}thresholds {spec.success_threshold}/{spec.failure_threshold}
+        </div>
+      ) : (
+        <div style={{ fontSize:12, color:'var(--text-3)' }}>Probe não configurada neste container.</div>
+      )}
+
+      {lastError ? (
+        <div className="mono" style={{ fontSize:12, color:'#ff8497', marginTop:8 }}>Last error: {lastError}</div>
+      ) : (
+        <div style={{ fontSize:12, color:'var(--text-3)', marginTop:8 }}>Sem erros recentes.</div>
+      )}
     </div>
   );
 }

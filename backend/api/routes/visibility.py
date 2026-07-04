@@ -19,8 +19,11 @@ from backend.api.schemas.visibility import (
     K8sEvent,
     LogLine,
     LogsResponse,
+    ContainerProbeStatus,
+    HealthProbesResponse,
     PodListResponse,
     PodStatus,
+    ProjectSummary,
     UpToDateResponse,
     UpToDateStatus,
 )
@@ -28,15 +31,18 @@ from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
 from backend.bd.models.cluster_context import ClusterContext
 from backend.bd.models.deployment_event import DeploymentEvent
+from backend.bd.models.deployment_request import DeploymentRequest
 from backend.bd.models.deployment_version import DeploymentVersion, LifecycleStatus
 from backend.bd.models.environment import Environment
 from backend.bd.models.project import Project
+from backend.bd.models.team import Team
 from backend.bd.models.user import User
 from backend.services.cluster_validation import get_cluster_token
 from backend.services.deploy_pipeline import compute_lifecycle_status
 from backend.services.eks_discovery import EKSClusterInfo
 from backend.services.gitops_scanner import resolve_branch_head
 from backend.services.kubernetes_reader import (
+    container_probe_statuses,
     get_pod_logs,
     list_events_in_namespace,
     list_pods_in_namespace,
@@ -88,6 +94,17 @@ def _get_project_or_404(db: Session, project_id: uuid.UUID) -> Project:
     return p
 
 
+@router.get("/projects/{project_id}", response_model=ProjectSummary)
+def get_project(
+    project_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    project = _get_project_or_404(db, project_id)
+    team = db.get(Team, project.team_id)
+    return ProjectSummary(id=project.id, name=project.name, team_name=team.name if team else "")
+
+
 def _get_ae_or_404(db: Session, ae_id: uuid.UUID) -> ApplicationEnvironment:
     ae = db.get(ApplicationEnvironment, ae_id)
     if ae is None:
@@ -112,6 +129,23 @@ def _resolve_cluster_and_namespace(db: Session, ae: ApplicationEnvironment) -> t
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Falha ao ligar ao cluster: {e}")
     namespace = env.namespace or env.name.lower()
     return eks_info, namespace
+
+
+def _discover_lifecycle_status(db: Session, ae: ApplicationEnvironment) -> LifecycleStatus | None:
+    """
+    Live K8s read for an ApplicationEnvironment with no DeploymentVersion yet — e.g. right
+    after onboarding, when the workload already exists in the cluster but was never
+    deployed through DevShip. Without this, the UI would show "Unknown" for pods that are
+    actually running fine. Returns None (→ Unknown) if the cluster isn't reachable/configured.
+    """
+    try:
+        eks_info, namespace = _resolve_cluster_and_namespace(db, ae)
+        any_ready, fatal_pods = pod_health_snapshot(eks_info, namespace, ae.deployment_name)
+    except Exception:
+        return None
+    if not any_ready and not fatal_pods:
+        return None  # no pods found at all — nothing to report on yet
+    return LifecycleStatus.HEALTHY if (any_ready and not fatal_pods) else LifecycleStatus.DEGRADED
 
 
 def _latest_versions_subquery(db: Session, app_env_ids: list[uuid.UUID] | None = None):
@@ -234,13 +268,27 @@ def get_application_environment(
     if latest is not None:
         _refresh_lifecycle_from_events(db, [latest])
 
+    current_version = None
+    discovered_status = None
+    if latest is not None:
+        current_version = DeploymentVersionDetail.model_validate(latest)
+        if latest.deployment_request_id is not None:
+            req = db.get(DeploymentRequest, latest.deployment_request_id)
+            if req is not None and req.requested_by is not None:
+                requester = db.get(User, req.requested_by)
+                if requester is not None:
+                    current_version.requested_by_email = requester.email
+    else:
+        discovered_status = _discover_lifecycle_status(db, ae)
+
     return ApplicationEnvironmentDetail(
         id=ae.id,
         application_id=ae.application_id,
         environment_id=ae.environment_id,
         deployment_name=ae.deployment_name,
         enabled=ae.enabled,
-        current_version=DeploymentVersionDetail.model_validate(latest) if latest else None,
+        current_version=current_version,
+        discovered_status=discovered_status,
     )
 
 
@@ -297,7 +345,7 @@ def refresh_application_environment(
                     cluster_arn=cluster_ctx.cluster_arn,
                 )
                 namespace = env.namespace or env.name.lower()
-                any_ready, fatal_pods = pod_health_snapshot(eks_info, namespace)
+                any_ready, fatal_pods = pod_health_snapshot(eks_info, namespace, ae.deployment_name)
                 latest.lifecycle_status = LifecycleStatus.HEALTHY if (any_ready and not fatal_pods) else LifecycleStatus.DEGRADED
             except Exception:
                 # Cluster unreachable (destroyed, auth broken, network down, ...) — this is
@@ -353,6 +401,22 @@ def get_pods(
         for p in pod_list.items
     ]
     return PodListResponse(pods=pods, metrics_available=metrics_available)
+
+
+# ---------------------------------------------------------------------------
+# GET /application-environments/{id}/health-probes — live K8s read
+# ---------------------------------------------------------------------------
+
+@router.get("/application-environments/{ae_id}/health-probes", response_model=HealthProbesResponse)
+def get_health_probes(
+    ae_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ae = _get_ae_or_404(db, ae_id)
+    eks_info, namespace = _resolve_cluster_and_namespace(db, ae)
+    containers = container_probe_statuses(eks_info, namespace, ae.deployment_name)
+    return HealthProbesResponse(containers=[ContainerProbeStatus(**c) for c in containers])
 
 
 # ---------------------------------------------------------------------------
@@ -495,6 +559,34 @@ def get_homepage(
     for ae in all_ae:
         ae_by_app.setdefault(ae.application_id, []).append(ae)
 
+    # For AEs currently Deploying, resolve the version being replaced (most recent
+    # terminal-by-supersession version for the same ae) to show "vX → vY" in the UI.
+    deploying_ae_ids = [
+        ae_id for ae_id, v in latest_by_ae.items() if v.lifecycle_status == LifecycleStatus.DEPLOYING
+    ]
+    previous_label_by_ae: dict[uuid.UUID, str] = {}
+    if deploying_ae_ids:
+        for prev in (
+            db.query(DeploymentVersion)
+            .filter(
+                DeploymentVersion.application_environment_id.in_(deploying_ae_ids),
+                DeploymentVersion.lifecycle_status.in_(
+                    [LifecycleStatus.SUPERSEDED, LifecycleStatus.ROLLED_BACK]
+                ),
+            )
+            .order_by(DeploymentVersion.application_environment_id, desc(DeploymentVersion.created_at))
+            .distinct(DeploymentVersion.application_environment_id)
+            .all()
+        ):
+            label = prev.version_label or (prev.image_tag.split("-")[0] if prev.image_tag else None)
+            if label:
+                previous_label_by_ae[prev.application_environment_id] = label
+
+    # AEs with no DeploymentVersion yet (nothing deployed via DevShip) — a live K8s read
+    # so freshly onboarded workloads don't show as "Unknown" on the homepage.
+    undeployed_ae = [ae for ae in all_ae if ae.id not in latest_by_ae]
+    discovered_by_ae = {ae.id: _discover_lifecycle_status(db, ae) for ae in undeployed_ae}
+
     applications = [
         ApplicationWithStatus(
             id=app.id,
@@ -504,6 +596,13 @@ def get_homepage(
                     id=ae.id,
                     environment_name=env_names.get(ae.environment_id, ""),
                     lifecycle_status=latest_by_ae[ae.id].lifecycle_status if ae.id in latest_by_ae else None,
+                    version_label=(
+                        latest_by_ae[ae.id].version_label
+                        or (latest_by_ae[ae.id].image_tag.split("-")[0] if latest_by_ae[ae.id].image_tag else None)
+                        if ae.id in latest_by_ae else None
+                    ),
+                    previous_version_label=previous_label_by_ae.get(ae.id),
+                    discovered_status=discovered_by_ae.get(ae.id),
                 )
                 for ae in ae_by_app.get(app.id, [])
             ],

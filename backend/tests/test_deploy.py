@@ -549,3 +549,305 @@ class TestDeployPipeline:
         assert DeploymentEventType.ROLLOUT_STARTED in event_types
         assert DeploymentEventType.ROLLOUT_COMPLETED in event_types
         assert DeploymentEventType.READINESS_PASSED in event_types
+
+    # -----------------------------------------------------------------------
+    # DEV-10.4 — _supersede_previous_version
+    # -----------------------------------------------------------------------
+
+    def test_supersede_marks_previous_healthy_as_superseded_on_standard_deploy(self, db_session):
+        from datetime import datetime, timedelta, timezone
+        from backend.services.deploy_pipeline import _supersede_previous_version
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+
+        now = datetime.now(timezone.utc)
+        old = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY, created_at=now)
+        db_session.add(old)
+        db_session.flush()
+        new = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY, created_at=now + timedelta(seconds=1))
+        db_session.add(new)
+        db_session.flush()
+
+        _supersede_previous_version(db_session, new, DeploymentType.STANDARD)
+        db_session.flush()
+
+        db_session.refresh(old)
+        assert old.lifecycle_status == LifecycleStatus.SUPERSEDED
+
+    def test_supersede_marks_previous_as_rolled_back_on_rollback_deploy(self, db_session):
+        from datetime import datetime, timedelta, timezone
+        from backend.services.deploy_pipeline import _supersede_previous_version
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+
+        now = datetime.now(timezone.utc)
+        old = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.DEGRADED, created_at=now)
+        db_session.add(old)
+        db_session.flush()
+        new = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY, created_at=now + timedelta(seconds=1))
+        db_session.add(new)
+        db_session.flush()
+
+        _supersede_previous_version(db_session, new, DeploymentType.ROLLBACK)
+        db_session.flush()
+
+        db_session.refresh(old)
+        assert old.lifecycle_status == LifecycleStatus.ROLLED_BACK
+
+    def test_supersede_skips_already_terminal_versions(self, db_session):
+        """A Failed attempt sandwiched between two real versions is already resolved —
+        it must not be touched, and the search must reach past it to the real previous one."""
+        from datetime import datetime, timedelta, timezone
+        from backend.services.deploy_pipeline import _supersede_previous_version
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+
+        now = datetime.now(timezone.utc)
+        healthy_old = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY, created_at=now)
+        db_session.add(healthy_old)
+        db_session.flush()
+        failed_attempt = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.FAILED, created_at=now + timedelta(seconds=1))
+        db_session.add(failed_attempt)
+        db_session.flush()
+        new = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY, created_at=now + timedelta(seconds=2))
+        db_session.add(new)
+        db_session.flush()
+
+        _supersede_previous_version(db_session, new, DeploymentType.STANDARD)
+        db_session.flush()
+
+        db_session.refresh(healthy_old)
+        db_session.refresh(failed_attempt)
+        assert healthy_old.lifecycle_status == LifecycleStatus.SUPERSEDED
+        assert failed_attempt.lifecycle_status == LifecycleStatus.FAILED
+
+    def test_supersede_no_previous_version_is_a_no_op(self, db_session):
+        from backend.services.deploy_pipeline import _supersede_previous_version
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+
+        new = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY)
+        db_session.add(new)
+        db_session.flush()
+
+        _supersede_previous_version(db_session, new, DeploymentType.STANDARD)  # must not raise
+        db_session.flush()
+
+        db_session.refresh(new)
+        assert new.lifecycle_status == LifecycleStatus.HEALTHY
+
+
+# ---------------------------------------------------------------------------
+# Tests: POST /application-environments/{id}/rollback
+# ---------------------------------------------------------------------------
+
+class TestRollback:
+    def test_rollback_dispatches_workflow_with_rollback_tag(self, db_session):
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+
+        target = DeploymentVersion(
+            application_environment_id=app_env.id,
+            lifecycle_status=LifecycleStatus.SUPERSEDED,
+            image_tag="abc1234-5",
+        )
+        db_session.add(target)
+        db_session.flush()
+
+        req = DeploymentRequest(
+            application_environment_id=app_env.id,
+            deployment_type=DeploymentType.ROLLBACK,
+            rollback_target_version_id=target.id,
+        )
+        db_session.add(req)
+        db_session.flush()
+
+        with (
+            patch("backend.services.deploy_pipeline._resolve_branch_head", return_value="abc123"),
+            patch("backend.services.deploy_pipeline.http.post") as mock_post,
+        ):
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = {"workflow_run_id": 99}
+            mock_resp.raise_for_status.return_value = None
+            mock_post.return_value = mock_resp
+
+            from backend.services import deploy_pipeline as dp
+            dp.trigger_deploy(db_session, req, env, app)
+
+            sent_inputs = mock_post.call_args.kwargs["json"]["inputs"]
+            assert sent_inputs["action"] == "rollback"
+            assert sent_inputs["rollback_tag"] == "abc1234-5"
+
+    def test_rollback_endpoint_target_from_other_app_env_404s(self, client, db_session):
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+
+        other_app = Application(
+            project_id=project.id,
+            name="other-api",
+            source_repository="https://github.com/org/other-api",
+            container_registry_repository="ecr/org/other-api",
+            ci_workflow_file="deploy.yml",
+        )
+        db_session.add(other_app)
+        db_session.flush()
+        other_app_env = ApplicationEnvironment(
+            application_id=other_app.id,
+            environment_id=env.id,
+            deployment_name="other-api-deploy",
+        )
+        db_session.add(other_app_env)
+        db_session.flush()
+
+        foreign_target = DeploymentVersion(
+            application_environment_id=other_app_env.id,
+            lifecycle_status=LifecycleStatus.HEALTHY,
+            image_tag="v1",
+        )
+        db_session.add(foreign_target)
+        db_session.flush()
+
+        api_user_email = f"ce@{team.domain}"
+        _register(client, api_user_email)
+        token = _login(client, api_user_email)
+        db_session.add(TeamMember(team_id=team.id, user_id=db_session.query(User).filter(User.email == api_user_email).first().id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        db_session.flush()
+
+        r = client.post(
+            f"/application-environments/{app_env.id}/rollback",
+            json={"deployment_version_id": str(foreign_target.id)},
+            headers=_auth(token),
+        )
+        assert r.status_code == 404
+
+    def test_rollback_endpoint_rejects_version_without_image_tag(self, client, db_session):
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+
+        target = DeploymentVersion(
+            application_environment_id=app_env.id,
+            lifecycle_status=LifecycleStatus.FAILED,
+            image_tag=None,
+        )
+        db_session.add(target)
+        db_session.flush()
+
+        api_user_email = f"ce@{team.domain}"
+        _register(client, api_user_email)
+        token = _login(client, api_user_email)
+        db_session.add(TeamMember(team_id=team.id, user_id=db_session.query(User).filter(User.email == api_user_email).first().id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        db_session.flush()
+
+        r = client.post(
+            f"/application-environments/{app_env.id}/rollback",
+            json={"deployment_version_id": str(target.id)},
+            headers=_auth(token),
+        )
+        assert r.status_code == 422
+
+    def test_rollback_endpoint_rejects_current_version_as_target(self, client, db_session):
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+
+        current = DeploymentVersion(
+            application_environment_id=app_env.id,
+            lifecycle_status=LifecycleStatus.HEALTHY,
+            image_tag="v1",
+        )
+        db_session.add(current)
+        db_session.flush()
+
+        api_user_email = f"ce@{team.domain}"
+        _register(client, api_user_email)
+        token = _login(client, api_user_email)
+        db_session.add(TeamMember(team_id=team.id, user_id=db_session.query(User).filter(User.email == api_user_email).first().id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        db_session.flush()
+
+        r = client.post(
+            f"/application-environments/{app_env.id}/rollback",
+            json={"deployment_version_id": str(current.id)},
+            headers=_auth(token),
+        )
+        assert r.status_code == 422
+
+    def test_rollback_endpoint_creates_rollback_type_request(self, client, db_session):
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        target = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.SUPERSEDED, image_tag="v1", created_at=now)
+        db_session.add(target)
+        db_session.flush()
+        current = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY, image_tag="v2", created_at=now + timedelta(seconds=1))
+        db_session.add(current)
+        db_session.flush()
+
+        api_user_email = f"ce@{team.domain}"
+        _register(client, api_user_email)
+        token = _login(client, api_user_email)
+        db_session.add(TeamMember(team_id=team.id, user_id=db_session.query(User).filter(User.email == api_user_email).first().id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        db_session.flush()
+
+        with patch("backend.services.deploy_pipeline.trigger_deploy") as mock_trigger:
+            r = client.post(
+                f"/application-environments/{app_env.id}/rollback",
+                json={"deployment_version_id": str(target.id)},
+                headers=_auth(token),
+            )
+        assert r.status_code == 201, r.text
+        data = r.json()
+        assert data["deployment_type"] == "ROLLBACK"
+        assert data["rollback_target_version_id"] == str(target.id)
+        mock_trigger.assert_called_once()
+
+    def test_rollback_requires_approval_stays_pending(self, client, db_session):
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+        env.requires_approval = True
+        db_session.flush()
+
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        target = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.SUPERSEDED, image_tag="v1", created_at=now)
+        db_session.add(target)
+        db_session.flush()
+        current = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY, image_tag="v2", created_at=now + timedelta(seconds=1))
+        db_session.add(current)
+        db_session.flush()
+
+        api_user_email = f"ce@{team.domain}"
+        _register(client, api_user_email)
+        token = _login(client, api_user_email)
+        db_session.add(TeamMember(team_id=team.id, user_id=db_session.query(User).filter(User.email == api_user_email).first().id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        db_session.flush()
+
+        with patch("backend.services.deploy_pipeline.trigger_deploy") as mock_trigger:
+            r = client.post(
+                f"/application-environments/{app_env.id}/rollback",
+                json={"deployment_version_id": str(target.id)},
+                headers=_auth(token),
+            )
+        assert r.status_code == 201, r.text
+        assert r.json()["status"] == "PENDING"
+        mock_trigger.assert_not_called()
+
+    def test_rollback_blocked_when_deploy_in_flight(self, client, db_session):
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+
+        db_session.add(DeploymentRequest(
+            application_environment_id=app_env.id,
+            deployment_type=DeploymentType.STANDARD,
+            status=RequestStatus.RUNNING,
+        ))
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        target = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.SUPERSEDED, image_tag="v1", created_at=now)
+        db_session.add(target)
+        db_session.flush()
+        current = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY, image_tag="v2", created_at=now + timedelta(seconds=1))
+        db_session.add(current)
+        db_session.flush()
+
+        api_user_email = f"ce@{team.domain}"
+        _register(client, api_user_email)
+        token = _login(client, api_user_email)
+        db_session.add(TeamMember(team_id=team.id, user_id=db_session.query(User).filter(User.email == api_user_email).first().id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        db_session.flush()
+
+        r = client.post(
+            f"/application-environments/{app_env.id}/rollback",
+            json={"deployment_version_id": str(target.id)},
+            headers=_auth(token),
+        )
+        assert r.status_code == 409
