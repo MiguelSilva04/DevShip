@@ -309,6 +309,109 @@ class TestGetApplicationEnvironment:
 
 
 # ---------------------------------------------------------------------------
+# _discover_lifecycle_status — live K8s read + cache for ae's with no DeploymentVersion
+# ---------------------------------------------------------------------------
+
+class TestDiscoveredStatus:
+    def _with_cluster(self, db_session, project):
+        from backend.bd.models.cluster_context import ClusterContext
+        db_session.add(ClusterContext(
+            project_id=project.id, cluster_arn="arn:aws:eks:us-east-1:1:cluster/x",
+            cluster_name="x", region="us-east-1", eks_endpoint="https://x", ca_certificate="x",
+            ca_file_path="/tmp/x", iam_role_arn="arn:aws:iam::1:role/x", external_id="ext",
+        ))
+        db_session.flush()
+
+    def test_no_version_reads_live_cluster_and_caches(self, client, db_session):
+        _, _, project, _, _, ae = _setup_chain(db_session)
+        self._with_cluster(db_session, project)
+        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+
+        with (
+            patch("backend.api.routes.visibility.get_cluster_token", return_value=object()) as mock_token,
+            patch("backend.api.routes.visibility.pod_health_snapshot", return_value=(True, [])) as mock_snapshot,
+        ):
+            r = client.get(f"/application-environments/{ae.id}", headers=_auth(token))
+
+        assert r.status_code == 200
+        assert r.json()["current_version"] is None
+        assert r.json()["discovered_status"] == "Healthy"
+        mock_token.assert_called_once()
+        mock_snapshot.assert_called_once()
+
+        db_session.refresh(ae)
+        assert ae.discovered_status == LifecycleStatus.HEALTHY
+        assert ae.discovered_status_checked_at is not None
+
+    def test_cached_result_within_ttl_skips_cluster_call(self, client, db_session):
+        """A recent discovered_status_checked_at must short-circuit before touching the
+        cluster — this is the fix for the endpoint hitting K8s on every page load."""
+        _, _, project, _, _, ae = _setup_chain(db_session)
+        self._with_cluster(db_session, project)
+        ae.discovered_status = LifecycleStatus.HEALTHY
+        ae.discovered_status_checked_at = datetime.now(timezone.utc)
+        db_session.flush()
+        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+
+        with (
+            patch("backend.api.routes.visibility.get_cluster_token") as mock_token,
+            patch("backend.api.routes.visibility.pod_health_snapshot") as mock_snapshot,
+        ):
+            r = client.get(f"/application-environments/{ae.id}", headers=_auth(token))
+
+        assert r.status_code == 200
+        assert r.json()["discovered_status"] == "Healthy"
+        mock_token.assert_not_called()
+        mock_snapshot.assert_not_called()
+
+    def test_expired_cache_reads_cluster_again(self, client, db_session):
+        from datetime import timedelta
+        _, _, project, _, _, ae = _setup_chain(db_session)
+        self._with_cluster(db_session, project)
+        ae.discovered_status = LifecycleStatus.HEALTHY
+        ae.discovered_status_checked_at = datetime.now(timezone.utc) - timedelta(minutes=10)
+        db_session.flush()
+        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+
+        with (
+            patch("backend.api.routes.visibility.get_cluster_token", return_value=object()),
+            patch("backend.api.routes.visibility.pod_health_snapshot", return_value=(False, ["pod-x: CrashLoopBackOff"])) as mock_snapshot,
+        ):
+            r = client.get(f"/application-environments/{ae.id}", headers=_auth(token))
+
+        assert r.status_code == 200
+        assert r.json()["discovered_status"] == "Degraded"
+        mock_snapshot.assert_called_once()
+
+    def test_no_cluster_configured_returns_none(self, client, db_session):
+        _, _, _, _, _, ae = _setup_chain(db_session)
+        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+
+        r = client.get(f"/application-environments/{ae.id}", headers=_auth(token))
+        assert r.status_code == 200
+        assert r.json()["discovered_status"] is None
+
+    def test_has_deployment_version_never_reads_cluster(self, client, db_session):
+        """Once an ae has a DeploymentVersion, discovery must not run at all — regression
+        guard for the cache change not touching the already-deployed path."""
+        _, _, project, _, _, ae = _setup_chain(db_session)
+        self._with_cluster(db_session, project)
+        _make_version(db_session, ae, LifecycleStatus.HEALTHY)
+        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+
+        with (
+            patch("backend.api.routes.visibility.get_cluster_token") as mock_token,
+            patch("backend.api.routes.visibility.pod_health_snapshot") as mock_snapshot,
+        ):
+            r = client.get(f"/application-environments/{ae.id}", headers=_auth(token))
+
+        assert r.status_code == 200
+        assert r.json()["discovered_status"] is None
+        mock_token.assert_not_called()
+        mock_snapshot.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # POST /application-environments/{id}/refresh — live K8s read
 # ---------------------------------------------------------------------------
 

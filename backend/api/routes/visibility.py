@@ -1,6 +1,6 @@
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import case, desc, func
@@ -131,21 +131,39 @@ def _resolve_cluster_and_namespace(db: Session, ae: ApplicationEnvironment) -> t
     return eks_info, namespace
 
 
+_DISCOVERED_STATUS_TTL = timedelta(minutes=5)
+
+
 def _discover_lifecycle_status(db: Session, ae: ApplicationEnvironment) -> LifecycleStatus | None:
     """
     Live K8s read for an ApplicationEnvironment with no DeploymentVersion yet — e.g. right
     after onboarding, when the workload already exists in the cluster but was never
     deployed through DevShip. Without this, the UI would show "Unknown" for pods that are
     actually running fine. Returns None (→ Unknown) if the cluster isn't reachable/configured.
+
+    Cached on the ApplicationEnvironment itself with a 5-minute TTL — this path never stops
+    being called for a workload that's never deployed through DevShip (it's only skipped
+    once the ae has a DeploymentVersion), so without a cache every page load would hit the
+    cluster indefinitely.
     """
+    now = datetime.now(timezone.utc)
+    if ae.discovered_status_checked_at is not None and now - ae.discovered_status_checked_at < _DISCOVERED_STATUS_TTL:
+        return ae.discovered_status
+
     try:
         eks_info, namespace = _resolve_cluster_and_namespace(db, ae)
         any_ready, fatal_pods = pod_health_snapshot(eks_info, namespace, ae.deployment_name)
     except Exception:
-        return None
-    if not any_ready and not fatal_pods:
-        return None  # no pods found at all — nothing to report on yet
-    return LifecycleStatus.HEALTHY if (any_ready and not fatal_pods) else LifecycleStatus.DEGRADED
+        result = None
+    else:
+        result = None if (not any_ready and not fatal_pods) else (
+            LifecycleStatus.HEALTHY if (any_ready and not fatal_pods) else LifecycleStatus.DEGRADED
+        )
+
+    ae.discovered_status = result
+    ae.discovered_status_checked_at = now
+    db.commit()
+    return result
 
 
 def _latest_versions_subquery(db: Session, app_env_ids: list[uuid.UUID] | None = None):

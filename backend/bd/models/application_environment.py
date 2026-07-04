@@ -1,12 +1,23 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, Enum as SAEnum, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import DateTime
 
 from backend.bd.base import Base
+from backend.bd.models.deployment_version import LifecycleStatus
+
+# Reuses the "lifecycle_status" Postgres enum type already created for
+# DeploymentVersion.lifecycle_status — create_type=False so this column doesn't try to
+# create the type a second time.
+_discovered_status_enum = SAEnum(
+    LifecycleStatus,
+    name="lifecycle_status",
+    create_type=False,
+    values_callable=lambda x: [e.value for e in x],
+)
 
 
 class ApplicationEnvironment(Base):
@@ -37,6 +48,11 @@ class ApplicationEnvironment(Base):
     deployment_strategy: Mapped[str | None] = mapped_column(String(64))
     health_probe_path: Mapped[str | None] = mapped_column(String(255))
     enabled: Mapped[bool] = mapped_column(Boolean(), server_default="true")
+    # Cached live-K8s-read result for ApplicationEnvironments with no DeploymentVersion yet
+    # (workload imported/managed outside DevShip). See _discover_lifecycle_status() in
+    # backend/api/routes/visibility.py — TTL avoids hitting the cluster on every page load.
+    discovered_status: Mapped[LifecycleStatus | None] = mapped_column(_discovered_status_enum)
+    discovered_status_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
