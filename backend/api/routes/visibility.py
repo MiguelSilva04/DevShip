@@ -18,12 +18,41 @@ from backend.api.schemas.visibility import (
 )
 from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
+from backend.bd.models.cluster_context import ClusterContext
+from backend.bd.models.deployment_event import DeploymentEvent
 from backend.bd.models.deployment_version import DeploymentVersion, LifecycleStatus
 from backend.bd.models.environment import Environment
 from backend.bd.models.project import Project
 from backend.bd.models.user import User
+from backend.services.cluster_validation import get_cluster_token
+from backend.services.deploy_pipeline import compute_lifecycle_status
+from backend.services.kubernetes_reader import pod_health_snapshot
 
 router = APIRouter(tags=["visibility"])
+
+_TERMINAL_STATUSES = {LifecycleStatus.FAILED, LifecycleStatus.ROLLED_BACK, LifecycleStatus.SUPERSEDED}
+
+
+def _refresh_lifecycle_from_events(db: Session, versions: list[DeploymentVersion]) -> None:
+    """Recompute lifecycle_status from stored events for non-terminal versions. No K8s call."""
+    pending = [v for v in versions if v.lifecycle_status not in _TERMINAL_STATUSES]
+    if not pending:
+        return
+    events_by_version: dict[uuid.UUID, list[DeploymentEvent]] = {v.id: [] for v in pending}
+    for e in (
+        db.query(DeploymentEvent)
+        .filter(DeploymentEvent.deployment_version_id.in_(events_by_version.keys()))
+        .all()
+    ):
+        events_by_version[e.deployment_version_id].append(e)
+    dirty = False
+    for v in pending:
+        new_status = compute_lifecycle_status(events_by_version[v.id])
+        if new_status != v.lifecycle_status:
+            v.lifecycle_status = new_status
+            dirty = True
+    if dirty:
+        db.commit()
 
 
 def _get_project_or_404(db: Session, project_id: uuid.UUID) -> Project:
@@ -107,10 +136,9 @@ def get_application(
     )
     ae_ids = [ae.id for ae in app_envs]
 
-    latest_by_ae = {
-        v.application_environment_id: v
-        for v in _latest_versions_subquery(db, ae_ids).all()
-    }
+    latest_versions = _latest_versions_subquery(db, ae_ids).all()
+    _refresh_lifecycle_from_events(db, latest_versions)
+    latest_by_ae = {v.application_environment_id: v for v in latest_versions}
 
     # Need env names — one query
     envs = {
@@ -153,6 +181,8 @@ def get_application_environment(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ApplicationEnvironment not found")
 
     latest = _latest_versions_subquery(db, [ae_id]).first()
+    if latest is not None:
+        _refresh_lifecycle_from_events(db, [latest])
 
     return ApplicationEnvironmentDetail(
         id=ae.id,
@@ -191,6 +221,53 @@ def get_ae_history(
 
 
 # ---------------------------------------------------------------------------
+# POST /application-environments/{id}/refresh — live K8s read, manual only
+# ---------------------------------------------------------------------------
+
+@router.post("/application-environments/{ae_id}/refresh", response_model=ApplicationEnvironmentDetail)
+def refresh_application_environment(
+    ae_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Live pod read for the current version's health — only source that catches a pod
+    that died and restarted between deploys, since no observer runs after a request ends."""
+    ae = db.get(ApplicationEnvironment, ae_id)
+    if ae is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ApplicationEnvironment not found")
+
+    latest = _latest_versions_subquery(db, [ae_id]).first()
+    if latest is not None and latest.lifecycle_status not in _TERMINAL_STATUSES:
+        env = db.get(Environment, ae.environment_id)
+        cluster_ctx = db.query(ClusterContext).filter(ClusterContext.project_id == env.project_id).first()
+        if cluster_ctx is not None:
+            try:
+                eks_info = get_cluster_token(
+                    iam_role_arn=cluster_ctx.iam_role_arn,
+                    external_id=cluster_ctx.external_id,
+                    cluster_arn=cluster_ctx.cluster_arn,
+                )
+                namespace = env.namespace or env.name.lower()
+                any_ready, fatal_pods = pod_health_snapshot(eks_info, namespace)
+                if fatal_pods or not any_ready:
+                    latest.lifecycle_status = LifecycleStatus.DEGRADED
+                else:
+                    latest.lifecycle_status = LifecycleStatus.HEALTHY
+                db.commit()
+            except Exception:
+                pass  # cluster unreachable — leave lifecycle_status as last known
+
+    return ApplicationEnvironmentDetail(
+        id=ae.id,
+        application_id=ae.application_id,
+        environment_id=ae.environment_id,
+        deployment_name=ae.deployment_name,
+        enabled=ae.enabled,
+        current_version=DeploymentVersionDetail.model_validate(latest) if latest else None,
+    )
+
+
+# ---------------------------------------------------------------------------
 # GET /projects/{id}/homepage
 # ---------------------------------------------------------------------------
 
@@ -214,6 +291,7 @@ def get_homepage(
     total_ae = len(app_env_ids)
 
     if app_env_ids:
+        _refresh_lifecycle_from_events(db, _latest_versions_subquery(db, app_env_ids).all())
         latest_sq = _latest_versions_subquery(db, app_env_ids).subquery()
         counts = db.query(
             func.count().label("total"),

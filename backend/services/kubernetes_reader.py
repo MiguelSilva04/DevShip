@@ -153,3 +153,33 @@ def list_deployments(cluster: EKSClusterInfo, namespace: str):
 
 def get_argocd_application(cluster: EKSClusterInfo, app_name: str):
     return _list_items(cluster, f"/apis/argoproj.io/v1alpha1/namespaces/argocd/applications/{app_name}", parse_argocd_application)
+
+
+_FATAL_POD_REASONS = {"CrashLoopBackOff", "ErrImagePull", "ImagePullBackOff", "OOMKilled", "Error"}
+
+
+def pod_health_snapshot(cluster: EKSClusterInfo, namespace: str) -> tuple[bool, list[str]]:
+    """
+    Raw pod read (containerStatuses/conditions aren't in parse_pods). Returns
+    (any_ready, fatal_pod_messages) for the namespace's current pods.
+    """
+    raw = api_request(
+        endpoint=cluster.endpoint,
+        path=f"/api/v1/namespaces/{namespace}/pods",
+        token=cluster.bearer_token,
+        cluster_name=cluster.name,
+        ca_file=cluster.ca_file_path,
+    )
+    any_ready = False
+    fatal: list[str] = []
+    for item in raw.get("items", []):
+        pod_name = item["metadata"]["name"]
+        for cs in item.get("status", {}).get("containerStatuses", []):
+            waiting = (cs.get("state") or {}).get("waiting") or {}
+            reason = waiting.get("reason", "")
+            if reason in _FATAL_POD_REASONS:
+                fatal.append(f"{pod_name}: {waiting.get('message') or reason}")
+        for cond in item.get("status", {}).get("conditions", []):
+            if cond.get("type") == "Ready" and cond.get("status") == "True":
+                any_ready = True
+    return any_ready, fatal

@@ -17,7 +17,7 @@ from backend.bd.models.application_environment import ApplicationEnvironment
 from backend.bd.models.cluster_context import ClusterContext
 from backend.bd.models.deployment_event import DeploymentEvent, DeploymentEventType, EventSource, Severity
 from backend.bd.models.deployment_request import DeploymentRequest, RequestStatus
-from backend.bd.models.deployment_version import DeploymentVersion, TriggerSource
+from backend.bd.models.deployment_version import DeploymentVersion, LifecycleStatus, TriggerSource
 from backend.bd.models.environment import Environment
 from backend.bd.session import SessionLocal
 from backend.services.cluster_validation import get_cluster_token
@@ -174,7 +174,7 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
         if not run_id:
             _emit_event(db, version, DeploymentEventType.IMAGE_BUILD_FAILED, EventSource.GITHUB,
                         message="Não foi possível obter o run_id do workflow — verifica o GITHUB_TOKEN.")
-            _fail_request(db, req, "github_workflow_run_id não resolvido")
+            _fail_request(db, req, "github_workflow_run_id não resolvido", version=version)
             return
 
         while time.monotonic() < deadline:
@@ -199,14 +199,14 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                     else:
                         _emit_event(db, version, DeploymentEventType.IMAGE_BUILD_FAILED, EventSource.GITHUB,
                                     message=f"Workflow run {run_id} terminou com: {run['conclusion']}")
-                        _fail_request(db, req, f"GitHub Actions falhou: {run['conclusion']}")
+                        _fail_request(db, req, f"GitHub Actions falhou: {run['conclusion']}", version=version)
                         return
             except Exception as e:
                 _emit_event(db, version, DeploymentEventType.IMAGE_BUILD_FAILED, EventSource.GITHUB, message=str(e))
-                _fail_request(db, req, str(e))
+                _fail_request(db, req, str(e), version=version)
                 return
         else:
-            _timeout(db, req)
+            _timeout(db, req, version=version)
             return
 
         if cluster_ctx is None:
@@ -226,7 +226,7 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
         except Exception as e:
             _emit_event(db, version, DeploymentEventType.SYNC_FAILED, EventSource.KUBERNETES,
                         message=f"Erro ao obter token do cluster: {e}")
-            _fail_request(db, req, f"Falha de autenticação no cluster: {e}")
+            _fail_request(db, req, f"Falha de autenticação no cluster: {e}", version=version)
             return
 
         # ── 2. ArgoCD sync (opcional) ─────────────────────────────────────────
@@ -257,7 +257,7 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                 if phase in ("Failed", "Error"):
                     _emit_event(db, version, DeploymentEventType.SYNC_FAILED, EventSource.ARGOCD,
                                 message=f"ArgoCD sync: {phase}")
-                    _fail_request(db, req, f"ArgoCD sync falhou: {phase}")
+                    _fail_request(db, req, f"ArgoCD sync falhou: {phase}", version=version)
                     return
 
             except Exception:
@@ -269,7 +269,7 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                                 message="ArgoCD não detectado — a observar K8s directamente.")
 
         if argocd_available and time.monotonic() >= deadline:
-            _timeout(db, req)
+            _timeout(db, req, version=version)
             return
 
         # ── 3. K8s Deployment rollout ─────────────────────────────────────────
@@ -292,6 +292,8 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                         if not rollout_done and c.reason == "NewReplicaSetAvailable":
                             rollout_done = True
                             _emit_event(db, version, DeploymentEventType.ROLLOUT_COMPLETED, EventSource.KUBERNETES)
+                            version.lifecycle_status = LifecycleStatus.HEALTHY
+                            db.commit()
                 if rollout_done:
                     break
             except Exception as e:
@@ -300,7 +302,7 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                     _emit_event(db, version, DeploymentEventType.SYNC_FAILED, EventSource.KUBERNETES,
                                 message=f"Erro ao observar Deployment/{deployment_name}: {e}")
         else:
-            _timeout(db, req)
+            _timeout(db, req, version=version)
             return
 
         # ── 4. Pod readiness + erros de container ────────────────────────────
@@ -337,7 +339,7 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                             msg = waiting.get("message") or reason
                             _emit_event(db, version, DeploymentEventType.CRASH_LOOP_BACKOFF, EventSource.KUBERNETES,
                                         message=f"{pod_name}: {msg}")
-                            _fail_request(db, req, f"{reason} em {pod_name}: {msg}")
+                            _fail_request(db, req, f"{reason} em {pod_name}: {msg}", version=version, post_rollout=True)
                             return
 
                     # Readiness
@@ -350,7 +352,7 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                             elif cond.get("status") == "False" and ready_seen:
                                 _emit_event(db, version, DeploymentEventType.READINESS_FAILED, EventSource.KUBERNETES,
                                             message=f"{pod_name}: {cond.get('message', '')}")
-                                _fail_request(db, req, f"Pod {pod_name} perdeu readiness")
+                                _fail_request(db, req, f"Pod {pod_name} perdeu readiness", version=version, post_rollout=True)
                                 return
 
                 if ready_seen:
@@ -359,7 +361,7 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                 _emit_event(db, version, DeploymentEventType.READINESS_FAILED, EventSource.KUBERNETES,
                             message=f"Erro ao observar pods: {e}")
         else:
-            _timeout(db, req)
+            _timeout(db, req, version=version, post_rollout=True)
             return
 
         # ── SUCCESS ───────────────────────────────────────────────────────────
@@ -372,19 +374,52 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
             db.rollback()
             req = db.get(DeploymentRequest, deployment_request_id)
             if req and req.status == RequestStatus.RUNNING:
-                _fail_request(db, req, f"Erro inesperado no observer: {e}")
+                v = db.query(DeploymentVersion).filter(
+                    DeploymentVersion.deployment_request_id == deployment_request_id
+                ).first()
+                _fail_request(db, req, f"Erro inesperado no observer: {e}", version=v)
         except Exception:
             pass
     finally:
         db.close()
 
 
-def _fail_request(db, req: DeploymentRequest, reason: str) -> None:
+def compute_lifecycle_status(events: list[DeploymentEvent]) -> LifecycleStatus:
+    """
+    Pure function: derive Deploying/Healthy/Degraded from a version's ordered events.
+    Failed/RolledBack/Superseded are written by other triggers, never by this function.
+    """
+    types_seen = {e.event_type for e in events}
+    if DeploymentEventType.CRASH_LOOP_BACKOFF in types_seen or DeploymentEventType.READINESS_FAILED in types_seen:
+        return LifecycleStatus.DEGRADED
+    if DeploymentEventType.ROLLOUT_COMPLETED in types_seen:
+        return LifecycleStatus.HEALTHY
+    return LifecycleStatus.DEPLOYING
+
+
+def _fail_request(db, req: DeploymentRequest, reason: str, version: DeploymentVersion | None = None,
+                   post_rollout: bool = False) -> None:
+    """
+    post_rollout=True means the K8s rollout already completed (phase 3 done) — the request
+    itself stays SUCCESS and only the version's health degrades. Otherwise (phases 1-3) the
+    request is FAILED and the version is terminal Failed.
+    """
+    if post_rollout:
+        if req.status == RequestStatus.RUNNING:
+            req.status = RequestStatus.SUCCESS
+            req.completed_at = datetime.now(timezone.utc)
+        if version is not None:
+            version.lifecycle_status = LifecycleStatus.DEGRADED
+        db.commit()
+        return
     req.status = RequestStatus.FAILED
     req.failure_reason = reason
     req.completed_at = datetime.now(timezone.utc)
+    if version is not None:
+        version.lifecycle_status = LifecycleStatus.FAILED
     db.commit()
 
 
-def _timeout(db, req: DeploymentRequest) -> None:
-    _fail_request(db, req, "Timeout: pipeline did not reach a terminal state within 15 minutes")
+def _timeout(db, req: DeploymentRequest, version: DeploymentVersion | None = None, post_rollout: bool = False) -> None:
+    _fail_request(db, req, "Timeout: pipeline did not reach a terminal state within 15 minutes",
+                  version=version, post_rollout=post_rollout)

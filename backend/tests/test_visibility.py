@@ -111,6 +111,27 @@ def _make_version(db, ae, lifecycle=LifecycleStatus.HEALTHY, image_tag=None):
     )
     db.add(v)
     db.flush()
+
+    # Non-terminal statuses are recomputed from events at read time (DEV-10.1) —
+    # back the requested status with matching events so it survives that recompute.
+    if lifecycle in (LifecycleStatus.HEALTHY, LifecycleStatus.DEGRADED):
+        from backend.bd.models.deployment_event import DeploymentEvent, DeploymentEventType, EventSource, Severity
+        db.add(DeploymentEvent(
+            deployment_version_id=v.id,
+            event_type=DeploymentEventType.ROLLOUT_COMPLETED,
+            source=EventSource.KUBERNETES,
+            severity=Severity.INFO,
+            event_timestamp=ts,
+        ))
+        if lifecycle == LifecycleStatus.DEGRADED:
+            db.add(DeploymentEvent(
+                deployment_version_id=v.id,
+                event_type=DeploymentEventType.CRASH_LOOP_BACKOFF,
+                source=EventSource.KUBERNETES,
+                severity=Severity.ERROR,
+                event_timestamp=ts,
+            ))
+        db.flush()
     return v
 
 

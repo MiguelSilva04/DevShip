@@ -25,7 +25,7 @@ from backend.bd.models.application_environment import ApplicationEnvironment
 from backend.bd.models.cluster_context import ClusterContext
 from backend.bd.models.deployment_event import DeploymentEvent, DeploymentEventType, EventSource, Severity
 from backend.bd.models.deployment_request import DeploymentRequest, DeploymentType, RequestStatus
-from backend.bd.models.deployment_version import DeploymentVersion, TriggerSource
+from backend.bd.models.deployment_version import DeploymentVersion, LifecycleStatus, TriggerSource
 from backend.bd.models.environment import Environment
 from backend.bd.models.project import Project, SetupStatus
 from backend.bd.models.team import Team
@@ -367,6 +367,51 @@ class TestDeployPipeline:
         assert req.status == RequestStatus.FAILED
         assert req.failure_reason == "boom"
         assert req.completed_at is not None
+
+    def test_fail_request_post_rollout_keeps_request_success(self, db_session):
+        """DEV-10.1: a phase 4/5 failure (crash/readiness lost after rollout done) degrades
+        the version but leaves the request SUCCESS — the K8s rollout already terminated."""
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+        req = DeploymentRequest(
+            application_environment_id=app_env.id,
+            deployment_type=DeploymentType.STANDARD,
+            status=RequestStatus.RUNNING,
+        )
+        db_session.add(req)
+        db_session.flush()
+
+        version = DeploymentVersion(
+            application_environment_id=app_env.id,
+            deployment_request_id=req.id,
+            trigger_source=TriggerSource.DEVSHIP,
+            lifecycle_status=LifecycleStatus.HEALTHY,
+        )
+        db_session.add(version)
+        db_session.flush()
+
+        from backend.services.deploy_pipeline import _fail_request
+        _fail_request(db_session, req, "CrashLoopBackOff", version=version, post_rollout=True)
+
+        db_session.refresh(req)
+        db_session.refresh(version)
+        assert req.status == RequestStatus.SUCCESS
+        assert version.lifecycle_status == LifecycleStatus.DEGRADED
+
+    def test_compute_lifecycle_status(self):
+        from backend.services.deploy_pipeline import compute_lifecycle_status
+
+        def ev(event_type):
+            return DeploymentEvent(event_type=event_type, source=EventSource.KUBERNETES, severity=Severity.INFO)
+
+        assert compute_lifecycle_status([]) == LifecycleStatus.DEPLOYING
+        assert compute_lifecycle_status([ev(DeploymentEventType.WORKFLOW_STARTED)]) == LifecycleStatus.DEPLOYING
+        assert compute_lifecycle_status([ev(DeploymentEventType.ROLLOUT_COMPLETED)]) == LifecycleStatus.HEALTHY
+        assert compute_lifecycle_status(
+            [ev(DeploymentEventType.ROLLOUT_COMPLETED), ev(DeploymentEventType.CRASH_LOOP_BACKOFF)]
+        ) == LifecycleStatus.DEGRADED
+        assert compute_lifecycle_status(
+            [ev(DeploymentEventType.ROLLOUT_COMPLETED), ev(DeploymentEventType.READINESS_FAILED)]
+        ) == LifecycleStatus.DEGRADED
 
     def test_observe_deployment_end_to_end_records_correct_version_fields(self, db_session, monkeypatch):
         """observe_deployment() runs through all 5 stages and writes correct image_tag / argocd_sync_revision."""
