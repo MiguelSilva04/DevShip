@@ -1,6 +1,7 @@
 from backend.bd.models.user import User
 from backend.bd.models.team import Team
 from backend.bd.models.team_member import TeamMember, TeamMemberRole
+from backend.bd.models.application_team_member import ApplicationTeamMember
 from backend.bd.models.project import Project, SetupStatus
 from backend.bd.models.cluster_context import ClusterContext
 from backend.bd.models.environment import Environment
@@ -13,6 +14,7 @@ from backend.bd.models.deployment_event import DeploymentEvent, DeploymentEventT
 
 __all__ = [
     "User", "Team", "TeamMember", "TeamMemberRole",
+    "ApplicationTeamMember",
     "Project", "SetupStatus",
     "ClusterContext",
     "Environment",

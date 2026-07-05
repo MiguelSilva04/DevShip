@@ -5,6 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from backend.api.authorization import _require_application_access
 from backend.api.deps import get_current_user, get_db
 from backend.api.schemas.deploy import (
     DeploymentEventResponse,
@@ -46,14 +47,7 @@ def _require_team_member(db: Session, app_env_id: uuid.UUID, user: User) -> tupl
     env = db.get(Environment, ae.environment_id)
     app = db.get(Application, ae.application_id)
 
-    from backend.bd.models.project import Project
-    project = db.get(Project, env.project_id)
-    member = db.query(TeamMember).filter(
-        TeamMember.team_id == project.team_id,
-        TeamMember.user_id == user.id,
-    ).first()
-    if member is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a team member")
+    _require_application_access(db, ae.application_id, user)
     return ae, env, app
 
 

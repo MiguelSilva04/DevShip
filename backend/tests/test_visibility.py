@@ -154,6 +154,12 @@ def _register_login(client, email):
     return client.post("/auth/login", json={"email": email, "password": "pw123456"}).json()["access_token"]
 
 
+def _token_for(user):
+    """Token for a fixture user created directly via _make_user (no register/login round-trip)."""
+    from backend.api.security import create_token
+    return create_token(str(user.id))
+
+
 def _auth(token):
     return {"Authorization": f"Bearer {token}"}
 
@@ -166,7 +172,7 @@ class TestLatestVersionsSubquery:
     def test_returns_only_latest(self, db_session):
         from backend.api.routes.visibility import _latest_versions_subquery
 
-        _, _, _, _, _, ae = _setup_chain(db_session)
+        user, _, _, _, _, ae = _setup_chain(db_session)
 
         v_old = _make_version(db_session, ae, LifecycleStatus.DEPLOYING, "v1")
         v_new = _make_version(db_session, ae, LifecycleStatus.HEALTHY, "v2")
@@ -178,7 +184,7 @@ class TestLatestVersionsSubquery:
     def test_one_result_per_ae(self, db_session):
         from backend.api.routes.visibility import _latest_versions_subquery
 
-        _, _, project, env, app, ae1 = _setup_chain(db_session)
+        user, _, project, env, app, ae1 = _setup_chain(db_session)
         env2 = _make_env(db_session, project, "staging", 1)
         ae2 = _make_ae(db_session, app, env2)
 
@@ -195,7 +201,7 @@ class TestLatestVersionsSubquery:
     def test_ae_with_no_versions_not_in_result(self, db_session):
         from backend.api.routes.visibility import _latest_versions_subquery
 
-        _, _, _, _, _, ae = _setup_chain(db_session)
+        user, _, _, _, _, ae = _setup_chain(db_session)
         results = _latest_versions_subquery(db_session, [ae.id]).all()
         assert results == []
 
@@ -207,7 +213,7 @@ class TestLatestVersionsSubquery:
 class TestListEnvironments:
     def test_returns_environments_ordered(self, client, db_session):
         user, _, project, _, _, _ = _setup_chain(db_session)
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        token = _token_for(user)
 
         env2 = _make_env(db_session, project, "prod", 1)
 
@@ -228,18 +234,18 @@ class TestListEnvironments:
 
 class TestListApplications:
     def test_returns_applications(self, client, db_session):
-        _, _, project, _, app, _ = _setup_chain(db_session)
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        user, _, project, _, app, _ = _setup_chain(db_session)
+        token = _token_for(user)
 
         r = client.get(f"/projects/{project.id}/applications", headers=_auth(token))
         assert r.status_code == 200
         assert any(a["id"] == str(app.id) for a in r.json())
 
     def test_archived_excluded(self, client, db_session):
-        _, _, project, _, app, _ = _setup_chain(db_session)
+        user, _, project, _, app, _ = _setup_chain(db_session)
         app.is_archived = True
         db_session.flush()
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        token = _token_for(user)
 
         r = client.get(f"/projects/{project.id}/applications", headers=_auth(token))
         assert r.status_code == 200
@@ -252,9 +258,9 @@ class TestListApplications:
 
 class TestGetApplication:
     def test_returns_detail_with_environments(self, client, db_session):
-        _, _, _, env, app, ae = _setup_chain(db_session)
+        user, _, _, env, app, ae = _setup_chain(db_session)
         _make_version(db_session, ae, LifecycleStatus.HEALTHY)
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        token = _token_for(user)
 
         r = client.get(f"/applications/{app.id}", headers=_auth(token))
         assert r.status_code == 200
@@ -265,8 +271,8 @@ class TestGetApplication:
         assert data["environments"][0]["environment_name"] == env.name
 
     def test_ae_without_deploy_returns_null_lifecycle(self, client, db_session):
-        _, _, _, _, app, _ = _setup_chain(db_session)
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        user, _, _, _, app, _ = _setup_chain(db_session)
+        token = _token_for(user)
 
         r = client.get(f"/applications/{app.id}", headers=_auth(token))
         assert r.status_code == 200
@@ -284,9 +290,9 @@ class TestGetApplication:
 
 class TestGetApplicationEnvironment:
     def test_returns_detail_with_version(self, client, db_session):
-        _, _, _, _, _, ae = _setup_chain(db_session)
+        user, _, _, _, _, ae = _setup_chain(db_session)
         _make_version(db_session, ae, LifecycleStatus.HEALTHY, "v1.0")
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        token = _token_for(user)
 
         r = client.get(f"/application-environments/{ae.id}", headers=_auth(token))
         assert r.status_code == 200
@@ -295,8 +301,8 @@ class TestGetApplicationEnvironment:
         assert data["current_version"]["lifecycle_status"] == "Healthy"
 
     def test_no_versions_returns_null_current_version(self, client, db_session):
-        _, _, _, _, _, ae = _setup_chain(db_session)
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        user, _, _, _, _, ae = _setup_chain(db_session)
+        token = _token_for(user)
 
         r = client.get(f"/application-environments/{ae.id}", headers=_auth(token))
         assert r.status_code == 200
@@ -323,9 +329,9 @@ class TestDiscoveredStatus:
         db_session.flush()
 
     def test_no_version_reads_live_cluster_and_caches(self, client, db_session):
-        _, _, project, _, _, ae = _setup_chain(db_session)
+        user, _, project, _, _, ae = _setup_chain(db_session)
         self._with_cluster(db_session, project)
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        token = _token_for(user)
 
         with (
             patch("backend.api.routes.visibility.get_cluster_token", return_value=object()) as mock_token,
@@ -346,12 +352,12 @@ class TestDiscoveredStatus:
     def test_cached_result_within_ttl_skips_cluster_call(self, client, db_session):
         """A recent discovered_status_checked_at must short-circuit before touching the
         cluster — this is the fix for the endpoint hitting K8s on every page load."""
-        _, _, project, _, _, ae = _setup_chain(db_session)
+        user, _, project, _, _, ae = _setup_chain(db_session)
         self._with_cluster(db_session, project)
         ae.discovered_status = LifecycleStatus.HEALTHY
         ae.discovered_status_checked_at = datetime.now(timezone.utc)
         db_session.flush()
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        token = _token_for(user)
 
         with (
             patch("backend.api.routes.visibility.get_cluster_token") as mock_token,
@@ -366,12 +372,12 @@ class TestDiscoveredStatus:
 
     def test_expired_cache_reads_cluster_again(self, client, db_session):
         from datetime import timedelta
-        _, _, project, _, _, ae = _setup_chain(db_session)
+        user, _, project, _, _, ae = _setup_chain(db_session)
         self._with_cluster(db_session, project)
         ae.discovered_status = LifecycleStatus.HEALTHY
         ae.discovered_status_checked_at = datetime.now(timezone.utc) - timedelta(minutes=10)
         db_session.flush()
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        token = _token_for(user)
 
         with (
             patch("backend.api.routes.visibility.get_cluster_token", return_value=object()),
@@ -384,8 +390,8 @@ class TestDiscoveredStatus:
         mock_snapshot.assert_called_once()
 
     def test_no_cluster_configured_returns_none(self, client, db_session):
-        _, _, _, _, _, ae = _setup_chain(db_session)
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        user, _, _, _, _, ae = _setup_chain(db_session)
+        token = _token_for(user)
 
         r = client.get(f"/application-environments/{ae.id}", headers=_auth(token))
         assert r.status_code == 200
@@ -394,10 +400,10 @@ class TestDiscoveredStatus:
     def test_has_deployment_version_never_reads_cluster(self, client, db_session):
         """Once an ae has a DeploymentVersion, discovery must not run at all — regression
         guard for the cache change not touching the already-deployed path."""
-        _, _, project, _, _, ae = _setup_chain(db_session)
+        user, _, project, _, _, ae = _setup_chain(db_session)
         self._with_cluster(db_session, project)
         _make_version(db_session, ae, LifecycleStatus.HEALTHY)
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        token = _token_for(user)
 
         with (
             patch("backend.api.routes.visibility.get_cluster_token") as mock_token,
@@ -417,9 +423,9 @@ class TestDiscoveredStatus:
 
 class TestRefreshApplicationEnvironment:
     def test_no_cluster_configured_marks_degraded(self, client, db_session):
-        _, _, _, _, _, ae = _setup_chain(db_session)
+        user, _, _, _, _, ae = _setup_chain(db_session)
         _make_version(db_session, ae, LifecycleStatus.HEALTHY)
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        token = _token_for(user)
 
         r = client.post(f"/application-environments/{ae.id}/refresh", headers=_auth(token))
         assert r.status_code == 200
@@ -428,7 +434,7 @@ class TestRefreshApplicationEnvironment:
     def test_cluster_unreachable_marks_degraded_not_left_stale(self, client, db_session):
         """Reproduces: terraform destroy removed the cluster, but a stale Healthy stuck
         around because the failure path used to be a silent no-op."""
-        _, _, project, env, _, ae = _setup_chain(db_session)
+        user, _, project, env, _, ae = _setup_chain(db_session)
         from backend.bd.models.cluster_context import ClusterContext
         db_session.add(ClusterContext(
             project_id=project.id, cluster_arn="arn:aws:eks:us-east-1:1:cluster/x",
@@ -437,7 +443,7 @@ class TestRefreshApplicationEnvironment:
         ))
         db_session.flush()
         _make_version(db_session, ae, LifecycleStatus.HEALTHY)
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        token = _token_for(user)
 
         with patch("backend.api.routes.visibility.get_cluster_token", side_effect=Exception("cluster destroyed")):
             r = client.post(f"/application-environments/{ae.id}/refresh", headers=_auth(token))
@@ -446,9 +452,9 @@ class TestRefreshApplicationEnvironment:
 
     def test_get_after_refresh_does_not_revert_to_stale_healthy(self, client, db_session):
         """The read-time recompute-from-events must not overwrite a fresher live-check result."""
-        _, _, _, _, _, ae = _setup_chain(db_session)
+        user, _, _, _, _, ae = _setup_chain(db_session)
         _make_version(db_session, ae, LifecycleStatus.HEALTHY)  # backs Healthy with a ROLLOUT_COMPLETED event
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        token = _token_for(user)
 
         r = client.post(f"/application-environments/{ae.id}/refresh", headers=_auth(token))
         assert r.json()["current_version"]["lifecycle_status"] == "Degraded"
@@ -469,10 +475,10 @@ class TestRefreshApplicationEnvironment:
 
 class TestGetHistory:
     def test_returns_versions_newest_first(self, client, db_session):
-        _, _, _, _, _, ae = _setup_chain(db_session)
+        user, _, _, _, _, ae = _setup_chain(db_session)
         v1 = _make_version(db_session, ae, LifecycleStatus.HEALTHY, "v1")
         v2 = _make_version(db_session, ae, LifecycleStatus.DEGRADED, "v2")
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        token = _token_for(user)
 
         r = client.get(f"/application-environments/{ae.id}/history", headers=_auth(token))
         assert r.status_code == 200
@@ -481,18 +487,18 @@ class TestGetHistory:
         assert ids[1] == str(v1.id)
 
     def test_pagination(self, client, db_session):
-        _, _, _, _, _, ae = _setup_chain(db_session)
+        user, _, _, _, _, ae = _setup_chain(db_session)
         for _ in range(5):
             _make_version(db_session, ae)
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        token = _token_for(user)
 
         r = client.get(f"/application-environments/{ae.id}/history?limit=2&offset=0", headers=_auth(token))
         assert r.status_code == 200
         assert len(r.json()) == 2
 
     def test_no_history_returns_empty_list(self, client, db_session):
-        _, _, _, _, _, ae = _setup_chain(db_session)
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        user, _, _, _, _, ae = _setup_chain(db_session)
+        token = _token_for(user)
 
         r = client.get(f"/application-environments/{ae.id}/history", headers=_auth(token))
         assert r.status_code == 200
@@ -510,8 +516,8 @@ class TestGetHistory:
 
 class TestHomepage:
     def test_zero_metrics_for_new_project(self, client, db_session):
-        _, _, project, _, _, _ = _setup_chain(db_session)
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        user, _, project, _, _, _ = _setup_chain(db_session)
+        token = _token_for(user)
 
         r = client.get(f"/projects/{project.id}/homepage", headers=_auth(token))
         assert r.status_code == 200
@@ -521,7 +527,7 @@ class TestHomepage:
         assert data["deploys_today"] >= 0  # other tests may have added versions today
 
     def test_counts_healthy_and_degraded_via_sql(self, client, db_session):
-        _, _, project, _, app, ae = _setup_chain(db_session)
+        user, _, project, _, app, ae = _setup_chain(db_session)
 
         env2 = _make_env(db_session, project, "prod", 1)
         ae2 = _make_ae(db_session, app, env2)
@@ -529,7 +535,7 @@ class TestHomepage:
         _make_version(db_session, ae, LifecycleStatus.HEALTHY)
         _make_version(db_session, ae2, LifecycleStatus.DEGRADED)
 
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        token = _token_for(user)
         r = client.get(f"/projects/{project.id}/homepage", headers=_auth(token))
         assert r.status_code == 200
         data = r.json()
@@ -538,8 +544,8 @@ class TestHomepage:
         assert data["degraded_count"] == 1
 
     def test_ae_without_deploy_not_counted_as_healthy(self, client, db_session):
-        _, _, project, _, _, _ = _setup_chain(db_session)  # ae has no versions
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        user, _, project, _, _, _ = _setup_chain(db_session)  # ae has no versions
+        token = _token_for(user)
 
         r = client.get(f"/projects/{project.id}/homepage", headers=_auth(token))
         assert r.status_code == 200
@@ -548,9 +554,9 @@ class TestHomepage:
         assert data["total_application_environments"] == 1
 
     def test_applications_list_with_lifecycle(self, client, db_session):
-        _, _, project, env, app, ae = _setup_chain(db_session)
+        user, _, project, env, app, ae = _setup_chain(db_session)
         _make_version(db_session, ae, LifecycleStatus.HEALTHY)
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        token = _token_for(user)
 
         r = client.get(f"/projects/{project.id}/homepage", headers=_auth(token))
         assert r.status_code == 200
@@ -627,42 +633,42 @@ class TestComputeUpToDate:
 
 class TestUpToDateEndpoint:
     def test_no_current_version_returns_unknown(self, client, db_session):
-        _, _, _, _, _, ae = _setup_chain(db_session)
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        user, _, _, _, _, ae = _setup_chain(db_session)
+        token = _token_for(user)
 
         r = client.get(f"/application-environments/{ae.id}/up-to-date", headers=_auth(token))
         assert r.status_code == 200
         assert r.json()["status"] == "Unknown"
 
     def test_no_argocd_sync_revision_returns_unknown(self, client, db_session):
-        _, _, _, _, _, ae = _setup_chain(db_session)
+        user, _, _, _, _, ae = _setup_chain(db_session)
         _make_version(db_session, ae, LifecycleStatus.HEALTHY)
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        token = _token_for(user)
 
         r = client.get(f"/application-environments/{ae.id}/up-to-date", headers=_auth(token))
         assert r.status_code == 200
         assert r.json()["status"] == "Unknown"
 
     def test_missing_gitops_branch_returns_unknown(self, client, db_session):
-        _, _, project, _, _, ae = _setup_chain(db_session)
+        user, _, project, _, _, ae = _setup_chain(db_session)
         project.git_ops_repository_url = "https://github.com/org/gitops"
         v = _make_version(db_session, ae, LifecycleStatus.HEALTHY)
         v.argocd_sync_revision = "abc123"
         db_session.flush()
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        token = _token_for(user)
 
         r = client.get(f"/application-environments/{ae.id}/up-to-date", headers=_auth(token))
         assert r.status_code == 200
         assert r.json()["status"] == "Unknown"
 
     def test_matching_head_returns_up_to_date(self, client, db_session):
-        _, _, project, env, _, ae = _setup_chain(db_session)
+        user, _, project, env, _, ae = _setup_chain(db_session)
         project.git_ops_repository_url = "https://github.com/org/gitops"
         env.gitops_branch = "main"
         v = _make_version(db_session, ae, LifecycleStatus.HEALTHY)
         v.argocd_sync_revision = "abc123"
         db_session.flush()
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        token = _token_for(user)
 
         with patch("backend.api.routes.visibility.resolve_branch_head", return_value="abc123"):
             r = client.get(f"/application-environments/{ae.id}/up-to-date", headers=_auth(token))
@@ -670,13 +676,13 @@ class TestUpToDateEndpoint:
         assert r.json()["status"] == "UpToDate"
 
     def test_diverging_head_returns_outdated(self, client, db_session):
-        _, _, project, env, _, ae = _setup_chain(db_session)
+        user, _, project, env, _, ae = _setup_chain(db_session)
         project.git_ops_repository_url = "https://github.com/org/gitops"
         env.gitops_branch = "main"
         v = _make_version(db_session, ae, LifecycleStatus.HEALTHY)
         v.argocd_sync_revision = "abc123"
         db_session.flush()
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        token = _token_for(user)
 
         with patch("backend.api.routes.visibility.resolve_branch_head", return_value="def456"):
             r = client.get(f"/application-environments/{ae.id}/up-to-date", headers=_auth(token))
@@ -684,13 +690,13 @@ class TestUpToDateEndpoint:
         assert r.json()["status"] == "Outdated"
 
     def test_github_lookup_failure_returns_unknown(self, client, db_session):
-        _, _, project, env, _, ae = _setup_chain(db_session)
+        user, _, project, env, _, ae = _setup_chain(db_session)
         project.git_ops_repository_url = "https://github.com/org/gitops"
         env.gitops_branch = "main"
         v = _make_version(db_session, ae, LifecycleStatus.HEALTHY)
         v.argocd_sync_revision = "abc123"
         db_session.flush()
-        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        token = _token_for(user)
 
         with patch("backend.api.routes.visibility.resolve_branch_head", return_value=None):
             r = client.get(f"/application-environments/{ae.id}/up-to-date", headers=_auth(token))

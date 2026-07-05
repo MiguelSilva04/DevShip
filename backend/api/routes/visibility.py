@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import case, desc, func
 from sqlalchemy.orm import Session
 
+from backend.api.authorization import _require_application_access, _require_project_member
 from backend.api.deps import get_current_user, get_db
 from backend.api.schemas.visibility import (
     ApplicationDetailResponse,
@@ -29,6 +30,7 @@ from backend.api.schemas.visibility import (
 )
 from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
+from backend.bd.models.application_team_member import ApplicationTeamMember
 from backend.bd.models.cluster_context import ClusterContext
 from backend.bd.models.deployment_event import DeploymentEvent
 from backend.bd.models.deployment_request import DeploymentRequest
@@ -36,6 +38,7 @@ from backend.bd.models.deployment_version import DeploymentVersion, LifecycleSta
 from backend.bd.models.environment import Environment
 from backend.bd.models.project import Project
 from backend.bd.models.team import Team
+from backend.bd.models.team_member import TeamMemberRole
 from backend.bd.models.user import User
 from backend.services.cluster_validation import get_cluster_token
 from backend.services.deploy_pipeline import compute_lifecycle_status
@@ -105,10 +108,11 @@ def get_project(
     return ProjectSummary(id=project.id, name=project.name, team_name=team.name if team else "")
 
 
-def _get_ae_or_404(db: Session, ae_id: uuid.UUID) -> ApplicationEnvironment:
+def _get_ae_or_404(db: Session, ae_id: uuid.UUID, current_user: User) -> ApplicationEnvironment:
     ae = db.get(ApplicationEnvironment, ae_id)
     if ae is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ApplicationEnvironment not found")
+    _require_application_access(db, ae.application_id, current_user)
     return ae
 
 
@@ -191,13 +195,20 @@ def list_environments(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _get_project_or_404(db, project_id)
-    return (
-        db.query(Environment)
-        .filter(Environment.project_id == project_id)
-        .order_by(Environment.deployment_order)
-        .all()
-    )
+    member = _require_project_member(db, project_id, current_user)
+    query = db.query(Environment).filter(Environment.project_id == project_id)
+
+    if member.role == TeamMemberRole.CLOUD_ENGINEER:
+        return query.order_by(Environment.deployment_order).all()
+
+    query = query.join(ApplicationEnvironment, ApplicationEnvironment.environment_id == Environment.id)
+    if member.role == TeamMemberRole.DEVELOPER:
+        query = (
+            query.join(Application, ApplicationEnvironment.application_id == Application.id)
+            .join(ApplicationTeamMember, ApplicationTeamMember.application_id == Application.id)
+            .filter(ApplicationTeamMember.team_member_id == member.id)
+        )
+    return query.distinct().order_by(Environment.deployment_order).all()
 
 
 # ---------------------------------------------------------------------------
@@ -210,13 +221,15 @@ def list_applications(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _get_project_or_404(db, project_id)
-    return (
-        db.query(Application)
-        .filter(Application.project_id == project_id, Application.is_archived.is_(False))
-        .order_by(Application.name)
-        .all()
+    member = _require_project_member(db, project_id, current_user)
+    query = db.query(Application).filter(
+        Application.project_id == project_id, Application.is_archived.is_(False)
     )
+    if member.role == TeamMemberRole.DEVELOPER:
+        query = query.join(
+            ApplicationTeamMember, ApplicationTeamMember.application_id == Application.id
+        ).filter(ApplicationTeamMember.team_member_id == member.id)
+    return query.order_by(Application.name).all()
 
 
 # ---------------------------------------------------------------------------
@@ -229,9 +242,8 @@ def get_application(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_application_access(db, app_id, current_user)
     app = db.get(Application, app_id)
-    if app is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
 
     app_envs = (
         db.query(ApplicationEnvironment)
@@ -280,7 +292,7 @@ def get_application_environment(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    ae = _get_ae_or_404(db, ae_id)
+    ae = _get_ae_or_404(db, ae_id, current_user)
 
     latest = _latest_versions_subquery(db, [ae_id]).first()
     if latest is not None:
@@ -322,7 +334,7 @@ def get_ae_history(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _get_ae_or_404(db, ae_id)
+    _get_ae_or_404(db, ae_id, current_user)
 
     return (
         db.query(DeploymentVersion)
@@ -346,7 +358,7 @@ def refresh_application_environment(
 ):
     """Live pod read for the current version's health — only source that catches a pod
     that died and restarted between deploys, since no observer runs after a request ends."""
-    ae = _get_ae_or_404(db, ae_id)
+    ae = _get_ae_or_404(db, ae_id, current_user)
 
     latest = _latest_versions_subquery(db, [ae_id]).first()
     if latest is not None and latest.lifecycle_status not in _TERMINAL_STATUSES:
@@ -393,7 +405,7 @@ def get_pods(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    ae = _get_ae_or_404(db, ae_id)
+    ae = _get_ae_or_404(db, ae_id, current_user)
     eks_info, namespace = _resolve_cluster_and_namespace(db, ae)
 
     pod_list = list_pods_in_namespace(eks_info, namespace)
@@ -431,7 +443,7 @@ def get_health_probes(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    ae = _get_ae_or_404(db, ae_id)
+    ae = _get_ae_or_404(db, ae_id, current_user)
     eks_info, namespace = _resolve_cluster_and_namespace(db, ae)
     containers = container_probe_statuses(eks_info, namespace, ae.deployment_name)
     return HealthProbesResponse(containers=[ContainerProbeStatus(**c) for c in containers])
@@ -447,7 +459,7 @@ def get_events(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    ae = _get_ae_or_404(db, ae_id)
+    ae = _get_ae_or_404(db, ae_id, current_user)
     eks_info, namespace = _resolve_cluster_and_namespace(db, ae)
 
     event_list = list_events_in_namespace(eks_info, namespace)
@@ -495,7 +507,7 @@ def get_logs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    ae = _get_ae_or_404(db, ae_id)
+    ae = _get_ae_or_404(db, ae_id, current_user)
     eks_info, namespace = _resolve_cluster_and_namespace(db, ae)
 
     raw = get_pod_logs(eks_info, namespace, pod, tail_lines=tail)
@@ -513,16 +525,24 @@ def get_homepage(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _get_project_or_404(db, project_id)
+    member = _require_project_member(db, project_id, current_user)
 
-    # All app_envs for this project (join through app or env)
+    accessible_apps_query = db.query(Application.id).filter(
+        Application.project_id == project_id, Application.is_archived.is_(False)
+    )
+    if member.role == TeamMemberRole.DEVELOPER:
+        accessible_apps_query = accessible_apps_query.join(
+            ApplicationTeamMember, ApplicationTeamMember.application_id == Application.id
+        ).filter(ApplicationTeamMember.team_member_id == member.id)
+    accessible_app_ids = [row[0] for row in accessible_apps_query.all()]
+
+    # All app_envs for these accessible applications
     app_env_ids: list[uuid.UUID] = [
         row[0]
         for row in db.query(ApplicationEnvironment.id)
-        .join(Application, ApplicationEnvironment.application_id == Application.id)
-        .filter(Application.project_id == project_id, Application.is_archived.is_(False))
+        .filter(ApplicationEnvironment.application_id.in_(accessible_app_ids))
         .all()
-    ]
+    ] if accessible_app_ids else []
 
     total_ae = len(app_env_ids)
 
@@ -550,10 +570,10 @@ def get_homepage(
     # Build applications list with per-ae status
     apps = (
         db.query(Application)
-        .filter(Application.project_id == project_id, Application.is_archived.is_(False))
+        .filter(Application.id.in_(accessible_app_ids))
         .order_by(Application.name)
         .all()
-    )
+    ) if accessible_app_ids else []
 
     latest_by_ae = (
         {v.application_environment_id: v for v in _latest_versions_subquery(db, app_env_ids).all()}
@@ -655,7 +675,7 @@ def get_up_to_date(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    ae = _get_ae_or_404(db, ae_id)
+    ae = _get_ae_or_404(db, ae_id, current_user)
 
     latest = _latest_versions_subquery(db, [ae_id]).first()
     if latest is None or latest.argocd_sync_revision is None:
