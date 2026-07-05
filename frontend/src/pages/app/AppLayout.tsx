@@ -36,7 +36,6 @@ export default function AppLayout() {
         </div>
 
         <NavBtn icon={IconGrid}   label="Applications" style={active('home')}         onClick={() => nav('/app/home')} />
-        <NavBtn icon={IconClock}  label="History"      style={active('history')}      onClick={() => nav('/app/history')} />
         {isCloud && <NavBtn icon={IconLayers} label="Environments" style={active('environments')} onClick={() => nav('/app/environments')} />}
         {canApprove && (
           <NavBtn icon={IconShield} label="Approvals" style={active('approvals')} onClick={() => nav('/app/approvals')}>
@@ -111,9 +110,6 @@ function NavBtn({ icon: Icon, label, style, onClick, children }: {
 // SVG Icons
 function IconGrid({ style }: { style?: React.CSSProperties }) {
   return <svg style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>;
-}
-function IconClock({ style }: { style?: React.CSSProperties }) {
-  return <svg style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>;
 }
 function IconLayers({ style }: { style?: React.CSSProperties }) {
   return <svg style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>;

@@ -24,10 +24,14 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
       window.location.href = '/login';
       throw new Error('Sessão expirada. Por favor entra novamente.');
     }
+    // FastAPI 422s send `detail` as a list of {loc, msg, type} objects, not a string.
+    const detail = Array.isArray(body.detail)
+      ? body.detail.map((e: { msg?: string }) => e.msg).filter(Boolean).join('; ')
+      : body.detail;
     if (response.status >= 500) {
-      throw new Error(body.detail || 'Erro interno do servidor. Tenta novamente mais tarde.');
+      throw new Error(detail || 'Erro interno do servidor. Tenta novamente mais tarde.');
     }
-    throw new Error(body.detail || `Erro ${response.status}`);
+    throw new Error(detail || `Erro ${response.status}`);
   }
   return response.json();
 }
