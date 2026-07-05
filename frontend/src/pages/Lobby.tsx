@@ -67,7 +67,7 @@ export default function Lobby() {
   if (token) {
     const firstName = user?.name.split(' ')[0] ?? '…';
 
-    let subtitle = 'A carregar os teus projetos…';
+    let subtitle;
     if (teams !== null && teams.length > 0) {
       subtitle = teams[0].role === 'CLOUD_ENGINEER'
         ? 'Escolhe um projeto para entrar ou continua o onboarding.'
