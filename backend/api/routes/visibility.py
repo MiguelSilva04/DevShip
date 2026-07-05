@@ -199,16 +199,33 @@ def list_environments(
     query = db.query(Environment).filter(Environment.project_id == project_id)
 
     if member.role == TeamMemberRole.CLOUD_ENGINEER:
-        return query.order_by(Environment.deployment_order).all()
+        envs = query.order_by(Environment.deployment_order).all()
+    else:
+        query = query.join(ApplicationEnvironment, ApplicationEnvironment.environment_id == Environment.id)
+        if member.role == TeamMemberRole.DEVELOPER:
+            query = (
+                query.join(Application, ApplicationEnvironment.application_id == Application.id)
+                .join(ApplicationTeamMember, ApplicationTeamMember.application_id == Application.id)
+                .filter(ApplicationTeamMember.team_member_id == member.id)
+            )
+        envs = query.distinct().order_by(Environment.deployment_order).all()
 
-    query = query.join(ApplicationEnvironment, ApplicationEnvironment.environment_id == Environment.id)
-    if member.role == TeamMemberRole.DEVELOPER:
-        query = (
-            query.join(Application, ApplicationEnvironment.application_id == Application.id)
-            .join(ApplicationTeamMember, ApplicationTeamMember.application_id == Application.id)
-            .filter(ApplicationTeamMember.team_member_id == member.id)
-        )
-    return query.distinct().order_by(Environment.deployment_order).all()
+    names_by_env: dict[uuid.UUID, list[str]] = {e.id: [] for e in envs}
+    if envs:
+        for env_id, app_name in (
+            db.query(ApplicationEnvironment.environment_id, Application.name)
+            .join(Application, ApplicationEnvironment.application_id == Application.id)
+            .filter(ApplicationEnvironment.environment_id.in_(names_by_env.keys()))
+            .all()
+        ):
+            names_by_env[env_id].append(app_name)
+
+    result = []
+    for e in envs:
+        item = EnvironmentListItem.model_validate(e)
+        item.application_names = names_by_env[e.id]
+        result.append(item)
+    return result
 
 
 # ---------------------------------------------------------------------------

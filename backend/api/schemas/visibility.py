@@ -26,6 +26,7 @@ class EnvironmentListItem(BaseModel):
     deployment_order: int
     requires_approval: bool
     approval_required_role: Optional[str] = None
+    application_names: list[str] = []
     model_config = {"from_attributes": True}
 
 

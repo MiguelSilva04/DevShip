@@ -252,6 +252,20 @@ class TestListEnvironmentsScoping:
         names = {e["name"] for e in r.json()}
         assert names == {"dev"}
 
+    def test_application_names_populated_per_environment(self, client, db_session, scenario):
+        env_empty = _make_env(db_session, scenario["project"], "empty", 2)
+
+        user = _make_user(db_session)
+        _make_member(db_session, scenario["team"], user, TeamMemberRole.CLOUD_ENGINEER)
+        token = _token_for(user)
+
+        r = client.get(f"/projects/{scenario['project'].id}/environments", headers=_auth(token))
+        assert r.status_code == 200
+        by_name = {e["name"]: e["application_names"] for e in r.json()}
+        assert by_name["dev"] == [scenario["app_a"].name]
+        assert by_name["staging"] == [scenario["app_b"].name]
+        assert by_name["empty"] == []
+
     def test_developer_sees_environment_if_any_ae_is_granted(self, client, db_session, scenario):
         """Environment with AEs from two Applications, one granted — must stay visible."""
         ae_a_in_env_b = _make_ae(db_session, scenario["app_a"], scenario["env_b"])
