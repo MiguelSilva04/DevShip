@@ -8,7 +8,32 @@ interface AEDetail {
   application_id: string;
   environment_id: string;
   deployment_name: string;
+  current_version: { version_label: string | null; image_tag: string | null; source_commit_sha: string | null } | null;
 }
+
+interface PendingCommit {
+  sha: string;
+  type: string | null;
+  message: string;
+  author: string;
+  date: string;
+}
+
+interface PendingCommitsResponse {
+  current_sha: string | null;
+  head_sha: string | null;
+  commits: PendingCommit[];
+  reason: string | null;
+}
+
+const COMMIT_TYPE_COLOR: Record<string, string> = {
+  feat: '#5dd57b',
+  fix: '#ecc26b',
+  chore: 'var(--text-3)',
+  docs: '#7fb6f9',
+  refactor: '#c792ea',
+  test: '#7fb6f9',
+};
 
 export default function Deploy() {
   const { appId, aeId } = useParams<{ appId: string; aeId: string }>();
@@ -22,6 +47,7 @@ export default function Deploy() {
   const [justification, setJustification] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [pending, setPending] = useState<PendingCommitsResponse | null>(null);
 
   useEffect(() => {
     if (!aeId) return;
@@ -29,13 +55,15 @@ export default function Deploy() {
     (async () => {
       const d: AEDetail = await apiFetch(`/application-environments/${aeId}`);
       setAeDetail(d);
-      const [app, envs] = await Promise.all([
+      const [app, envs, pendingCommits] = await Promise.all([
         apiFetch(`/applications/${d.application_id}`),
         projectId ? apiFetch(`/projects/${projectId}/environments`) : Promise.resolve([]),
+        apiFetch(`/application-environments/${aeId}/pending-commits`),
       ]);
       setAppName(app.name);
       const env = (envs as { id: string; name: string; requires_approval: boolean }[]).find(e => e.id === d.environment_id);
       if (env) { setEnvName(env.name); setRequiresApproval(env.requires_approval); }
+      setPending(pendingCommits);
     })().catch(e => setError(e.message));
   }, [aeId]);
 
@@ -77,20 +105,54 @@ export default function Deploy() {
         </div>
       )}
 
-      {/* Context card */}
+      {/* Nova versão */}
       <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '20px 22px', marginBottom: 16 }}>
-        <div style={{ fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 14 }}>Contexto do deploy</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '11px 28px', fontSize: 13 }}>
-          {([['Application', appLabel], ['Environment', envLabel]] as [string, string][]).map(([k, v]) => (
-            <div key={k}>
-              <span style={{ color: 'var(--text-3)', fontSize: 12 }}>{k}</span>
-              <div className="mono" style={{ marginTop: 3 }}>{v || '—'}</div>
+        <div style={{ fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 14 }}>Nova versão</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18, fontSize: 13 }}>
+          <div>
+            <span style={{ color: 'var(--text-3)', fontSize: 12 }}>Current</span>
+            <div className="mono" style={{ marginTop: 3 }}>
+              {aeDetail?.current_version
+                ? `${aeDetail.current_version.version_label ?? aeDetail.current_version.image_tag ?? '—'} · ${(aeDetail.current_version.source_commit_sha ?? pending?.current_sha ?? '').slice(0, 7) || '—'}`
+                : 'Sem deploy anterior'}
             </div>
-          ))}
+          </div>
+          {pending?.head_sha && (
+            <>
+              <span style={{ color: 'var(--text-3)' }}>→</span>
+              <div>
+                <span style={{ color: 'var(--text-3)', fontSize: 12 }}>HEAD ({envLabel.toUpperCase()})</span>
+                <div className="mono" style={{ marginTop: 3, color: 'var(--teal)', fontWeight: 600 }}>{pending.head_sha.slice(0, 7)}</div>
+              </div>
+            </>
+          )}
         </div>
-        <div style={{ marginTop: 14, padding: '10px 14px', borderRadius: 9, background: 'var(--bg-2)', border: '1px solid var(--border-soft)', fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5 }}>
-          O commit exato é determinado pela branch configurada no momento do deploy. {/* ponytail: no commits endpoint in MVP */}
+      </div>
+
+      {/* Commits incluídos */}
+      <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '20px 22px', marginBottom: 16 }}>
+        <div style={{ fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 14 }}>
+          Commits incluídos {pending && pending.commits.length > 0 && `(${pending.commits.length})`}
         </div>
+        {pending?.reason ? (
+          <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>{pending.reason}</div>
+        ) : pending && pending.commits.length === 0 ? (
+          <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>Nenhum commit novo desde o último deploy.</div>
+        ) : pending ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {pending.commits.map(c => (
+              <div key={c.sha} style={{ display: 'flex', alignItems: 'baseline', gap: 10, fontSize: 13 }}>
+                {c.type && (
+                  <span className="mono" style={{ fontSize: 11, fontWeight: 600, color: COMMIT_TYPE_COLOR[c.type] ?? 'var(--text-3)', minWidth: 42 }}>{c.type}</span>
+                )}
+                <span style={{ flex: 1 }}>{c.message}</span>
+                <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{c.author} · {c.date.slice(0, 10)}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>A carregar…</div>
+        )}
       </div>
 
       <div style={{ marginBottom: 16 }}>

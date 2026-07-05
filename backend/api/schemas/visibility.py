@@ -147,6 +147,21 @@ class UpToDateResponse(BaseModel):
     reason: Optional[str] = None
 
 
+class PendingCommit(BaseModel):
+    sha: str
+    type: Optional[str] = None  # conventional-commit prefix (feat/fix/chore/...), best-effort
+    message: str
+    author: str
+    date: str
+
+
+class PendingCommitsResponse(BaseModel):
+    current_sha: Optional[str] = None
+    head_sha: Optional[str] = None
+    commits: list[PendingCommit] = []
+    reason: Optional[str] = None  # set when commits could not be resolved (never a fake empty list)
+
+
 class ProbeSpec(BaseModel):
     path: Optional[str] = None
     port: Optional[int] = None

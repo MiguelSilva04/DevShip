@@ -8,6 +8,7 @@ export default function AppLayout() {
   const loc = useLocation();
   const { user, logout: authLogout } = useUser();
   const [project, setProject] = useState<{ name: string; team_name: string } | null>(null);
+  const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
     const projectId = localStorage.getItem('ob_project_id');
@@ -17,6 +18,13 @@ export default function AppLayout() {
 
   const isCloud = user?.role === 'cloud';
   const canApprove = user?.role === 'cloud' || user?.role === 'tech';
+
+  useEffect(() => {
+    if (!canApprove) return;
+    apiFetch('/deployment-requests?request_status=PENDING')
+      .then((rows: unknown[]) => setPendingCount(rows.length))
+      .catch(() => setPendingCount(0));
+  }, [canApprove]);
 
   const at = (path: string) => loc.pathname === `/app/${path}` || loc.pathname.startsWith(`/app/${path}/`);
   const active = (path: string): React.CSSProperties => ({
@@ -39,7 +47,9 @@ export default function AppLayout() {
         {isCloud && <NavBtn icon={IconLayers} label="Environments" style={active('environments')} onClick={() => nav('/app/environments')} />}
         {canApprove && (
           <NavBtn icon={IconShield} label="Approvals" style={active('approvals')} onClick={() => nav('/app/approvals')}>
-            <span style={{ marginLeft:'auto', background:'var(--teal)', color:'var(--teal-ink)', fontSize:10, fontWeight:600, minWidth:18, height:18, borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 5px' }}>3</span>
+            {pendingCount > 0 && (
+              <span style={{ marginLeft:'auto', background:'var(--teal)', color:'var(--teal-ink)', fontSize:10, fontWeight:600, minWidth:18, height:18, borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 5px' }}>{pendingCount}</span>
+            )}
           </NavBtn>
         )}
         {isCloud && <NavBtn icon={IconUsers}    label="Team"      style={active('team')}      onClick={() => nav('/app/team')} />}
@@ -75,7 +85,10 @@ export default function AppLayout() {
           <div style={{ marginLeft:'auto', display:'flex', gap:8 }}>
             {canApprove && (
               <button onClick={() => nav('/app/approvals')} className="btn-secondary" style={{ display:'inline-flex', alignItems:'center', gap:7, fontSize:12, padding:'7px 12px', borderRadius:8 }}>
-                Approvals <span style={{ background:'var(--teal)', color:'var(--teal-ink)', fontSize:10, fontWeight:600, minWidth:17, height:17, borderRadius:9, display:'inline-flex', alignItems:'center', justifyContent:'center' }}>3</span>
+                Approvals
+                {pendingCount > 0 && (
+                  <span style={{ background:'var(--teal)', color:'var(--teal-ink)', fontSize:10, fontWeight:600, minWidth:17, height:17, borderRadius:9, display:'inline-flex', alignItems:'center', justifyContent:'center' }}>{pendingCount}</span>
+                )}
               </button>
             )}
             {isCloud && <button onClick={() => nav('/app/team')}     className="btn-secondary" style={{ fontSize:12, padding:'7px 12px', borderRadius:8 }}>Team</button>}

@@ -14,7 +14,8 @@ class DeployRequest(BaseModel):
 
 
 class RollbackRequest(BaseModel):
-    deployment_version_id: uuid.UUID  # the version to revert to (TO)
+    # No deployment_version_id — rollback always targets the last HEALTHY version for the
+    # ApplicationEnvironment, server-side. No manual version selection (design doc rule).
     justification: Optional[str] = None
 
 

@@ -26,13 +26,13 @@ export default function Rollback() {
   const { user } = useUser();
 
   const [current, setCurrent] = useState<DeploymentVersionDetail | null>(null);
-  const [history, setHistory] = useState<DeploymentVersionDetail[]>([]);
+  const [target, setTarget] = useState<DeploymentVersionDetail | null>(null);
   const [envName, setEnvName] = useState('');
   const [requiresApproval, setRequiresApproval] = useState(false);
-  const [target, setTarget] = useState<string>('');
   const [justification, setJustification] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     if (!aeId) return;
@@ -46,16 +46,17 @@ export default function Rollback() {
         projectId ? apiFetch(`/projects/${projectId}/environments`) : Promise.resolve([]),
       ]);
 
-      // Only versions with a real image can be rolled back to, and never the current one.
-      const targets = (hist as DeploymentVersionDetail[]).filter(
-        v => v.image_tag && v.id !== ae.current_version?.id
+      // Rollback always targets the last HEALTHY version, excluding the current one —
+      // no manual selection (design doc rule). Mirrors the backend's own target lookup.
+      const lastHealthy = (hist as DeploymentVersionDetail[]).find(
+        v => v.lifecycle_status === 'Healthy' && v.id !== ae.current_version?.id
       );
-      setHistory(targets);
-      if (targets.length > 0) setTarget(targets[0].id);
+      setTarget(lastHealthy ?? null);
 
       const env = (envs as { id: string; name: string; requires_approval: boolean }[]).find(e => e.id === ae.environment_id);
       if (env) { setEnvName(env.name); setRequiresApproval(env.requires_approval); }
-    })().catch(e => setError(e.message));
+      setReady(true);
+    })().catch(e => { setError(e.message); setReady(true); });
   }, [aeId]);
 
   async function submit() {
@@ -65,7 +66,7 @@ export default function Rollback() {
     try {
       const req = await apiFetch(`/application-environments/${aeId}/rollback`, {
         method: 'POST',
-        body: JSON.stringify({ deployment_version_id: target, justification: justification || null }),
+        body: JSON.stringify({ justification: justification || null }),
       });
       nav(`/app/${appId}/${aeId}/exec/${req.id}`);
     } catch (e: unknown) {
@@ -85,6 +86,9 @@ export default function Rollback() {
     <div style={{ maxWidth: 660 }}>
       <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 6 }}>{appId} / {envLabel} / rollback</div>
       <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 4px' }}>Rollback — <span style={{ color: 'var(--text-2)' }}>{envLabel}</span></h1>
+      <p style={{ fontSize: 12.5, color: 'var(--text-3)', margin: '0 0 18px' }}>
+        Reverte sempre para a última versão saudável — não é possível escolher outra versão manualmente.
+      </p>
 
       {requiresApproval && (
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 13px', border: '1px solid rgba(224,169,59,.35)', borderRadius: 9, background: 'rgba(224,169,59,.07)', fontSize: 12, color: '#ecc26b', margin: '10px 0 18px' }}>
@@ -106,25 +110,25 @@ export default function Rollback() {
         )}
       </div>
 
-      {/* Target version */}
+      {/* Target version — last healthy, no manual selection */}
       <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', overflow: 'hidden', marginBottom: 16 }}>
         <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border-soft)', fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
-          Escolhe a versão para reverter (TO)
+          Última versão saudável (TO)
         </div>
-        {history.map((h, i) => (
-          <label key={h.id} htmlFor={`rb-${h.id}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '14px 20px', cursor: 'pointer', borderBottom: i < history.length - 1 ? '1px solid var(--border-soft)' : 'none' }}>
-            <input id={`rb-${h.id}`} type="radio" name="target" checked={target === h.id} onChange={() => setTarget(h.id)} style={{ marginTop: 3, accentColor: 'var(--teal)', flex: 'none' }} />
+        {target ? (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '14px 20px' }}>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span className="mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{h.version_label ?? h.image_tag}</span>
-                <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>{h.source_commit_sha ? h.source_commit_sha.slice(0, 7) : '—'}</span>
+                <span className="mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{target.version_label ?? target.image_tag}</span>
+                <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>{target.source_commit_sha ? target.source_commit_sha.slice(0, 7) : '—'}</span>
               </div>
-              <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{new Date(h.created_at).toLocaleString()}</div>
+              <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{new Date(target.created_at).toLocaleString()}</div>
             </div>
-          </label>
-        ))}
-        {history.length === 0 && (
-          <div style={{ padding: '28px 18px', textAlign: 'center', color: 'var(--text-3)', fontSize: 12.5 }}>Sem versões elegíveis para rollback.</div>
+          </div>
+        ) : ready ? (
+          <div style={{ padding: '28px 18px', textAlign: 'center', color: 'var(--text-3)', fontSize: 12.5 }}>Sem versão saudável anterior para rollback.</div>
+        ) : (
+          <div style={{ padding: '28px 18px', textAlign: 'center', color: 'var(--text-3)', fontSize: 12.5 }}>A carregar…</div>
         )}
       </div>
 

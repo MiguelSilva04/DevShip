@@ -22,6 +22,8 @@ from backend.api.schemas.visibility import (
     LogsResponse,
     ContainerProbeStatus,
     HealthProbesResponse,
+    PendingCommit,
+    PendingCommitsResponse,
     PodListResponse,
     PodStatus,
     ProjectSummary,
@@ -43,7 +45,7 @@ from backend.bd.models.user import User
 from backend.services.cluster_validation import get_cluster_token
 from backend.services.deploy_pipeline import compute_lifecycle_status
 from backend.services.eks_discovery import EKSClusterInfo
-from backend.services.gitops_scanner import resolve_branch_head
+from backend.services.gitops_scanner import compare_commits, resolve_branch_head
 from backend.services.kubernetes_reader import (
     container_probe_statuses,
     get_pod_logs,
@@ -715,4 +717,38 @@ def get_up_to_date(
         status=compute_up_to_date(latest.argocd_sync_revision, head_sha),
         gitops_head_sha=head_sha,
         argocd_sync_revision=latest.argocd_sync_revision,
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /application-environments/{id}/pending-commits — commits that would ship on deploy
+# ---------------------------------------------------------------------------
+
+@router.get("/application-environments/{ae_id}/pending-commits", response_model=PendingCommitsResponse)
+def get_pending_commits(
+    ae_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ae = _get_ae_or_404(db, ae_id, current_user)
+    app = db.get(Application, ae.application_id)
+    env = db.get(Environment, ae.environment_id)
+
+    latest = _latest_versions_subquery(db, [ae_id]).first()
+    current_sha = latest.source_commit_sha if latest else None
+    if current_sha is None:
+        return PendingCommitsResponse(reason="Sem deploy anterior — nada para comparar")
+
+    branch = env.source_branch or "main"
+    commits = compare_commits(app.source_repository, current_sha, branch)
+    if commits is None:
+        return PendingCommitsResponse(
+            current_sha=current_sha,
+            reason="Não foi possível obter os commits via GitHub",
+        )
+
+    return PendingCommitsResponse(
+        current_sha=current_sha,
+        head_sha=commits[0]["sha"] if commits else current_sha,
+        commits=[PendingCommit(**c) for c in commits],
     )

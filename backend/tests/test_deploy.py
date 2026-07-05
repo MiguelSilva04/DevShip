@@ -680,58 +680,17 @@ class TestRollback:
             assert sent_inputs["action"] == "rollback"
             assert sent_inputs["rollback_tag"] == "abc1234-5"
 
-    def test_rollback_endpoint_target_from_other_app_env_404s(self, client, db_session):
+    def test_rollback_endpoint_rejects_when_no_healthy_version_exists(self, client, db_session):
+        """No manual target selection anymore — a request with no prior HEALTHY version
+        (only the current one, itself unhealthy) has nothing to roll back to."""
         _, team, project, env, app, app_env = _setup_chain(db_session)
 
-        other_app = Application(
-            project_id=project.id,
-            name="other-api",
-            source_repository="https://github.com/org/other-api",
-            container_registry_repository="ecr/org/other-api",
-            ci_workflow_file="deploy.yml",
-        )
-        db_session.add(other_app)
-        db_session.flush()
-        other_app_env = ApplicationEnvironment(
-            application_id=other_app.id,
-            environment_id=env.id,
-            deployment_name="other-api-deploy",
-        )
-        db_session.add(other_app_env)
-        db_session.flush()
-
-        foreign_target = DeploymentVersion(
-            application_environment_id=other_app_env.id,
-            lifecycle_status=LifecycleStatus.HEALTHY,
-            image_tag="v1",
-        )
-        db_session.add(foreign_target)
-        db_session.flush()
-
-        api_user_email = f"ce@{team.domain}"
-        _register(client, api_user_email)
-        token = _login(client, api_user_email)
-        api_user = db_session.query(User).filter(User.email == api_user_email).first()
-        api_user.github_username = "octocat"
-        db_session.add(TeamMember(team_id=team.id, user_id=api_user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
-        db_session.flush()
-
-        r = client.post(
-            f"/application-environments/{app_env.id}/rollback",
-            json={"deployment_version_id": str(foreign_target.id)},
-            headers=_auth(token),
-        )
-        assert r.status_code == 404
-
-    def test_rollback_endpoint_rejects_version_without_image_tag(self, client, db_session):
-        _, team, project, env, app, app_env = _setup_chain(db_session)
-
-        target = DeploymentVersion(
+        current = DeploymentVersion(
             application_environment_id=app_env.id,
             lifecycle_status=LifecycleStatus.FAILED,
-            image_tag=None,
+            image_tag="v1",
         )
-        db_session.add(target)
+        db_session.add(current)
         db_session.flush()
 
         api_user_email = f"ce@{team.domain}"
@@ -744,12 +703,41 @@ class TestRollback:
 
         r = client.post(
             f"/application-environments/{app_env.id}/rollback",
-            json={"deployment_version_id": str(target.id)},
+            json={},
             headers=_auth(token),
         )
         assert r.status_code == 422
 
-    def test_rollback_endpoint_rejects_current_version_as_target(self, client, db_session):
+    def test_rollback_endpoint_rejects_healthy_target_without_image_tag(self, client, db_session):
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        target = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY, image_tag=None, created_at=now)
+        db_session.add(target)
+        db_session.flush()
+        current = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.FAILED, image_tag="v2", created_at=now + timedelta(seconds=1))
+        db_session.add(current)
+        db_session.flush()
+
+        api_user_email = f"ce@{team.domain}"
+        _register(client, api_user_email)
+        token = _login(client, api_user_email)
+        api_user = db_session.query(User).filter(User.email == api_user_email).first()
+        api_user.github_username = "octocat"
+        db_session.add(TeamMember(team_id=team.id, user_id=api_user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        db_session.flush()
+
+        r = client.post(
+            f"/application-environments/{app_env.id}/rollback",
+            json={},
+            headers=_auth(token),
+        )
+        assert r.status_code == 422
+
+    def test_rollback_endpoint_excludes_current_version_even_if_healthy(self, client, db_session):
+        """The current version is never a valid rollback target, even when it's the only
+        HEALTHY row — there must be a *previous* healthy version."""
         _, team, project, env, app, app_env = _setup_chain(db_session)
 
         current = DeploymentVersion(
@@ -770,7 +758,7 @@ class TestRollback:
 
         r = client.post(
             f"/application-environments/{app_env.id}/rollback",
-            json={"deployment_version_id": str(current.id)},
+            json={},
             headers=_auth(token),
         )
         assert r.status_code == 422
@@ -780,10 +768,10 @@ class TestRollback:
 
         from datetime import datetime, timedelta, timezone
         now = datetime.now(timezone.utc)
-        target = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.SUPERSEDED, image_tag="v1", created_at=now)
+        target = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY, image_tag="v1", created_at=now)
         db_session.add(target)
         db_session.flush()
-        current = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY, image_tag="v2", created_at=now + timedelta(seconds=1))
+        current = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.DEGRADED, image_tag="v2", created_at=now + timedelta(seconds=1))
         db_session.add(current)
         db_session.flush()
 
@@ -798,7 +786,7 @@ class TestRollback:
         with patch("backend.services.deploy_pipeline.trigger_deploy") as mock_trigger:
             r = client.post(
                 f"/application-environments/{app_env.id}/rollback",
-                json={"deployment_version_id": str(target.id)},
+                json={},
                 headers=_auth(token),
             )
         assert r.status_code == 201, r.text
@@ -814,10 +802,10 @@ class TestRollback:
 
         from datetime import datetime, timedelta, timezone
         now = datetime.now(timezone.utc)
-        target = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.SUPERSEDED, image_tag="v1", created_at=now)
+        target = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY, image_tag="v1", created_at=now)
         db_session.add(target)
         db_session.flush()
-        current = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY, image_tag="v2", created_at=now + timedelta(seconds=1))
+        current = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.DEGRADED, image_tag="v2", created_at=now + timedelta(seconds=1))
         db_session.add(current)
         db_session.flush()
 
@@ -832,7 +820,7 @@ class TestRollback:
         with patch("backend.services.deploy_pipeline.trigger_deploy") as mock_trigger:
             r = client.post(
                 f"/application-environments/{app_env.id}/rollback",
-                json={"deployment_version_id": str(target.id)},
+                json={},
                 headers=_auth(token),
             )
         assert r.status_code == 201, r.text
@@ -849,10 +837,10 @@ class TestRollback:
         ))
         from datetime import datetime, timedelta, timezone
         now = datetime.now(timezone.utc)
-        target = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.SUPERSEDED, image_tag="v1", created_at=now)
+        target = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY, image_tag="v1", created_at=now)
         db_session.add(target)
         db_session.flush()
-        current = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY, image_tag="v2", created_at=now + timedelta(seconds=1))
+        current = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.DEGRADED, image_tag="v2", created_at=now + timedelta(seconds=1))
         db_session.add(current)
         db_session.flush()
 
@@ -866,7 +854,7 @@ class TestRollback:
 
         r = client.post(
             f"/application-environments/{app_env.id}/rollback",
-            json={"deployment_version_id": str(target.id)},
+            json={},
             headers=_auth(token),
         )
         assert r.status_code == 409

@@ -4,6 +4,7 @@ Filters manifests with kind: Deployment and returns candidate applications.
 """
 
 import os
+import re
 from typing import Any
 
 import requests
@@ -159,3 +160,39 @@ def get_branch_head_commit(repo_url: str, branch: str) -> dict | None:
         return {"sha": data["sha"], "author_email": data["commit"]["author"]["email"]}
     except Exception:
         return None
+
+
+_CONVENTIONAL_COMMIT_RE = re.compile(r"^(\w+)(\(.+\))?!?:\s*(.+)$")
+
+
+def compare_commits(repo_url: str, base_sha: str, head_ref: str) -> list[dict] | None:
+    """GET /repos/{owner}/{repo}/compare/{base}...{head} — commits em head_ref que ainda
+    não estão em base_sha, mais recente primeiro. None em qualquer falha (repo/branch
+    inacessível, base_sha desconhecido do GitHub, etc.) — nunca uma lista vazia por engano.
+    """
+    owner, repo = _parse_owner_repo(repo_url)
+    try:
+        resp = requests.get(
+            f"https://api.github.com/repos/{owner}/{repo}/compare/{base_sha}...{head_ref}",
+            headers=_github_headers(),
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        return None
+
+    commits = []
+    for c in reversed(data.get("commits", [])):
+        message = c["commit"]["message"].splitlines()[0]
+        m = _CONVENTIONAL_COMMIT_RE.match(message)
+        commit_type = m.group(1) if m else None
+        subject = m.group(3) if m else message
+        commits.append({
+            "sha": c["sha"],
+            "type": commit_type,
+            "message": subject,
+            "author": c["commit"]["author"]["name"],
+            "date": c["commit"]["author"]["date"],
+        })
+    return commits

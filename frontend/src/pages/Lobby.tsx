@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useUser } from '../context/UserContext';
+import { useUser, userFromBackend } from '../context/UserContext';
 import { apiFetch } from '../api/client';
 import { OB_TEAM_ID, OB_PROJECT_ID, OB_TEAM_NAME, OB_PROJ_NAME } from './Onboarding';
 
@@ -37,7 +37,7 @@ function setupStatus(entry: TeamEntry) {
 
 export default function Lobby() {
   const nav = useNavigate();
-  const { user, token, logout } = useUser();
+  const { user, token, logout, setUser } = useUser();
   const [teams, setTeams] = useState<TeamEntry[] | null>(null);
   const [domainStatus, setDomainStatus] = useState<DomainStatus | null>(null);
   const [loadErr, setLoadErr] = useState('');
@@ -57,6 +57,7 @@ export default function Lobby() {
         if (allConfigured && isNonCloud) {
           const t = teamsData[0];
           if (t.project_id) localStorage.setItem(OB_PROJECT_ID, t.project_id);
+          if (user) setUser(userFromBackend(user.name, user.email, t.role));
           nav('/app/home', { replace: true });
         }
       })
@@ -134,6 +135,7 @@ export default function Lobby() {
                     // Developers sem onboarding concluído não podem avançar
                     if (t.setup_status !== 'CONFIGURED' && t.role !== 'CLOUD_ENGINEER') return;
 
+                    if (user) setUser(userFromBackend(user.name, user.email, t.role));
                     localStorage.setItem(OB_TEAM_ID, t.team_id);
                     localStorage.setItem(OB_TEAM_NAME, t.team_name);
                     if (t.project_id) localStorage.setItem(OB_PROJECT_ID, t.project_id);

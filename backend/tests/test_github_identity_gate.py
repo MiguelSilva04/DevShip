@@ -172,18 +172,11 @@ class TestDeployGate:
 
 class TestRollbackGate:
     def test_403_without_github_username(self, client, db_session, scenario):
-        version = DeploymentVersion(
-            application_environment_id=scenario["ae"].id,
-            lifecycle_status=LifecycleStatus.SUPERSEDED,
-            image_tag="v1",
-        )
-        db_session.add(version)
-        db_session.flush()
         token = _token_for(scenario["user"])
 
         r = client.post(
             f"/application-environments/{scenario['ae'].id}/rollback",
-            json={"deployment_version_id": str(version.id)},
+            json={},
             headers=_auth(token),
         )
         assert r.status_code == 403
@@ -191,19 +184,12 @@ class TestRollbackGate:
     def test_403_when_not_collaborator(self, client, db_session, scenario):
         scenario["user"].github_username = "octocat"
         db_session.flush()
-        version = DeploymentVersion(
-            application_environment_id=scenario["ae"].id,
-            lifecycle_status=LifecycleStatus.SUPERSEDED,
-            image_tag="v1",
-        )
-        db_session.add(version)
-        db_session.flush()
         token = _token_for(scenario["user"])
 
         with patch("backend.api.routes.deploy.is_repo_collaborator", return_value=False):
             r = client.post(
                 f"/application-environments/{scenario['ae'].id}/rollback",
-                json={"deployment_version_id": str(version.id)},
+                json={},
                 headers=_auth(token),
             )
         assert r.status_code == 403
@@ -215,17 +201,17 @@ class TestRollbackGate:
         db_session.flush()
         from datetime import datetime, timedelta, timezone
         now = datetime.now(timezone.utc)
-        version = DeploymentVersion(
+        target = DeploymentVersion(
             application_environment_id=scenario["ae"].id,
-            lifecycle_status=LifecycleStatus.SUPERSEDED,
+            lifecycle_status=LifecycleStatus.HEALTHY,
             image_tag="v1",
             created_at=now,
         )
-        db_session.add(version)
+        db_session.add(target)
         db_session.flush()
         current = DeploymentVersion(
             application_environment_id=scenario["ae"].id,
-            lifecycle_status=LifecycleStatus.HEALTHY,
+            lifecycle_status=LifecycleStatus.DEGRADED,
             image_tag="v2",
             created_at=now + timedelta(seconds=1),
         )
@@ -240,7 +226,7 @@ class TestRollbackGate:
         ):
             r = client.post(
                 f"/application-environments/{scenario['ae'].id}/rollback",
-                json={"deployment_version_id": str(version.id)},
+                json={},
                 headers=_auth(token),
             )
         assert r.status_code == 201, r.text

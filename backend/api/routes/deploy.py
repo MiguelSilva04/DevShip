@@ -17,11 +17,13 @@ from backend.api.schemas.deploy import (
 )
 from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
+from backend.bd.models.application_team_member import ApplicationTeamMember
 from backend.bd.models.deployment_event import DeploymentEvent
 from backend.bd.models.deployment_request import DeploymentRequest, DeploymentType, RequestStatus
-from backend.bd.models.deployment_version import DeploymentVersion
+from backend.bd.models.deployment_version import DeploymentVersion, LifecycleStatus
 from backend.bd.models.environment import Environment
-from backend.bd.models.team_member import TeamMember
+from backend.bd.models.project import Project
+from backend.bd.models.team_member import TeamMember, TeamMemberRole
 from backend.bd.models.user import User
 from backend.services import deploy_pipeline as dp
 from backend.services.gitops_scanner import get_branch_head_commit, is_repo_collaborator
@@ -40,6 +42,15 @@ def _get_request_or_404(db: Session, request_id: uuid.UUID) -> DeploymentRequest
     req = db.get(DeploymentRequest, request_id)
     if req is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="DeploymentRequest not found")
+    return req
+
+
+def _get_request_or_404_checked(db: Session, request_id: uuid.UUID, user: User) -> DeploymentRequest:
+    """Same as _get_request_or_404 plus the team/Application access check — for the
+    read-only GET routes, which had no authorization check at all."""
+    req = _get_request_or_404(db, request_id)
+    ae = db.get(ApplicationEnvironment, req.application_environment_id)
+    _require_application_access(db, ae.application_id, user)
     return req
 
 
@@ -70,7 +81,6 @@ def _require_approver(db: Session, req: DeploymentRequest, user: User) -> None:
     """Check user has the approval_required_role for this request's environment."""
     ae = db.get(ApplicationEnvironment, req.application_environment_id)
     env = db.get(Environment, ae.environment_id)
-    from backend.bd.models.project import Project
     project = db.get(Project, env.project_id)
     member = db.query(TeamMember).filter(
         TeamMember.team_id == project.team_id,
@@ -159,20 +169,29 @@ def create_rollback(
     _, env, app = _require_team_member(db, app_env_id, current_user)
     _check_github_gate(app, env, current_user, check_authorship=False)
 
-    target = db.get(DeploymentVersion, body.deployment_version_id)
-    if target is None or target.application_environment_id != app_env_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="DeploymentVersion not found for this ApplicationEnvironment")
-    if not target.image_tag:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Target version has no image_tag — nothing to roll back to")
-
     current = (
         db.query(DeploymentVersion)
         .filter(DeploymentVersion.application_environment_id == app_env_id)
         .order_by(DeploymentVersion.created_at.desc())
         .first()
     )
-    if current is not None and current.id == target.id:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Target version is already the current version")
+
+    # No manual target selection — rollback always targets the last HEALTHY version,
+    # excluding the current one (design doc rule, not the mockup's per-version picker).
+    target = (
+        db.query(DeploymentVersion)
+        .filter(
+            DeploymentVersion.application_environment_id == app_env_id,
+            DeploymentVersion.lifecycle_status == LifecycleStatus.HEALTHY,
+            DeploymentVersion.id != (current.id if current else None),
+        )
+        .order_by(DeploymentVersion.created_at.desc())
+        .first()
+    )
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No previous healthy version to roll back to")
+    if not target.image_tag:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Target version has no image_tag — nothing to roll back to")
 
     req = DeploymentRequest(
         application_environment_id=app_env_id,
@@ -218,7 +237,33 @@ def list_deploy_requests(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    q = db.query(DeploymentRequest)
+    """Scoped to the requests the caller can actually see: Applications belonging to a
+    Team they're a member of, filtered further to granted Applications for DEVELOPERs."""
+    memberships = db.query(TeamMember).filter(TeamMember.user_id == current_user.id).all()
+    if not memberships:
+        return []
+
+    accessible_app_ids: set[uuid.UUID] = set()
+    for member in memberships:
+        apps_q = (
+            db.query(Application.id)
+            .join(Project, Application.project_id == Project.id)
+            .filter(Project.team_id == member.team_id)
+        )
+        if member.role == TeamMemberRole.DEVELOPER:
+            apps_q = apps_q.join(
+                ApplicationTeamMember, ApplicationTeamMember.application_id == Application.id
+            ).filter(ApplicationTeamMember.team_member_id == member.id)
+        accessible_app_ids.update(row[0] for row in apps_q.all())
+
+    if not accessible_app_ids:
+        return []
+
+    q = (
+        db.query(DeploymentRequest)
+        .join(ApplicationEnvironment, DeploymentRequest.application_environment_id == ApplicationEnvironment.id)
+        .filter(ApplicationEnvironment.application_id.in_(accessible_app_ids))
+    )
     if request_status is not None:
         q = q.filter(DeploymentRequest.status == request_status)
     return q.order_by(DeploymentRequest.requested_at.desc()).all()
@@ -234,7 +279,7 @@ def get_deploy_request(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return _get_request_or_404(db, request_id)
+    return _get_request_or_404_checked(db, request_id, current_user)
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +359,7 @@ def get_deploy_events(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    req = _get_request_or_404(db, request_id)
+    req = _get_request_or_404_checked(db, request_id, current_user)
 
     version = (
         db.query(DeploymentVersion)
