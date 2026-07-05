@@ -10,6 +10,7 @@ from backend.bd.models.deployment_request import DeploymentType, RequestStatus
 
 class DeployRequest(BaseModel):
     justification: Optional[str] = None  # optional note from requester, NOT the rejection justification
+    confirmed: bool = False  # second click after seeing the authorship warning — skips re-emitting it
 
 
 class RollbackRequest(BaseModel):
@@ -34,6 +35,7 @@ class DeploymentRequestResponse(BaseModel):
     requested_at: datetime
     approved_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
+    warning: Optional[str] = None  # non-blocking, e.g. "commit not authored by you"
 
     model_config = {"from_attributes": True}
 

@@ -17,6 +17,8 @@ from backend.api.schemas.onboarding import (
     EnvironmentCreate,
     EnvironmentResponse,
     EnvironmentValidationResult,
+    GithubIdentityRequest,
+    GithubIdentityResponse,
     GitOpsScanResult,
     MemberEntry,
     ProjectCreate,
@@ -28,6 +30,7 @@ from backend.api.schemas.onboarding import (
 )
 from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
+from backend.bd.models.application_team_member import ApplicationTeamMember
 from backend.bd.models.cluster_context import ClusterContext
 from backend.bd.models.environment import Environment
 from backend.bd.models.environment_validation import EnvironmentValidation, ValidationStatus
@@ -37,7 +40,7 @@ from backend.bd.models.team_member import TeamMember, TeamMemberRole
 from backend.bd.models.user import User
 from backend.services import cluster_validation as cv
 from backend.services import gitops_scanner as gs
-from backend.services.gitops_scanner import path_exists, validate_branch
+from backend.services.gitops_scanner import is_repo_collaborator, path_exists, validate_branch
 from backend.services.kubernetes_reader import list_namespaces
 
 router = APIRouter()
@@ -82,6 +85,35 @@ def my_domain_status(
     domain = current_user.email.rsplit("@", 1)[-1]
     team = db.query(Team).filter(Team.domain == domain).first()
     return {"domain": domain, "has_team": team is not None, "team_id": str(team.id) if team else None}
+
+
+@router.patch("/users/me/github-identity", response_model=GithubIdentityResponse)
+def set_github_identity(
+    body: GithubIdentityRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Valida contra os repos das Applications a que o utilizador já tem ApplicationTeamMember,
+    quando existir pelo menos uma — sem nenhuma, aceita sem validar (o gate de Deploy/Rollback
+    apanha o erro na prática mais tarde)."""
+    repos = (
+        db.query(Application.source_repository)
+        .join(ApplicationTeamMember, ApplicationTeamMember.application_id == Application.id)
+        .join(TeamMember, TeamMember.id == ApplicationTeamMember.team_member_id)
+        .filter(TeamMember.user_id == current_user.id)
+        .distinct()
+        .all()
+    )
+    if repos and not any(is_repo_collaborator(repo, body.github_username) for (repo,) in repos):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este username GitHub não é colaborador em nenhuma das tuas applications.",
+        )
+
+    current_user.github_username = body.github_username
+    current_user.github_email = body.github_email
+    db.commit()
+    return GithubIdentityResponse(github_username=current_user.github_username, github_email=current_user.github_email)
 
 
 @router.get("/users/me/teams", response_model=list[UserTeamEntry])

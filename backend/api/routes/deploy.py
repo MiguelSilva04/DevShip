@@ -24,6 +24,7 @@ from backend.bd.models.environment import Environment
 from backend.bd.models.team_member import TeamMember
 from backend.bd.models.user import User
 from backend.services import deploy_pipeline as dp
+from backend.services.gitops_scanner import get_branch_head_commit, is_repo_collaborator
 
 router = APIRouter(tags=["deploy"])
 
@@ -49,6 +50,20 @@ def _require_team_member(db: Session, app_env_id: uuid.UUID, user: User) -> tupl
 
     _require_application_access(db, ae.application_id, user)
     return ae, env, app
+
+
+def _check_github_gate(app: Application, environment: Environment, user: User, check_authorship: bool) -> str | None:
+    """Devolve None (passa), uma mensagem de aviso (não bloqueia), ou levanta HTTPException 403 (bloqueia)."""
+    if not user.github_username:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Configura a tua identidade GitHub antes de continuar.")
+    if not is_repo_collaborator(app.source_repository, user.github_username):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Não pertences a esta application.")
+    if not check_authorship:
+        return None
+    head = get_branch_head_commit(app.source_repository, environment.source_branch or "main")
+    if head is None or head["author_email"] != user.github_email:
+        return "Este commit não é teu — tens a certeza que queres continuar?"
+    return None
 
 
 def _require_approver(db: Session, req: DeploymentRequest, user: User) -> None:
@@ -88,6 +103,7 @@ def create_deploy(
     current_user: User = Depends(get_current_user),
 ):
     _, env, app = _require_team_member(db, app_env_id, current_user)
+    warning = _check_github_gate(app, env, current_user, check_authorship=not body.confirmed)
 
     req = DeploymentRequest(
         application_environment_id=app_env_id,
@@ -119,7 +135,9 @@ def create_deploy(
         db.commit()
 
     db.refresh(req)
-    return req
+    response = DeploymentRequestResponse.model_validate(req)
+    response.warning = warning
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +157,7 @@ def create_rollback(
     current_user: User = Depends(get_current_user),
 ):
     _, env, app = _require_team_member(db, app_env_id, current_user)
+    _check_github_gate(app, env, current_user, check_authorship=False)
 
     target = db.get(DeploymentVersion, body.deployment_version_id)
     if target is None or target.application_environment_id != app_env_id:

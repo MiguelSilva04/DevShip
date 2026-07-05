@@ -638,6 +638,13 @@ class TestDeployPipeline:
 # ---------------------------------------------------------------------------
 
 class TestRollback:
+    @pytest.fixture(autouse=True)
+    def _bypass_github_gate(self):
+        """Rollback only checks collaborator status (never authorship) — these tests are
+        about rollback logic, not the GitHub gate, so treat everyone as a collaborator."""
+        with patch("backend.api.routes.deploy.is_repo_collaborator", return_value=True):
+            yield
+
     def test_rollback_dispatches_workflow_with_rollback_tag(self, db_session):
         _, team, project, env, app, app_env = _setup_chain(db_session)
 
@@ -704,7 +711,9 @@ class TestRollback:
         api_user_email = f"ce@{team.domain}"
         _register(client, api_user_email)
         token = _login(client, api_user_email)
-        db_session.add(TeamMember(team_id=team.id, user_id=db_session.query(User).filter(User.email == api_user_email).first().id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        api_user = db_session.query(User).filter(User.email == api_user_email).first()
+        api_user.github_username = "octocat"
+        db_session.add(TeamMember(team_id=team.id, user_id=api_user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
         db_session.flush()
 
         r = client.post(
@@ -728,7 +737,9 @@ class TestRollback:
         api_user_email = f"ce@{team.domain}"
         _register(client, api_user_email)
         token = _login(client, api_user_email)
-        db_session.add(TeamMember(team_id=team.id, user_id=db_session.query(User).filter(User.email == api_user_email).first().id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        api_user = db_session.query(User).filter(User.email == api_user_email).first()
+        api_user.github_username = "octocat"
+        db_session.add(TeamMember(team_id=team.id, user_id=api_user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
         db_session.flush()
 
         r = client.post(
@@ -752,7 +763,9 @@ class TestRollback:
         api_user_email = f"ce@{team.domain}"
         _register(client, api_user_email)
         token = _login(client, api_user_email)
-        db_session.add(TeamMember(team_id=team.id, user_id=db_session.query(User).filter(User.email == api_user_email).first().id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        api_user = db_session.query(User).filter(User.email == api_user_email).first()
+        api_user.github_username = "octocat"
+        db_session.add(TeamMember(team_id=team.id, user_id=api_user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
         db_session.flush()
 
         r = client.post(
@@ -777,7 +790,9 @@ class TestRollback:
         api_user_email = f"ce@{team.domain}"
         _register(client, api_user_email)
         token = _login(client, api_user_email)
-        db_session.add(TeamMember(team_id=team.id, user_id=db_session.query(User).filter(User.email == api_user_email).first().id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        api_user = db_session.query(User).filter(User.email == api_user_email).first()
+        api_user.github_username = "octocat"
+        db_session.add(TeamMember(team_id=team.id, user_id=api_user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
         db_session.flush()
 
         with patch("backend.services.deploy_pipeline.trigger_deploy") as mock_trigger:
@@ -809,7 +824,9 @@ class TestRollback:
         api_user_email = f"ce@{team.domain}"
         _register(client, api_user_email)
         token = _login(client, api_user_email)
-        db_session.add(TeamMember(team_id=team.id, user_id=db_session.query(User).filter(User.email == api_user_email).first().id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        api_user = db_session.query(User).filter(User.email == api_user_email).first()
+        api_user.github_username = "octocat"
+        db_session.add(TeamMember(team_id=team.id, user_id=api_user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
         db_session.flush()
 
         with patch("backend.services.deploy_pipeline.trigger_deploy") as mock_trigger:
@@ -842,7 +859,9 @@ class TestRollback:
         api_user_email = f"ce@{team.domain}"
         _register(client, api_user_email)
         token = _login(client, api_user_email)
-        db_session.add(TeamMember(team_id=team.id, user_id=db_session.query(User).filter(User.email == api_user_email).first().id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        api_user = db_session.query(User).filter(User.email == api_user_email).first()
+        api_user.github_username = "octocat"
+        db_session.add(TeamMember(team_id=team.id, user_id=api_user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
         db_session.flush()
 
         r = client.post(

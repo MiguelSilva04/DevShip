@@ -174,3 +174,15 @@ class ApplicationResponse(BaseModel):
     source_repository: str
 
     model_config = {"from_attributes": True}
+
+
+# --- GitHub identity ---
+
+class GithubIdentityRequest(BaseModel):
+    github_username: str
+    github_email: str
+
+
+class GithubIdentityResponse(BaseModel):
+    github_username: Optional[str] = None
+    github_email: Optional[str] = None

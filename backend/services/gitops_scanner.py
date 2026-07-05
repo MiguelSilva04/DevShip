@@ -132,3 +132,30 @@ def resolve_branch_head(repo_url: str, branch: str) -> str | None:
         return resp.json()["sha"]
     except Exception:
         return None
+
+
+def is_repo_collaborator(repo_url: str, username: str) -> bool:
+    """GET /repos/{owner}/{repo}/collaborators/{username} — 204 = sim, 404 = não."""
+    owner, repo = _parse_owner_repo(repo_url)
+    resp = requests.get(
+        f"https://api.github.com/repos/{owner}/{repo}/collaborators/{username}",
+        headers=_github_headers(),
+        timeout=10,
+    )
+    return resp.status_code == 204
+
+
+def get_branch_head_commit(repo_url: str, branch: str) -> dict | None:
+    """{'sha': ..., 'author_email': ...} do commit HEAD, ou None em qualquer falha."""
+    owner, repo = _parse_owner_repo(repo_url)
+    try:
+        resp = requests.get(
+            f"https://api.github.com/repos/{owner}/{repo}/commits/{branch}",
+            headers=_github_headers(),
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return {"sha": data["sha"], "author_email": data["commit"]["author"]["email"]}
+    except Exception:
+        return None
