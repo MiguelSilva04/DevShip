@@ -74,7 +74,10 @@ export default function AppDetail() {
             <div key={ae.id} style={{ display: 'grid', gridTemplateColumns: '160px 130px 1fr 200px', gap: 12, padding: '15px 20px', borderBottom: i < data.environments.length - 1 ? '1px solid var(--border-soft)' : 'none', alignItems: 'center' }}>
               <span className="mono" style={{ fontSize: 13 }}>{ae.environment_name}</span>
               <span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 10px', borderRadius: 999, fontSize: 11, background: p.bg, color: p.col, border: `1px solid ${p.bord}` }}>
+                <span
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 10px', borderRadius: 999, fontSize: 11, background: p.bg, color: p.col, border: `1px solid ${p.bord}` }}
+                  title={ae.lifecycle_status === null ? 'Esta aplicação ainda não foi deployada através da DevShip — o estado fica Unknown até ao primeiro deploy.' : undefined}
+                >
                   <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.dot, animation: ae.lifecycle_status === 'Deploying' ? 'ds-pulse 1.4s infinite' : 'none' }} />
                   {ae.lifecycle_status ?? 'Unknown'}
                 </span>

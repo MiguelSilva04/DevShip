@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { OB_TEAM_ID } from '../Onboarding';
+import { useUser } from '../../context/UserContext';
 
-interface Member { user_id: string; name: string; email: string; role: string; }
+interface Member { team_member_id: string; user_id: string; name: string; email: string; role: string; joined_at: string; }
 interface Candidate { user_id: string; name: string; email: string; }
+interface TeamInfo { id: string; name: string; description: string | null; domain: string; }
 
 const ROLE_LABEL: Record<string, string> = {
   CLOUD_ENGINEER: 'Cloud Engineer',
@@ -12,23 +14,41 @@ const ROLE_LABEL: Record<string, string> = {
   DEVELOPER: 'Developer',
 };
 
+const ROLE_PERMISSIONS: Record<string, string[]> = {
+  CLOUD_ENGINEER: ['Gerir cluster', 'Team & settings', 'Deploy', 'Rollback', 'Aprovar'],
+  TECH_LEAD: ['Deploy', 'Rollback', 'Aprovar pedidos', 'Consultar'],
+  DEVELOPER: ['Deploy dev/staging', 'Rollback dev/staging', 'Solicitar p/ produção'],
+};
+
 function initials(name: string) {
   return name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+}
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString('pt-PT', { year: 'numeric', month: '2-digit', day: '2-digit' });
 }
 
 type AllowedRole = 'DEVELOPER' | 'TECH_LEAD';
 
 export default function Team() {
   const nav = useNavigate();
+  const { user } = useUser();
   const [members, setMembers] = useState<Member[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [candidateRoles, setCandidateRoles] = useState<Record<string, AllowedRole>>({});
   const [err, setErr] = useState('');
-  const [removing, setRemoving] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [showPermissions, setShowPermissions] = useState(false);
+  const [team, setTeam] = useState<TeamInfo | null>(null);
+  const [showEditTeam, setShowEditTeam] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [savingTeam, setSavingTeam] = useState(false);
+  const [teamErr, setTeamErr] = useState('');
 
   const teamId = localStorage.getItem(OB_TEAM_ID);
 
-  useEffect(() => {
+  function load() {
     if (!teamId) { setErr('Team não encontrada.'); return; }
     apiFetch(`/teams/${teamId}/members`)
       .then(({ members: m, candidates: c }: { members: Member[]; candidates: Candidate[] }) => {
@@ -36,12 +56,37 @@ export default function Team() {
         setCandidates(c);
       })
       .catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Erro ao carregar team.'));
-  }, [teamId]);
+    apiFetch(`/teams/${teamId}`).then(setTeam).catch(() => setTeam(null));
+  }
+
+  useEffect(load, [teamId]);
+
+  function openEditTeam() {
+    setEditName(team?.name ?? '');
+    setEditDescription(team?.description ?? '');
+    setTeamErr('');
+    setShowEditTeam(true);
+  }
+
+  async function saveTeam() {
+    if (!teamId) return;
+    setSavingTeam(true); setTeamErr('');
+    try {
+      const updated: TeamInfo = await apiFetch(`/teams/${teamId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name: editName, description: editDescription }),
+      });
+      setTeam(updated);
+      setShowEditTeam(false);
+    } catch (e: unknown) {
+      setTeamErr(e instanceof Error ? e.message : 'Erro ao guardar equipa.');
+    } finally { setSavingTeam(false); }
+  }
 
   async function addCandidate(candidate: Candidate) {
     if (!teamId) return;
     const role = candidateRoles[candidate.user_id] ?? 'DEVELOPER';
-    setRemoving(candidate.user_id);
+    setBusy(candidate.user_id);
     try {
       const member: Member = await apiFetch(`/teams/${teamId}/members`, {
         method: 'POST',
@@ -51,7 +96,41 @@ export default function Team() {
       setCandidates(prev => prev.filter(c => c.user_id !== candidate.user_id));
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Erro ao adicionar membro.');
-    } finally { setRemoving(null); }
+    } finally { setBusy(null); }
+  }
+
+  // A CLOUD_ENGINEER pode gerir qualquer membro; um TECH_LEAD só pode gerir DEVELOPERs
+  // (regra espelhada no backend em _require_manageable_target).
+  function canManage(target: Member) {
+    if (user?.role === 'cloud') return true;
+    if (user?.role === 'tech') return target.role === 'DEVELOPER';
+    return false;
+  }
+
+  async function removeMember(m: Member) {
+    if (!teamId) return;
+    if (!confirm(`Remover ${m.name} da equipa?`)) return;
+    setBusy(m.team_member_id);
+    try {
+      await apiFetch(`/teams/${teamId}/members/${m.team_member_id}`, { method: 'DELETE' });
+      setMembers(prev => prev.filter(x => x.team_member_id !== m.team_member_id));
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Erro ao remover membro.');
+    } finally { setBusy(null); }
+  }
+
+  async function changeRole(m: Member, role: AllowedRole) {
+    if (!teamId || role === m.role) return;
+    setBusy(m.team_member_id);
+    try {
+      const updated: Member = await apiFetch(`/teams/${teamId}/members/${m.team_member_id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ role, application_ids: role === 'DEVELOPER' ? [] : undefined }),
+      });
+      setMembers(prev => prev.map(x => x.team_member_id === m.team_member_id ? updated : x));
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Erro ao alterar role.');
+    } finally { setBusy(null); }
   }
 
   const cloudEngineers = members.filter(m => m.role === 'CLOUD_ENGINEER');
@@ -75,16 +154,73 @@ export default function Team() {
         </div>
       )}
 
+      {/* Team identity */}
+      {team && (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '18px 20px', marginBottom: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <span style={{ fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>Identidade da equipa</span>
+            {user?.role === 'cloud' && (
+              <button onClick={openEditTeam} style={{ fontSize: 12, padding: '6px 13px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer' }}>
+                Editar equipa
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 11, background: 'var(--surface-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 600, flex: 'none' }}>{initials(team.name)}</div>
+            <div>
+              <div style={{ fontSize: 14.5, fontWeight: 600 }}>{team.name}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 2 }}>{team.description || 'Sem descrição.'}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit team modal */}
+      {showEditTeam && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setShowEditTeam(false)}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: '28px 30px', maxWidth: 440, width: '100%', margin: '0 16px' }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 14px' }}>Editar equipa</h2>
+            {teamErr && <div style={{ fontSize: 12, color: '#ff9aaa', marginBottom: 10 }}>{teamErr}</div>}
+            <label style={{ fontSize: 12.5, color: 'var(--text-2)', display: 'block', marginBottom: 7 }}>Nome</label>
+            <input
+              value={editName}
+              onChange={e => setEditName(e.target.value)}
+              style={{ width: '100%', background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 13px', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 14 }}
+            />
+            <label style={{ fontSize: 12.5, color: 'var(--text-2)', display: 'block', marginBottom: 7 }}>Descrição</label>
+            <textarea
+              value={editDescription}
+              onChange={e => setEditDescription(e.target.value)}
+              rows={3}
+              style={{ width: '100%', background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 13px', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', resize: 'vertical' }}
+            />
+            <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+              <button
+                onClick={saveTeam}
+                disabled={savingTeam || !editName.trim()}
+                className="btn-primary hover-bright"
+                style={{ fontSize: 13, padding: '10px 18px', borderRadius: 9, fontWeight: 600, opacity: (savingTeam || !editName.trim()) ? .6 : 1 }}
+              >
+                {savingTeam ? 'A guardar…' : 'Guardar'}
+              </button>
+              <button onClick={() => setShowEditTeam(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Members table */}
       {members.length > 0 && (
         <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', overflow: 'hidden', marginBottom: 24 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 80px', gap: 12, padding: '12px 20px', borderBottom: '1px solid var(--border)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
-            <span>Membro</span><span>Role</span><span style={{ textAlign: 'right' }}>Ação</span>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 100px 80px', gap: 12, padding: '12px 20px', borderBottom: '1px solid var(--border)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
+            <span>Membro</span><span>Role</span><span>Desde</span><span style={{ textAlign: 'right' }}>Ação</span>
           </div>
           {members.map((m, i) => {
             const isOwner = m.role === 'CLOUD_ENGINEER';
+            const manageable = canManage(m) && !isOwner;
+            const isBusy = busy === m.team_member_id;
             return (
-              <div key={m.user_id} style={{ display: 'grid', gridTemplateColumns: '1fr 160px 80px', gap: 12, padding: '14px 20px', borderBottom: i < members.length - 1 ? '1px solid var(--border-soft)' : 'none', alignItems: 'center' }}>
+              <div key={m.team_member_id} style={{ display: 'grid', gridTemplateColumns: '1fr 160px 100px 80px', gap: 12, padding: '14px 20px', borderBottom: i < members.length - 1 ? '1px solid var(--border-soft)' : 'none', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
                   <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--surface-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 600, flex: 'none' }}>{initials(m.name)}</div>
                   <div>
@@ -95,10 +231,28 @@ export default function Team() {
                     <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{m.email}</div>
                   </div>
                 </div>
-                <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{ROLE_LABEL[m.role] ?? m.role}</span>
+                {manageable ? (
+                  <select
+                    value={m.role}
+                    onChange={e => changeRole(m, e.target.value as AllowedRole)}
+                    className="select-base"
+                    disabled={isBusy}
+                    style={{ fontSize: 12.5 }}
+                  >
+                    <option value="DEVELOPER">Developer</option>
+                    <option value="TECH_LEAD">Tech Lead</option>
+                  </select>
+                ) : (
+                  <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{ROLE_LABEL[m.role] ?? m.role}</span>
+                )}
+                <span className="mono" style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{formatDate(m.joined_at)}</span>
                 <div style={{ textAlign: 'right' }}>
-                  {!isOwner && (
-                    <button style={{ fontSize: 11.5, padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-3)', cursor: 'pointer' }}>
+                  {manageable && (
+                    <button
+                      onClick={() => removeMember(m)}
+                      disabled={isBusy}
+                      style={{ fontSize: 11.5, padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-3)', cursor: isBusy ? 'default' : 'pointer', opacity: isBusy ? .6 : 1 }}
+                    >
                       Remover
                     </button>
                   )}
@@ -108,6 +262,27 @@ export default function Team() {
           })}
         </div>
       )}
+
+      {/* Permissions legend */}
+      <div style={{ marginBottom: 24 }}>
+        <button
+          onClick={() => setShowPermissions(v => !v)}
+          style={{ background: 'transparent', border: 'none', color: 'var(--text-2)', fontSize: 12.5, cursor: 'pointer', padding: '4px 0', display: 'flex', alignItems: 'center', gap: 6 }}
+        >
+          <span style={{ transform: showPermissions ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform .15s' }}>›</span>
+          Ver permissões por role
+        </button>
+        {showPermissions && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 22, marginTop: 14, padding: '18px 20px', border: '1px solid var(--border)', borderRadius: 12, background: 'var(--surface)' }}>
+            {(['CLOUD_ENGINEER', 'TECH_LEAD', 'DEVELOPER'] as const).map(role => (
+              <div key={role}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: role === 'CLOUD_ENGINEER' ? 'var(--teal)' : role === 'TECH_LEAD' ? '#7fb6f9' : 'var(--text)', marginBottom: 6 }}>{ROLE_LABEL[role]}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-3)', lineHeight: 1.7 }}>{ROLE_PERMISSIONS[role].join(' · ')}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Candidates */}
       {candidates.length > 0 && (
@@ -125,18 +300,18 @@ export default function Team() {
                   value={candidateRoles[c.user_id] ?? 'DEVELOPER'}
                   onChange={e => setCandidateRoles(prev => ({ ...prev, [c.user_id]: e.target.value as AllowedRole }))}
                   className="select-base"
-                  disabled={removing === c.user_id}
+                  disabled={busy === c.user_id}
                 >
                   <option value="DEVELOPER">Developer</option>
                   <option value="TECH_LEAD">Tech Lead</option>
                 </select>
                 <button
                   onClick={() => addCandidate(c)}
-                  disabled={removing === c.user_id}
+                  disabled={busy === c.user_id}
                   className="btn-primary hover-bright"
-                  style={{ fontSize: 12, padding: '7px 14px', borderRadius: 8, opacity: removing === c.user_id ? .6 : 1 }}
+                  style={{ fontSize: 12, padding: '7px 14px', borderRadius: 8, opacity: busy === c.user_id ? .6 : 1 }}
                 >
-                  {removing === c.user_id ? 'A adicionar…' : 'Adicionar'}
+                  {busy === c.user_id ? 'A adicionar…' : 'Adicionar'}
                 </button>
               </div>
             ))}

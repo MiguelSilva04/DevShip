@@ -24,9 +24,11 @@ from backend.api.schemas.onboarding import (
     PatchMemberRequest,
     ProjectCreate,
     ProjectResponse,
+    ProjectUpdate,
     TeamCreate,
     TeamMembersResponse,
     TeamResponse,
+    TeamUpdate,
     UserTeamEntry,
 )
 from backend.bd.models.application import Application
@@ -178,6 +180,36 @@ def create_team(body: TeamCreate, db: Session = Depends(get_db), current_user: U
     member = TeamMember(team_id=team_id, user_id=current_user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None)
     db.add(team)
     db.add(member)
+    db.commit()
+    db.refresh(team)
+    return team
+
+
+@router.get("/teams/{team_id}", response_model=TeamResponse)
+def get_team(
+    team_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_team_manager(db, team_id, current_user)
+    team = db.get(Team, team_id)
+    if team is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    return team
+
+
+@router.patch("/teams/{team_id}", response_model=TeamResponse)
+def update_team(
+    team_id: uuid.UUID,
+    body: TeamUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    team = _require_cloud_engineer_of_team(db, team_id, current_user)
+    if body.name is not None:
+        team.name = body.name
+    if body.description is not None:
+        team.description = body.description
     db.commit()
     db.refresh(team)
     return team
@@ -374,6 +406,23 @@ def create_project(
     return project
 
 
+@router.patch("/projects/{project_id}", response_model=ProjectResponse)
+def update_project(
+    project_id: uuid.UUID,
+    body: ProjectUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    project = _require_cloud_engineer(db, project_id, current_user)
+    if body.name is not None:
+        project.name = body.name
+    if body.description is not None:
+        project.description = body.description
+    db.commit()
+    db.refresh(project)
+    return project
+
+
 # ---------------------------------------------------------------------------
 # Cluster setup info (GET — no write)
 # ---------------------------------------------------------------------------
@@ -475,6 +524,81 @@ def configure_cluster(
     db.commit()
     db.refresh(cluster)
     return cluster
+
+
+def _get_cluster_or_404(db: Session, project_id: uuid.UUID) -> ClusterContext:
+    cluster = db.query(ClusterContext).filter(ClusterContext.project_id == project_id).first()
+    if cluster is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cluster ainda não configurado.")
+    return cluster
+
+
+@router.post("/projects/{project_id}/cluster/revalidate", response_model=ClusterContextResponse)
+def revalidate_cluster(
+    project_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Re-runs the same STS/EKS/K8s checks as initial setup against the stored credentials,
+    without changing them — surfaces drift (expired role, revoked access entry, etc.)."""
+    _require_cloud_engineer(db, project_id, current_user)
+    cluster = _get_cluster_or_404(db, project_id)
+
+    try:
+        cv.validate_cluster(cluster.cluster_arn, cluster.iam_role_arn, cluster.external_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+    return cluster
+
+
+@router.patch("/projects/{project_id}/cluster", response_model=ClusterContextResponse)
+def update_cluster_credentials(
+    project_id: uuid.UUID,
+    body: ClusterConfigRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Replaces cluster_arn/iam_role_arn — validated against the same checks as initial
+    setup before anything is persisted, so a bad edit can't brick the stored credentials."""
+    project = _require_cloud_engineer(db, project_id, current_user)
+    cluster = _get_cluster_or_404(db, project_id)
+
+    try:
+        info = cv.validate_cluster(body.cluster_arn, body.iam_role_arn, cluster.external_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+    cluster.cluster_arn = body.cluster_arn
+    cluster.iam_role_arn = body.iam_role_arn
+    cluster.cluster_name = info.name
+    cluster.region = info.region
+    cluster.eks_endpoint = info.endpoint
+    cluster.ca_certificate = info.ca_certificate
+    cluster.ca_file_path = info.ca_file_path
+    db.commit()
+    db.refresh(cluster)
+    return cluster
+
+
+# ---------------------------------------------------------------------------
+# Archive project
+# ---------------------------------------------------------------------------
+
+@router.post("/projects/{project_id}/archive", response_model=ProjectResponse)
+def archive_project(
+    project_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    project = _require_cloud_engineer(db, project_id, current_user)
+    if not project.is_archived:
+        from datetime import datetime, timezone
+        project.is_archived = True
+        project.archived_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(project)
+    return project
 
 
 # ---------------------------------------------------------------------------

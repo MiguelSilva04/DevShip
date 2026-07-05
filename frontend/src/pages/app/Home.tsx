@@ -120,7 +120,10 @@ export default function Home() {
                     style={{ display: 'flex', alignItems: 'center', gap: 15, width: '100%', background: 'transparent', border: 'none', borderBottom: i < app.environments.length - 1 ? '1px solid var(--border-soft)' : 'none', cursor: 'pointer', padding: '13px 18px', textAlign: 'left', color: 'var(--text)' }}
                   >
                     <span className="mono" style={{ fontSize: 12, width: 90, color: 'var(--text-2)' }}>{ae.environment_name}</span>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 10px', borderRadius: 999, fontSize: 11, background: p.bg, color: p.col, border: `1px solid ${p.bord}` }}>
+                    <span
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 10px', borderRadius: 999, fontSize: 11, background: p.bg, color: p.col, border: `1px solid ${p.bord}` }}
+                      title={status === null ? 'Esta aplicação ainda não foi deployada através da DevShip — o estado fica Unknown até ao primeiro deploy.' : undefined}
+                    >
                       <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.dot, animation: isActive(status) ? 'ds-pulse 1.4s infinite' : 'none' }} />
                       {status ?? 'Unknown'}
                     </span>

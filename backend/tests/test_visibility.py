@@ -315,10 +315,12 @@ class TestGetApplicationEnvironment:
 
 
 # ---------------------------------------------------------------------------
-# _discover_lifecycle_status — live K8s read + cache for ae's with no DeploymentVersion
+# discovered_status — reverted to always-None, no live K8s read (was making page
+# loads slow). get_application_environment/get_homepage must never touch the cluster
+# for an ae with no DeploymentVersion; only the manual /refresh endpoint may.
 # ---------------------------------------------------------------------------
 
-class TestDiscoveredStatus:
+class TestDiscoveredStatusReverted:
     def _with_cluster(self, db_session, project):
         from backend.bd.models.cluster_context import ClusterContext
         db_session.add(ClusterContext(
@@ -328,35 +330,9 @@ class TestDiscoveredStatus:
         ))
         db_session.flush()
 
-    def test_no_version_reads_live_cluster_and_caches(self, client, db_session):
+    def test_ae_detail_no_version_returns_none_no_cluster_call(self, client, db_session):
         user, _, project, _, _, ae = _setup_chain(db_session)
         self._with_cluster(db_session, project)
-        token = _token_for(user)
-
-        with (
-            patch("backend.api.routes.visibility.get_cluster_token", return_value=object()) as mock_token,
-            patch("backend.api.routes.visibility.pod_health_snapshot", return_value=(True, [])) as mock_snapshot,
-        ):
-            r = client.get(f"/application-environments/{ae.id}", headers=_auth(token))
-
-        assert r.status_code == 200
-        assert r.json()["current_version"] is None
-        assert r.json()["discovered_status"] == "Healthy"
-        mock_token.assert_called_once()
-        mock_snapshot.assert_called_once()
-
-        db_session.refresh(ae)
-        assert ae.discovered_status == LifecycleStatus.HEALTHY
-        assert ae.discovered_status_checked_at is not None
-
-    def test_cached_result_within_ttl_skips_cluster_call(self, client, db_session):
-        """A recent discovered_status_checked_at must short-circuit before touching the
-        cluster — this is the fix for the endpoint hitting K8s on every page load."""
-        user, _, project, _, _, ae = _setup_chain(db_session)
-        self._with_cluster(db_session, project)
-        ae.discovered_status = LifecycleStatus.HEALTHY
-        ae.discovered_status_checked_at = datetime.now(timezone.utc)
-        db_session.flush()
         token = _token_for(user)
 
         with (
@@ -366,40 +342,29 @@ class TestDiscoveredStatus:
             r = client.get(f"/application-environments/{ae.id}", headers=_auth(token))
 
         assert r.status_code == 200
-        assert r.json()["discovered_status"] == "Healthy"
+        assert r.json()["current_version"] is None
+        assert r.json()["discovered_status"] is None
         mock_token.assert_not_called()
         mock_snapshot.assert_not_called()
 
-    def test_expired_cache_reads_cluster_again(self, client, db_session):
-        from datetime import timedelta
-        user, _, project, _, _, ae = _setup_chain(db_session)
+    def test_homepage_undeployed_ae_returns_none_no_cluster_call(self, client, db_session):
+        user, _, project, _, app, ae = _setup_chain(db_session)
         self._with_cluster(db_session, project)
-        ae.discovered_status = LifecycleStatus.HEALTHY
-        ae.discovered_status_checked_at = datetime.now(timezone.utc) - timedelta(minutes=10)
-        db_session.flush()
         token = _token_for(user)
 
         with (
-            patch("backend.api.routes.visibility.get_cluster_token", return_value=object()),
-            patch("backend.api.routes.visibility.pod_health_snapshot", return_value=(False, ["pod-x: CrashLoopBackOff"])) as mock_snapshot,
+            patch("backend.api.routes.visibility.get_cluster_token") as mock_token,
+            patch("backend.api.routes.visibility.pod_health_snapshot") as mock_snapshot,
         ):
-            r = client.get(f"/application-environments/{ae.id}", headers=_auth(token))
+            r = client.get(f"/projects/{project.id}/homepage", headers=_auth(token))
 
         assert r.status_code == 200
-        assert r.json()["discovered_status"] == "Degraded"
-        mock_snapshot.assert_called_once()
-
-    def test_no_cluster_configured_returns_none(self, client, db_session):
-        user, _, _, _, _, ae = _setup_chain(db_session)
-        token = _token_for(user)
-
-        r = client.get(f"/application-environments/{ae.id}", headers=_auth(token))
-        assert r.status_code == 200
-        assert r.json()["discovered_status"] is None
+        app_data = next(a for a in r.json()["applications"] if a["id"] == str(app.id))
+        assert app_data["environments"][0]["discovered_status"] is None
+        mock_token.assert_not_called()
+        mock_snapshot.assert_not_called()
 
     def test_has_deployment_version_never_reads_cluster(self, client, db_session):
-        """Once an ae has a DeploymentVersion, discovery must not run at all — regression
-        guard for the cache change not touching the already-deployed path."""
         user, _, project, _, _, ae = _setup_chain(db_session)
         self._with_cluster(db_session, project)
         _make_version(db_session, ae, LifecycleStatus.HEALTHY)

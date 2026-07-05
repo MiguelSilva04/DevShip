@@ -40,6 +40,7 @@ class ApplicationListItem(BaseModel):
 class ProjectSummary(BaseModel):
     id: uuid.UUID
     name: str
+    description: Optional[str] = None
     team_name: str
 
 

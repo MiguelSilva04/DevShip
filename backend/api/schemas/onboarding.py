@@ -19,9 +19,15 @@ class TeamCreate(BaseModel):
 class TeamResponse(BaseModel):
     id: uuid.UUID
     name: str
+    description: Optional[str] = None
     domain: str
 
     model_config = {"from_attributes": True}
+
+
+class TeamUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
 
 
 class MemberEntry(BaseModel):
@@ -67,10 +73,17 @@ class ProjectCreate(BaseModel):
 class ProjectResponse(BaseModel):
     id: uuid.UUID
     name: str
+    description: Optional[str] = None
     setup_status: SetupStatus
     git_ops_repository_url: Optional[str] = None
+    is_archived: bool
 
     model_config = {"from_attributes": True}
+
+
+class ProjectUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
 
 
 # --- Cluster setup info (GET, no write) ---
@@ -92,10 +105,12 @@ class ClusterConfigRequest(BaseModel):
 
 class ClusterContextResponse(BaseModel):
     id: uuid.UUID
+    cluster_arn: str
     cluster_name: str
     region: str
     eks_endpoint: str
     external_id: str
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 

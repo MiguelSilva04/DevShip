@@ -1,6 +1,6 @@
 import re
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import case, desc, func
@@ -107,7 +107,7 @@ def get_project(
 ):
     project = _get_project_or_404(db, project_id)
     team = db.get(Team, project.team_id)
-    return ProjectSummary(id=project.id, name=project.name, team_name=team.name if team else "")
+    return ProjectSummary(id=project.id, name=project.name, description=project.description, team_name=team.name if team else "")
 
 
 def _get_ae_or_404(db: Session, ae_id: uuid.UUID, current_user: User) -> ApplicationEnvironment:
@@ -135,41 +135,6 @@ def _resolve_cluster_and_namespace(db: Session, ae: ApplicationEnvironment) -> t
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Falha ao ligar ao cluster: {e}")
     namespace = env.namespace or env.name.lower()
     return eks_info, namespace
-
-
-_DISCOVERED_STATUS_TTL = timedelta(minutes=5)
-
-
-def _discover_lifecycle_status(db: Session, ae: ApplicationEnvironment) -> LifecycleStatus | None:
-    """
-    Live K8s read for an ApplicationEnvironment with no DeploymentVersion yet — e.g. right
-    after onboarding, when the workload already exists in the cluster but was never
-    deployed through DevShip. Without this, the UI would show "Unknown" for pods that are
-    actually running fine. Returns None (→ Unknown) if the cluster isn't reachable/configured.
-
-    Cached on the ApplicationEnvironment itself with a 5-minute TTL — this path never stops
-    being called for a workload that's never deployed through DevShip (it's only skipped
-    once the ae has a DeploymentVersion), so without a cache every page load would hit the
-    cluster indefinitely.
-    """
-    now = datetime.now(timezone.utc)
-    if ae.discovered_status_checked_at is not None and now - ae.discovered_status_checked_at < _DISCOVERED_STATUS_TTL:
-        return ae.discovered_status
-
-    try:
-        eks_info, namespace = _resolve_cluster_and_namespace(db, ae)
-        any_ready, fatal_pods = pod_health_snapshot(eks_info, namespace, ae.deployment_name)
-    except Exception:
-        result = None
-    else:
-        result = None if (not any_ready and not fatal_pods) else (
-            LifecycleStatus.HEALTHY if (any_ready and not fatal_pods) else LifecycleStatus.DEGRADED
-        )
-
-    ae.discovered_status = result
-    ae.discovered_status_checked_at = now
-    db.commit()
-    return result
 
 
 def _latest_versions_subquery(db: Session, app_env_ids: list[uuid.UUID] | None = None):
@@ -328,7 +293,7 @@ def get_application_environment(
                 if requester is not None:
                     current_version.requested_by_email = requester.email
     else:
-        discovered_status = _discover_lifecycle_status(db, ae)
+        discovered_status = None
 
     return ApplicationEnvironmentDetail(
         id=ae.id,
@@ -639,10 +604,10 @@ def get_homepage(
             if label:
                 previous_label_by_ae[prev.application_environment_id] = label
 
-    # AEs with no DeploymentVersion yet (nothing deployed via DevShip) — a live K8s read
-    # so freshly onboarded workloads don't show as "Unknown" on the homepage.
+    # AEs with no DeploymentVersion yet (nothing deployed via DevShip) — Unknown, no
+    # live cluster read (reverted: was making the homepage slow, see refresh button instead).
     undeployed_ae = [ae for ae in all_ae if ae.id not in latest_by_ae]
-    discovered_by_ae = {ae.id: _discover_lifecycle_status(db, ae) for ae in undeployed_ae}
+    discovered_by_ae = {ae.id: None for ae in undeployed_ae}
 
     applications = [
         ApplicationWithStatus(
