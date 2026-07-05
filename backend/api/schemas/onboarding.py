@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel
@@ -24,10 +25,13 @@ class TeamResponse(BaseModel):
 
 
 class MemberEntry(BaseModel):
+    team_member_id: uuid.UUID
     user_id: uuid.UUID
     name: str
     email: str
     role: TeamMemberRole
+    joined_at: datetime
+    application_ids: list[uuid.UUID] = []
 
 
 class CandidateEntry(BaseModel):
@@ -44,6 +48,12 @@ class TeamMembersResponse(BaseModel):
 class AddMemberRequest(BaseModel):
     user_id: uuid.UUID
     role: TeamMemberRole
+    application_ids: list[uuid.UUID] = []
+
+
+class PatchMemberRequest(BaseModel):
+    role: Optional[TeamMemberRole] = None
+    application_ids: Optional[list[uuid.UUID]] = None
 
 
 # --- Project ---

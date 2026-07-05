@@ -21,6 +21,7 @@ from backend.api.schemas.onboarding import (
     GithubIdentityResponse,
     GitOpsScanResult,
     MemberEntry,
+    PatchMemberRequest,
     ProjectCreate,
     ProjectResponse,
     TeamCreate,
@@ -70,6 +71,23 @@ def _require_cloud_engineer(db: Session, project_id: uuid.UUID, user: User) -> P
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     _require_cloud_engineer_of_team(db, project.team_id, user)
     return project
+
+
+def _require_team_manager(db: Session, team_id: uuid.UUID, user: User) -> tuple[Team, TeamMember]:
+    """TECH_LEAD ou CLOUD_ENGINEER da Team. Devolve o TeamMember de quem chama, para os
+    endpoints que precisam de saber qual dos dois é (ex.: TECH_LEAD não pode tocar em
+    CLOUD_ENGINEER/TECH_LEAD alheio)."""
+    team = db.get(Team, team_id)
+    if team is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    member = (
+        db.query(TeamMember)
+        .filter(TeamMember.team_id == team_id, TeamMember.user_id == user.id)
+        .first()
+    )
+    if member is None or member.role not in (TeamMemberRole.TECH_LEAD, TeamMemberRole.CLOUD_ENGINEER):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="É necessário ter o papel de Tech Lead ou Cloud Engineer para executar esta ação.")
+    return team, member
 
 
 # ---------------------------------------------------------------------------
@@ -169,20 +187,29 @@ def create_team(body: TeamCreate, db: Session = Depends(get_db), current_user: U
 # Team members — list (existing + pending candidates) + add
 # ---------------------------------------------------------------------------
 
+def _member_entry(db: Session, m: TeamMember, u: User) -> MemberEntry:
+    application_ids = [
+        row[0]
+        for row in db.query(ApplicationTeamMember.application_id)
+        .filter(ApplicationTeamMember.team_member_id == m.id)
+        .all()
+    ]
+    return MemberEntry(
+        team_member_id=m.id, user_id=m.user_id, name=u.name, email=u.email,
+        role=m.role, joined_at=m.joined_at, application_ids=application_ids,
+    )
+
+
 @router.get("/teams/{team_id}/members")
 def list_team_members(
     team_id: uuid.UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    team = _require_cloud_engineer_of_team(db, team_id, current_user)
+    team, _ = _require_team_manager(db, team_id, current_user)
 
     members = db.query(TeamMember).filter(TeamMember.team_id == team_id).all()
-
-    member_entries = []
-    for m in members:
-        u = db.get(User, m.user_id)
-        member_entries.append(MemberEntry(user_id=m.user_id, name=u.name, email=u.email, role=m.role))
+    member_entries = [_member_entry(db, m, db.get(User, m.user_id)) for m in members]
 
     # Users sharing the domain with no TeamMember anywhere
     candidates_q = (
@@ -206,7 +233,7 @@ def add_team_member(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _require_cloud_engineer_of_team(db, team_id, current_user)
+    _require_team_manager(db, team_id, current_user)
 
     target = db.get(User, body.user_id)
     if target is None:
@@ -224,9 +251,91 @@ def add_team_member(
             db.flush()
     except IntegrityError:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is already a member of this team")
+
+    if body.role == TeamMemberRole.DEVELOPER:
+        for app_id in body.application_ids:
+            db.add(ApplicationTeamMember(team_member_id=member.id, application_id=app_id))
     db.commit()
 
-    return MemberEntry(user_id=target.id, name=target.name, email=target.email, role=body.role)
+    return _member_entry(db, member, target)
+
+
+def _get_team_member_or_404(db: Session, team_id: uuid.UUID, team_member_id: uuid.UUID) -> TeamMember:
+    target = db.get(TeamMember, team_member_id)
+    if target is None or target.team_id != team_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="TeamMember not found")
+    return target
+
+
+def _require_manageable_target(caller: TeamMember, target: TeamMember) -> None:
+    """CLOUD_ENGINEER pode gerir qualquer membro. TECH_LEAD só pode gerir DEVELOPERs —
+    não pode editar/remover outro TECH_LEAD nem o CLOUD_ENGINEER."""
+    if caller.role == TeamMemberRole.TECH_LEAD and target.role != TeamMemberRole.DEVELOPER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Um Tech Lead só pode gerir Developers.",
+        )
+
+
+@router.patch("/teams/{team_id}/members/{team_member_id}", response_model=MemberEntry)
+def update_team_member(
+    team_id: uuid.UUID,
+    team_member_id: uuid.UUID,
+    body: PatchMemberRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _, caller = _require_team_manager(db, team_id, current_user)
+    target = _get_team_member_or_404(db, team_id, team_member_id)
+    _require_manageable_target(caller, target)
+
+    if body.role is not None:
+        if body.role != TeamMemberRole.DEVELOPER:
+            db.query(ApplicationTeamMember).filter(ApplicationTeamMember.team_member_id == target.id).delete()
+        else:
+            if body.application_ids is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="application_ids é obrigatório ao mudar para DEVELOPER.",
+                )
+        target.role = body.role
+
+    if body.application_ids is not None and target.role == TeamMemberRole.DEVELOPER:
+        db.query(ApplicationTeamMember).filter(ApplicationTeamMember.team_member_id == target.id).delete()
+        for app_id in body.application_ids:
+            db.add(ApplicationTeamMember(team_member_id=target.id, application_id=app_id))
+
+    db.commit()
+    db.refresh(target)
+    return _member_entry(db, target, db.get(User, target.user_id))
+
+
+@router.delete("/teams/{team_id}/members/{team_member_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_team_member(
+    team_id: uuid.UUID,
+    team_member_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _, caller = _require_team_manager(db, team_id, current_user)
+    target = _get_team_member_or_404(db, team_id, team_member_id)
+    _require_manageable_target(caller, target)
+
+    if target.role == TeamMemberRole.CLOUD_ENGINEER:
+        other_ce_count = (
+            db.query(TeamMember)
+            .filter(
+                TeamMember.team_id == team_id,
+                TeamMember.role == TeamMemberRole.CLOUD_ENGINEER,
+                TeamMember.id != target.id,
+            )
+            .count()
+        )
+        if other_ce_count == 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Team precisa de um Cloud Engineer.")
+
+    db.delete(target)
+    db.commit()
 
 
 # ---------------------------------------------------------------------------
