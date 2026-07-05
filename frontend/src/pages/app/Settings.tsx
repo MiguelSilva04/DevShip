@@ -265,20 +265,19 @@ export default function Settings() {
         </Modal>
       )}
 
-      {/* Danger zone */}
+      {/* Archive zone */}
       {!isArchived && (
-        <div style={{ border: '1px solid rgba(241,85,108,.3)', borderRadius: 13, background: 'rgba(241,85,108,.04)', padding: '20px 22px', marginTop: 24 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: '#ff8497', margin: '0 0 12px' }}>Zona de perigo</h3>
+        <div style={{ border: '1px solid rgba(236,194,107,.35)', borderRadius: 13, background: 'rgba(236,194,107,.05)', padding: '20px 22px', marginTop: 24 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: '#ecc26b', margin: '0 0 12px' }}>Arquivar projeto</h3>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
             <div>
-              <div style={{ fontSize: 13.5 }}>Arquivar projecto</div>
-              <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>O projecto deixa de estar ativo, mas o histórico operacional (deploys, eventos e versões) é preservado. Podes reativá-lo mais tarde.</div>
+              <div style={{ fontSize: 13.5 }}>O projeto deixa de estar ativo, mas o histórico operacional (deploys, eventos e versões) é preservado. Podes reativá-lo mais tarde.</div>
             </div>
             <button
               onClick={() => setShowArchiveConfirm(true)}
-              style={{ fontSize: 12.5, padding: '8px 16px', borderRadius: 9, background: 'transparent', border: '1px solid rgba(241,85,108,.5)', color: '#ff8497', cursor: 'pointer', flex: 'none' }}
+              style={{ fontSize: 12.5, padding: '8px 16px', borderRadius: 9, background: 'transparent', border: '1px solid rgba(236,194,107,.5)', color: '#ecc26b', cursor: 'pointer', flex: 'none' }}
             >
-              Arquivar
+              Arquivar projeto
             </button>
           </div>
         </div>
@@ -286,8 +285,8 @@ export default function Settings() {
 
       {/* Archive confirmation modal */}
       {showArchiveConfirm && (
-        <Modal onClose={() => { setShowArchiveConfirm(false); setArchiveConfirmText(''); }} danger>
-          <h2 style={{ fontSize: 17, fontWeight: 600, color: '#ff8497', margin: '0 0 10px' }}>Confirmar arquivamento</h2>
+        <Modal onClose={() => { setShowArchiveConfirm(false); setArchiveConfirmText(''); }}>
+          <h2 style={{ fontSize: 17, fontWeight: 600, color: '#ecc26b', margin: '0 0 10px' }}>Confirmar arquivamento</h2>
           <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 18px', lineHeight: 1.6 }}>
             O projecto deixa de estar ativo. Para confirmar, escreve o nome do projeto abaixo:
           </p>
@@ -305,9 +304,9 @@ export default function Settings() {
             <button
               onClick={archive}
               disabled={!canArchive || archiving}
-              style={{ fontSize: 13, padding: '10px 18px', borderRadius: 9, background: canArchive ? 'rgba(241,85,108,.9)' : 'rgba(241,85,108,.2)', border: 'none', color: canArchive ? '#fff' : '#ff8497', cursor: canArchive ? 'pointer' : 'default', fontWeight: 600, opacity: canArchive ? 1 : .7 }}
+              style={{ fontSize: 13, padding: '10px 18px', borderRadius: 9, background: canArchive ? 'rgba(236,194,107,.9)' : 'rgba(236,194,107,.2)', border: 'none', color: canArchive ? '#1a1200' : '#ecc26b', cursor: canArchive ? 'pointer' : 'default', fontWeight: 600, opacity: canArchive ? 1 : .7 }}
             >
-              {archiving ? 'A arquivar…' : 'Arquivar projecto'}
+              {archiving ? 'A arquivar…' : 'Arquivar projeto'}
             </button>
             <button onClick={() => { setShowArchiveConfirm(false); setArchiveConfirmText(''); }} style={btnGhost}>Cancelar</button>
           </div>
@@ -348,11 +347,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function Modal({ children, onClose, danger }: { children: React.ReactNode; onClose: () => void; danger?: boolean }) {
+function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={onClose}>
       <div
-        style={{ background: 'var(--surface)', border: `1px solid ${danger ? 'rgba(241,85,108,.4)' : 'var(--border)'}`, borderRadius: 16, padding: '28px 30px', maxWidth: 440, width: '100%', margin: '0 16px' }}
+        style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: '28px 30px', maxWidth: 440, width: '100%', margin: '0 16px' }}
         onClick={e => e.stopPropagation()}
       >
         {children}
