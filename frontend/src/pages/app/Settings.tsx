@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiFetch } from '../../api/client';
-import { OB_PROJ_NAME, OB_PROJECT_ID, OB_TEAM_NAME } from '../Onboarding';
+import { OB_PROJ_NAME, OB_PROJECT_ID, OB_TEAM_NAME, GitOpsPathPreviewButton } from '../Onboarding';
 
 interface Cluster {
   cluster_arn: string;
@@ -13,6 +13,7 @@ interface Cluster {
 interface ProjectInfo {
   name: string;
   description: string | null;
+  git_ops_repository_url: string | null;
   team_name: string;
 }
 
@@ -407,7 +408,12 @@ export default function Settings() {
               )}
             </Field>
             <Field label="GitOps path">
-              <input value={envForm.git_ops_base_path ?? ''} onChange={e => setEnvForm(f => ({ ...f, git_ops_base_path: e.target.value }))} style={inputStyle} className="mono" />
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input value={envForm.git_ops_base_path ?? ''} onChange={e => setEnvForm(f => ({ ...f, git_ops_base_path: e.target.value }))} style={{ ...inputStyle, flex: 1 }} className="mono" />
+                {project?.git_ops_repository_url && envForm.git_ops_base_path && (
+                  <GitOpsPathPreviewButton repoUrl={project.git_ops_repository_url} basePath={envForm.git_ops_base_path} projectId={projectId!} />
+                )}
+              </div>
               {envValidation && envValidation.git_ops_path_status === 'INVALID' && (
                 <div style={{ fontSize: 11.5, color: '#ff9aaa', marginTop: 5 }}>{envValidation.git_ops_path_error}</div>
               )}

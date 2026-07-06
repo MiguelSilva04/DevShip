@@ -43,6 +43,7 @@ class ProjectSummary(BaseModel):
     id: uuid.UUID
     name: str
     description: Optional[str] = None
+    git_ops_repository_url: Optional[str] = None
     team_name: str
 
 

@@ -259,3 +259,65 @@ class TestGetFileContent:
             result = get_file_content("https://github.com/org/repo", "some/dir")
 
         assert result is None
+
+
+class TestListDirectory:
+    def test_lists_files_and_dirs(self):
+        from backend.services.gitops_scanner import list_directory
+
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = [
+            {"name": "backend-deployment.yaml", "type": "file"},
+            {"name": "staging", "type": "dir"},
+        ]
+
+        with patch("backend.services.gitops_scanner.requests.get", return_value=resp):
+            result = list_directory("https://github.com/org/gitops", "apps/demo-app/dev")
+
+        assert result == [
+            {"name": "backend-deployment.yaml", "type": "file"},
+            {"name": "staging", "type": "dir"},
+        ]
+
+    def test_returns_empty_list_for_nonexistent_directory(self):
+        from backend.services.gitops_scanner import list_directory
+
+        resp = MagicMock()
+        resp.status_code = 404
+
+        with patch("backend.services.gitops_scanner.requests.get", return_value=resp):
+            result = list_directory("https://github.com/org/gitops", "does/not/exist")
+
+        assert result == []
+
+    def test_returns_empty_list_when_path_is_a_file(self):
+        from backend.services.gitops_scanner import list_directory
+
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = {"name": "deploy.yml", "type": "file"}  # dict, not list — path is a file
+
+        with patch("backend.services.gitops_scanner.requests.get", return_value=resp):
+            result = list_directory("https://github.com/org/gitops", "apps/demo-app/dev/backend-deployment.yaml")
+
+        assert result == []
+
+    def test_list_workflow_files_reuses_list_directory(self):
+        from backend.services.gitops_scanner import list_workflow_files
+
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = [
+            {"name": "deploy.yml", "type": "file"},
+            {"name": "README.md", "type": "file"},
+            {"name": "scripts", "type": "dir"},
+        ]
+
+        with patch("backend.services.gitops_scanner.requests.get", return_value=resp):
+            result = list_workflow_files("https://github.com/org/repo")
+
+        assert result == ["deploy.yml"]

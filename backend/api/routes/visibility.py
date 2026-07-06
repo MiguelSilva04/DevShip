@@ -107,7 +107,10 @@ def get_project(
 ):
     project = _get_project_or_404(db, project_id)
     team = db.get(Team, project.team_id)
-    return ProjectSummary(id=project.id, name=project.name, description=project.description, team_name=team.name if team else "")
+    return ProjectSummary(
+        id=project.id, name=project.name, description=project.description,
+        git_ops_repository_url=project.git_ops_repository_url, team_name=team.name if team else "",
+    )
 
 
 def _get_ae_or_404(db: Session, ae_id: uuid.UUID, current_user: User) -> ApplicationEnvironment:

@@ -146,6 +146,89 @@ function FilePreviewButton({ repoUrl, path, projectId }: { repoUrl: string; path
   );
 }
 
+// ─── GitOps path browser (folder listing → drill into files) ───────────────
+interface DirEntry { name: string; type: 'file' | 'dir'; }
+
+export function GitOpsPathPreviewButton({ repoUrl, basePath, projectId }: { repoUrl: string; basePath: string; projectId: string }) {
+  const [open, setOpen] = useState(false);
+  const [currentPath, setCurrentPath] = useState(basePath);
+  const [entries, setEntries] = useState<DirEntry[] | null>(null);
+  const [fileContent, setFileContent] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  function loadDir(path: string) {
+    setCurrentPath(path);
+    setFileContent(null);
+    setLoading(true); setError('');
+    apiFetch(`/projects/${projectId}/dir-preview?repo_url=${encodeURIComponent(repoUrl)}&path=${encodeURIComponent(path)}`)
+      .then((r: DirEntry[]) => setEntries(r))
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }
+
+  function handleOpen() {
+    setOpen(true);
+    if (entries !== null) return; // já carregado, não repetir o fetch
+    loadDir(basePath);
+  }
+
+  function openEntry(entry: DirEntry) {
+    const path = `${currentPath.replace(/\/$/, '')}/${entry.name}`;
+    if (entry.type === 'dir') { setEntries(null); loadDir(path); return; }
+    setLoading(true); setError('');
+    apiFetch(`/projects/${projectId}/file-preview?repo_url=${encodeURIComponent(repoUrl)}&path=${encodeURIComponent(path)}`)
+      .then((r: { content: string }) => { setFileContent(r.content); setCurrentPath(path); })
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }
+
+  return (
+    <>
+      <button type="button" onClick={handleOpen} className="btn-ghost" style={{ fontSize: 11.5, padding: '4px 10px', borderRadius: 6 }}>
+        Preview
+      </button>
+      {open && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setOpen(false)}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: '20px 22px', maxWidth: 640, width: '100%', margin: '0 16px', maxHeight: '70vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 10 }}>
+              <span className="mono" style={{ fontSize: 12.5, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentPath}</span>
+              <button onClick={() => setOpen(false)} className="btn-ghost" style={{ fontSize: 12, flex: 'none' }}>Fechar</button>
+            </div>
+            {loading && <div style={{ fontSize: 13, color: 'var(--text-3)' }}>A carregar…</div>}
+            {error && <div style={{ fontSize: 13, color: '#ff8497' }}>{error}</div>}
+            {!loading && !error && fileContent !== null && (
+              <>
+                <button onClick={() => { setFileContent(null); loadDir(currentPath.split('/').slice(0, -1).join('/')); }} className="btn-ghost" style={{ fontSize: 11.5, alignSelf: 'flex-start', marginBottom: 8 }}>← Voltar à pasta</button>
+                <pre className="mono" style={{ fontSize: 12, color: 'var(--text)', overflow: 'auto', margin: 0, whiteSpace: 'pre-wrap' }}>{fileContent}</pre>
+              </>
+            )}
+            {!loading && !error && fileContent === null && entries !== null && (
+              entries.length === 0 ? (
+                <div style={{ fontSize: 13, color: 'var(--text-3)' }}>Pasta vazia ou ainda não existe no repositório.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, overflow: 'auto' }}>
+                  {entries.map(e => (
+                    <button
+                      key={e.name}
+                      onClick={() => openEntry(e)}
+                      className="btn-ghost"
+                      style={{ fontSize: 12.5, textAlign: 'left', padding: '6px 10px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 8 }}
+                    >
+                      <span style={{ color: 'var(--text-3)' }}>{e.type === 'dir' ? '📁' : '📄'}</span>
+                      <span className="mono">{e.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ─── Validation result badge ────────────────────────────────────────────────
 function ValBadge({ status, error }: { status: string; error?: string | null }) {
   const ok = status === 'VALID';
@@ -627,10 +710,18 @@ export function OnboardingEnvironments() {
   const nav = useNavigate();
   const [envs, setEnvs] = useState<EnvFormState[]>([]);
   const [results, setResults] = useState<EnvResult[] | null>(null);
+  const [gitOpsUrl, setGitOpsUrl] = useState('');
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
 
   const projectId = localStorage.getItem(OB_PROJECT_ID);
+
+  useEffect(() => {
+    if (!projectId) return;
+    apiFetch(`/projects/${projectId}`)
+      .then((p: { git_ops_repository_url?: string }) => setGitOpsUrl(p.git_ops_repository_url ?? ''))
+      .catch(() => {});
+  }, [projectId]);
 
   // Pre-fill from existing environments (idempotency on back-navigation)
   useEffect(() => {
@@ -760,7 +851,12 @@ export function OnboardingEnvironments() {
                     <input className="input-base input-mono" value={env.namespace} onChange={e => update(env.key, 'namespace', e.target.value)} placeholder="app-dev" />
                   </FormField>
                   <FormField label="GitOps Base Path">
-                    <input className="input-base input-mono" value={env.git_ops_base_path} onChange={e => update(env.key, 'git_ops_base_path', e.target.value)} placeholder="apps/dev" />
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input className="input-base input-mono" value={env.git_ops_base_path} onChange={e => update(env.key, 'git_ops_base_path', e.target.value)} placeholder="apps/dev" style={{ flex: 1 }} />
+                      {gitOpsUrl && env.git_ops_base_path && (
+                        <GitOpsPathPreviewButton repoUrl={gitOpsUrl} basePath={env.git_ops_base_path} projectId={projectId!} />
+                      )}
+                    </div>
                   </FormField>
                   <FormField label="Source Branch (repo de código)">
                     <input className="input-base input-mono" value={env.source_branch} onChange={e => update(env.key, 'source_branch', e.target.value)} placeholder="main" />

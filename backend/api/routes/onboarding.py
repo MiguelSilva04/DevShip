@@ -833,6 +833,23 @@ def preview_file(
     return {"content": content}
 
 
+@router.get("/projects/{project_id}/dir-preview")
+def preview_directory(
+    project_id: uuid.UUID,
+    repo_url: str = Query(...),
+    path: str = Query(...),
+    ref: str | None = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_cloud_engineer(db, project_id, current_user)
+    try:
+        return gs.list_directory(repo_url, path, ref)
+    except Exception:
+        # rate limit, repo inacessível, etc. — devolve vazio, o frontend mostra "sem entradas".
+        return []
+
+
 # ---------------------------------------------------------------------------
 # Application import
 # ---------------------------------------------------------------------------

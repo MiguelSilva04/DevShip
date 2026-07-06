@@ -444,6 +444,52 @@ class TestFilePreview:
         assert r.status_code == 403
 
 
+class TestDirPreview:
+    def test_lists_directory_entries(self, client):
+        token, team_id = _setup(client, "dirpreview.io")
+        project_id = _project(client, team_id=team_id, token=token)
+
+        fake = [{"name": "backend-deployment.yaml", "type": "file"}, {"name": "staging", "type": "dir"}]
+        with patch("backend.api.routes.onboarding.gs.list_directory", return_value=fake):
+            r = client.get(
+                f"/projects/{project_id}/dir-preview",
+                params={"repo_url": "https://github.com/org/gitops", "path": "apps/demo-app/dev"},
+                headers=_auth(token),
+            )
+
+        assert r.status_code == 200
+        assert r.json() == fake
+
+    def test_returns_empty_list_on_upstream_error(self, client):
+        token, team_id = _setup(client, "dirpreview2.io")
+        project_id = _project(client, team_id=team_id, token=token)
+
+        with patch("backend.api.routes.onboarding.gs.list_directory", side_effect=Exception("boom")):
+            r = client.get(
+                f"/projects/{project_id}/dir-preview",
+                params={"repo_url": "https://github.com/org/gitops", "path": "apps/demo-app/dev"},
+                headers=_auth(token),
+            )
+
+        assert r.status_code == 200
+        assert r.json() == []
+
+    def test_non_cloud_engineer_forbidden(self, client):
+        token, team_id = _setup(client, "dirpreview3.io")
+        project_id = _project(client, team_id=team_id, token=token)
+
+        dev_email = "dev@dirpreview3.io"
+        _register(client, dev_email, name="Dev")
+        dev_token = _login(client, dev_email)
+
+        r = client.get(
+            f"/projects/{project_id}/dir-preview",
+            params={"repo_url": "https://github.com/org/gitops", "path": "apps/demo-app/dev"},
+            headers=_auth(dev_token),
+        )
+        assert r.status_code == 403
+
+
 # ---------------------------------------------------------------------------
 # Application import
 # ---------------------------------------------------------------------------

@@ -130,21 +130,31 @@ def get_file_content(repo_url: str, path: str, ref: str | None = None) -> str | 
         return None
 
 
-def list_workflow_files(repo_url: str) -> list[str]:
-    """Lista os .yml/.yaml em .github/workflows/ do repo. Lista vazia se a pasta não existir
-    (repo sem workflows é um caso válido, ainda que incomum) — não é erro."""
+def list_directory(repo_url: str, path: str, ref: str | None = None) -> list[dict]:
+    """Lista as entradas (ficheiros e pastas) de um diretório em repo_url/path. Lista vazia
+    se o diretório não existir — pasta ainda por criar é um caso válido, não é erro.
+    Cada entrada: {"name": str, "type": "file" | "dir"}."""
     owner, repo = _parse_owner_repo(repo_url)
+    params = {"ref": ref} if ref else {}
     resp = requests.get(
-        f"https://api.github.com/repos/{owner}/{repo}/contents/.github/workflows",
-        headers=_github_headers(),
-        timeout=15,
+        f"https://api.github.com/repos/{owner}/{repo}/contents/{path.strip('/')}",
+        headers=_github_headers(), params=params, timeout=15,
     )
     if resp.status_code == 404:
         return []
     resp.raise_for_status()
+    entries = resp.json()
+    if not isinstance(entries, list):
+        return []  # path pointed at a file, not a directory
+    return [{"name": e["name"], "type": e["type"]} for e in entries]
+
+
+def list_workflow_files(repo_url: str) -> list[str]:
+    """Lista os .yml/.yaml em .github/workflows/ do repo. Lista vazia se a pasta não existir
+    (repo sem workflows é um caso válido, ainda que incomum) — não é erro."""
     return [
-        f["name"] for f in resp.json()
-        if f["type"] == "file" and f["name"].endswith((".yml", ".yaml"))
+        e["name"] for e in list_directory(repo_url, ".github/workflows")
+        if e["type"] == "file" and e["name"].endswith((".yml", ".yaml"))
     ]
 
 
