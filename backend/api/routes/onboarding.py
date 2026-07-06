@@ -865,30 +865,32 @@ def import_applications(
 
     created = []
     for item in body.applications:
-        app = Application(
-            project_id=project_id,
-            name=item.name,
-            source_repository=item.source_repository,
-            ci_workflow_file=item.ci_workflow_file,
-            created_by=current_user.id,
-        )
-        db.add(app)
-        try:
-            with db.begin_nested():
-                db.flush()
-        except IntegrityError:
+        # Upsert by source_repository (globally unique) — idempotent on re-submit,
+        # e.g. navigating back and forth in onboarding before finishing it.
+        app = db.query(Application).filter(Application.source_repository == item.source_repository).first()
+        if app is not None and app.project_id != project_id:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"source_repository '{item.source_repository}' already belongs to another project",
             )
+        if app is None:
+            app = Application(project_id=project_id, source_repository=item.source_repository, created_by=current_user.id)
+            db.add(app)
+
+        app.name = item.name
+        app.ci_workflow_file = item.ci_workflow_file
+        db.flush()
 
         for ae in item.environments:
-            db.add(ApplicationEnvironment(
-                application_id=app.id,
-                environment_id=ae.environment_id,
-                deployment_name=ae.deployment_name,
-                manifest_path=ae.manifest_path,
-            ))
+            app_env = db.query(ApplicationEnvironment).filter(
+                ApplicationEnvironment.application_id == app.id,
+                ApplicationEnvironment.environment_id == ae.environment_id,
+            ).first()
+            if app_env is None:
+                app_env = ApplicationEnvironment(application_id=app.id, environment_id=ae.environment_id)
+                db.add(app_env)
+            app_env.deployment_name = ae.deployment_name
+            app_env.manifest_path = ae.manifest_path
 
         created.append(app)
 

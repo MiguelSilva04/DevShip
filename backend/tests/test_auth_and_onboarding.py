@@ -528,3 +528,32 @@ class TestApplicationImport:
         payload = {"applications": [{"name": "api", "source_repository": "https://github.com/org/shared", "ci_workflow_file": "deploy.yml", "environments": []}]}
         assert client.post(f"/projects/{proj1}/applications/import", json=payload, headers=_auth(token1)).status_code == 201
         assert client.post(f"/projects/{proj2}/applications/import", json=payload, headers=_auth(token2)).status_code == 409
+
+    def test_reimport_same_project_is_idempotent(self, client):
+        # Navigating back and forth in onboarding before finishing it re-triggers the scan
+        # and resubmits the same candidates — must not 409 against the caller's own project.
+        token, team_id = _setup(client, "reimport.io")
+        project_id = _project(client, token, team_id, git_ops_repository_url="https://github.com/org/gitops")
+
+        with (
+            patch("backend.api.routes.onboarding.validate_branch", return_value=True),
+            patch("backend.api.routes.onboarding.path_exists", return_value=True),
+        ):
+            env_id = client.post(
+                f"/projects/{project_id}/environments",
+                json=[{"name": "staging", "deployment_order": 1}],
+                headers=_auth(token),
+            ).json()[0]["id"]
+
+        payload = {"applications": [{"name": "api", "source_repository": "https://github.com/org/reimport-api", "ci_workflow_file": "deploy.yml", "environments": [{"environment_id": env_id, "deployment_name": "api-deploy"}]}]}
+
+        first = client.post(f"/projects/{project_id}/applications/import", json=payload, headers=_auth(token))
+        assert first.status_code == 201
+        app_id = first.json()[0]["id"]
+
+        second = client.post(f"/projects/{project_id}/applications/import", json=payload, headers=_auth(token))
+        assert second.status_code == 201
+        assert second.json()[0]["id"] == app_id  # same Application row reused, not a duplicate
+
+        r = client.get(f"/projects/{project_id}/applications", headers=_auth(token))
+        assert len([a for a in r.json() if a["source_repository"] == "https://github.com/org/reimport-api"]) == 1

@@ -169,8 +169,8 @@ export function GitOpsPathPreviewButton({ repoUrl, basePath, projectId }: { repo
 
   function handleOpen() {
     setOpen(true);
-    if (entries !== null) return; // já carregado, não repetir o fetch
-    loadDir(basePath);
+    setFileContent(null);
+    loadDir(basePath); // sempre a partir do valor atual do campo — nunca mostra uma pasta desatualizada
   }
 
   function openEntry(entry: DirEntry) {
