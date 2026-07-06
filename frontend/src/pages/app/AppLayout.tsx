@@ -12,6 +12,7 @@ export default function AppLayout() {
   const { user, setUser, logout: authLogout } = useUser();
   const [project, setProject] = useState<{ name: string; team_name: string } | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
+  const [candidateCount, setCandidateCount] = useState(0);
 
   useEffect(() => {
     const projectId = localStorage.getItem('ob_project_id');
@@ -43,6 +44,15 @@ export default function AppLayout() {
       .catch(() => setPendingCount(0));
   }, [canApprove]);
 
+  useEffect(() => {
+    if (!isCloud) return;
+    const teamId = localStorage.getItem(OB_TEAM_ID);
+    if (!teamId) return;
+    apiFetch(`/teams/${teamId}/members`)
+      .then(({ candidates }: { candidates: unknown[] }) => setCandidateCount(candidates.length))
+      .catch(() => setCandidateCount(0));
+  }, [isCloud]);
+
   const at = (path: string) => loc.pathname === `/app/${path}` || loc.pathname.startsWith(`/app/${path}/`);
   const active = (path: string): React.CSSProperties => ({
     background: at(path) ? 'var(--surface-2)' : 'transparent',
@@ -69,7 +79,13 @@ export default function AppLayout() {
             )}
           </NavBtn>
         )}
-        {isCloud && <NavBtn icon={IconUsers}    label="Team"      style={active('team')}      onClick={() => nav('/app/team')} />}
+        {isCloud && (
+          <NavBtn icon={IconUsers} label="Team" style={active('team')} onClick={() => nav('/app/team')}>
+            {candidateCount > 0 && (
+              <span style={{ marginLeft:'auto', background:'var(--teal)', color:'var(--teal-ink)', fontSize:10, fontWeight:600, minWidth:18, height:18, borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 5px' }}>{candidateCount}</span>
+            )}
+          </NavBtn>
+        )}
         {isCloud && <NavBtn icon={IconSettings} label="Settings"  style={active('settings')}  onClick={() => nav('/app/settings')} />}
         <NavBtn icon={IconBook} label="Como funciona" style={active('how')} onClick={() => nav('/app/how')} />
 
@@ -108,7 +124,14 @@ export default function AppLayout() {
                 )}
               </button>
             )}
-            {isCloud && <button onClick={() => nav('/app/team')}     className="btn-secondary" style={{ fontSize:12, padding:'7px 12px', borderRadius:8 }}>Team</button>}
+            {isCloud && (
+              <button onClick={() => nav('/app/team')} className="btn-secondary" style={{ display:'inline-flex', alignItems:'center', gap:7, fontSize:12, padding:'7px 12px', borderRadius:8 }}>
+                Team
+                {candidateCount > 0 && (
+                  <span style={{ background:'var(--teal)', color:'var(--teal-ink)', fontSize:10, fontWeight:600, minWidth:17, height:17, borderRadius:9, display:'inline-flex', alignItems:'center', justifyContent:'center' }}>{candidateCount}</span>
+                )}
+              </button>
+            )}
             {isCloud && <button onClick={() => nav('/app/settings')} className="btn-secondary" style={{ fontSize:12, padding:'7px 12px', borderRadius:8 }}>Settings</button>}
           </div>
         </div>
