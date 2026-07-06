@@ -22,5 +22,7 @@ class UserResponse(BaseModel):
     name: str
     email: str
     team_id: str | None = None  # set when register auto-creates a team (first user of domain)
+    github_username: str | None = None
+    github_email: str | None = None
 
     model_config = {"from_attributes": True}

@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
-import { OB_TEAM_ID } from '../Onboarding';
+import { OB_TEAM_ID, OB_PROJECT_ID } from '../Onboarding';
 import { useUser } from '../../context/UserContext';
 
-interface Member { team_member_id: string; user_id: string; name: string; email: string; role: string; joined_at: string; }
+interface Member { team_member_id: string; user_id: string; name: string; email: string; role: string; joined_at: string; application_ids: string[]; }
 interface Candidate { user_id: string; name: string; email: string; }
 interface TeamInfo { id: string; name: string; description: string | null; domain: string; }
+interface AppItem { id: string; name: string; source_repository: string; }
 
 const ROLE_LABEL: Record<string, string> = {
   CLOUD_ENGINEER: 'Cloud Engineer',
@@ -45,8 +46,14 @@ export default function Team() {
   const [editDescription, setEditDescription] = useState('');
   const [savingTeam, setSavingTeam] = useState(false);
   const [teamErr, setTeamErr] = useState('');
+  const [apps, setApps] = useState<AppItem[]>([]);
+  const [accessMember, setAccessMember] = useState<Member | null>(null);
+  const [accessSelection, setAccessSelection] = useState<string[]>([]);
+  const [savingAccess, setSavingAccess] = useState(false);
+  const [accessErr, setAccessErr] = useState('');
 
   const teamId = localStorage.getItem(OB_TEAM_ID);
+  const projectId = localStorage.getItem(OB_PROJECT_ID);
 
   function load() {
     if (!teamId) { setErr('Team não encontrada.'); return; }
@@ -57,9 +64,37 @@ export default function Team() {
       })
       .catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Erro ao carregar team.'));
     apiFetch(`/teams/${teamId}`).then(setTeam).catch(() => setTeam(null));
+    if (projectId) {
+      apiFetch(`/projects/${projectId}/applications`).then(setApps).catch(() => setApps([]));
+    }
   }
 
   useEffect(load, [teamId]);
+
+  function openAccess(m: Member) {
+    setAccessMember(m);
+    setAccessSelection(m.application_ids);
+    setAccessErr('');
+  }
+
+  function toggleAccess(appId: string) {
+    setAccessSelection(prev => prev.includes(appId) ? prev.filter(id => id !== appId) : [...prev, appId]);
+  }
+
+  async function saveAccess() {
+    if (!teamId || !accessMember) return;
+    setSavingAccess(true); setAccessErr('');
+    try {
+      const updated: Member = await apiFetch(`/teams/${teamId}/members/${accessMember.team_member_id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ application_ids: accessSelection }),
+      });
+      setMembers(prev => prev.map(x => x.team_member_id === updated.team_member_id ? updated : x));
+      setAccessMember(null);
+    } catch (e: unknown) {
+      setAccessErr(e instanceof Error ? e.message : 'Erro ao guardar acessos.');
+    } finally { setSavingAccess(false); }
+  }
 
   function openEditTeam() {
     setEditName(team?.name ?? '');
@@ -212,15 +247,15 @@ export default function Team() {
       {/* Members table */}
       {members.length > 0 && (
         <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', overflow: 'hidden', marginBottom: 24 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 100px 80px', gap: 12, padding: '12px 20px', borderBottom: '1px solid var(--border)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
-            <span>Membro</span><span>Role</span><span>Desde</span><span style={{ textAlign: 'right' }}>Ação</span>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 120px 100px 80px', gap: 12, padding: '12px 20px', borderBottom: '1px solid var(--border)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
+            <span>Membro</span><span>Role</span><span>Applications</span><span>Desde</span><span style={{ textAlign: 'right' }}>Ação</span>
           </div>
           {members.map((m, i) => {
             const isOwner = m.role === 'CLOUD_ENGINEER';
             const manageable = canManage(m) && !isOwner;
             const isBusy = busy === m.team_member_id;
             return (
-              <div key={m.team_member_id} style={{ display: 'grid', gridTemplateColumns: '1fr 160px 100px 80px', gap: 12, padding: '14px 20px', borderBottom: i < members.length - 1 ? '1px solid var(--border-soft)' : 'none', alignItems: 'center' }}>
+              <div key={m.team_member_id} style={{ display: 'grid', gridTemplateColumns: '1fr 160px 120px 100px 80px', gap: 12, padding: '14px 20px', borderBottom: i < members.length - 1 ? '1px solid var(--border-soft)' : 'none', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
                   <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--surface-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 600, flex: 'none' }}>{initials(m.name)}</div>
                   <div>
@@ -245,6 +280,21 @@ export default function Team() {
                 ) : (
                   <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{ROLE_LABEL[m.role] ?? m.role}</span>
                 )}
+                {m.role === 'DEVELOPER' ? (
+                  manageable ? (
+                    <button
+                      onClick={() => openAccess(m)}
+                      disabled={isBusy}
+                      style={{ fontSize: 11.5, padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: isBusy ? 'default' : 'pointer', textAlign: 'left' }}
+                    >
+                      {m.application_ids.length} app{m.application_ids.length !== 1 ? 's' : ''} · editar
+                    </button>
+                  ) : (
+                    <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{m.application_ids.length} app{m.application_ids.length !== 1 ? 's' : ''}</span>
+                  )
+                ) : (
+                  <span style={{ fontSize: 12, color: 'var(--text-3)' }}>—</span>
+                )}
                 <span className="mono" style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{formatDate(m.joined_at)}</span>
                 <div style={{ textAlign: 'right' }}>
                   {manageable && (
@@ -260,6 +310,45 @@ export default function Team() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Application access modal */}
+      {accessMember && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setAccessMember(null)}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: '28px 30px', maxWidth: 440, width: '100%', margin: '0 16px' }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 6px' }}>Applications de {accessMember.name}</h2>
+            <p style={{ fontSize: 12.5, color: 'var(--text-2)', margin: '0 0 18px', lineHeight: 1.6 }}>
+              Um Developer só vê e faz deploy nas applications selecionadas.
+            </p>
+            {accessErr && <div style={{ fontSize: 12, color: '#ff9aaa', marginBottom: 10 }}>{accessErr}</div>}
+            {apps.length === 0 ? (
+              <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>Nenhuma application neste projeto ainda.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
+                {apps.map(a => (
+                  <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '10px 13px', border: `1px solid ${accessSelection.includes(a.id) ? 'rgba(43,199,180,.4)' : 'var(--border)'}`, borderRadius: 10, cursor: 'pointer', background: accessSelection.includes(a.id) ? 'rgba(43,199,180,.05)' : 'var(--bg-2)' }}>
+                    <input type="checkbox" checked={accessSelection.includes(a.id)} onChange={() => toggleAccess(a.id)} style={{ accentColor: 'var(--teal)', flex: 'none' }} />
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{a.name}</div>
+                      <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>{a.source_repository}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+              <button
+                onClick={saveAccess}
+                disabled={savingAccess}
+                className="btn-primary hover-bright"
+                style={{ fontSize: 13, padding: '10px 18px', borderRadius: 9, fontWeight: 600, opacity: savingAccess ? .6 : 1 }}
+              >
+                {savingAccess ? 'A guardar…' : 'Guardar'}
+              </button>
+              <button onClick={() => setAccessMember(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>Cancelar</button>
+            </div>
+          </div>
         </div>
       )}
 

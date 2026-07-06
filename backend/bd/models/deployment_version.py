@@ -52,7 +52,6 @@ class DeploymentVersion(Base):
     )
     image_tag: Mapped[str | None] = mapped_column(String(255))
     image_digest: Mapped[str | None] = mapped_column(String(128))
-    version_label: Mapped[str | None] = mapped_column(String(255))
     git_ops_commit_sha: Mapped[str | None] = mapped_column(String(40))
     # The commit that was actually versioned — may differ from source_commit_sha
     # in the originating deployment_request if the build resolved a different ref.

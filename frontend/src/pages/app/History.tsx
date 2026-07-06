@@ -7,7 +7,6 @@ type LifecycleStatus = 'Deploying' | 'Healthy' | 'Degraded' | 'Failed' | 'Rolled
 interface DeploymentVersionDetail {
   id: string;
   image_tag: string | null;
-  version_label: string | null;
   source_commit_sha: string | null;
   lifecycle_status: LifecycleStatus;
   trigger_source: string;
@@ -67,7 +66,7 @@ export default function History() {
                     {v.lifecycle_status}
                   </span>
                 </span>
-                <span className="mono" style={{ fontSize: 12, color: 'var(--teal)' }}>{v.version_label ?? v.image_tag ?? '—'}</span>
+                <span className="mono" style={{ fontSize: 12, color: 'var(--teal)' }}>{v.image_tag ?? '—'}</span>
                 <span className="mono" style={{ fontSize: 12, color: 'var(--text-2)' }}>{v.source_commit_sha ? v.source_commit_sha.slice(0, 7) : '—'}</span>
                 <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{v.trigger_source}</span>
                 <span style={{ fontSize: 11.5, color: 'var(--text-3)', textAlign: 'right' }}>

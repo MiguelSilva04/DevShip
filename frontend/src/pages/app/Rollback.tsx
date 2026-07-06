@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useUser } from '../../context/UserContext';
 import { apiFetch } from '../../api/client';
+import GithubIdentityPrompt, { GITHUB_IDENTITY_ERROR } from '../../components/GithubIdentityPrompt';
 
 interface DeploymentVersionDetail {
   id: string;
   image_tag: string | null;
-  version_label: string | null;
   source_commit_sha: string | null;
   lifecycle_status: string;
   created_at: string;
@@ -101,7 +101,7 @@ export default function Rollback() {
         <div style={{ fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 12 }}>Versão atual (FROM)</div>
         {current ? (
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 14 }}>
-            <span className="mono" style={{ fontSize: 16, fontWeight: 600, color: 'var(--teal)' }}>{current.version_label ?? current.image_tag ?? '—'}</span>
+            <span className="mono" style={{ fontSize: 16, fontWeight: 600, color: 'var(--teal)' }}>{current.image_tag ?? '—'}</span>
             <span className="mono" style={{ fontSize: 12, color: 'var(--text-2)' }}>{current.source_commit_sha ? current.source_commit_sha.slice(0, 7) : '—'}</span>
             <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{new Date(current.created_at).toLocaleString()}</span>
           </div>
@@ -119,7 +119,7 @@ export default function Rollback() {
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '14px 20px' }}>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span className="mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{target.version_label ?? target.image_tag}</span>
+                <span className="mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{target.image_tag}</span>
                 <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>{target.source_commit_sha ? target.source_commit_sha.slice(0, 7) : '—'}</span>
               </div>
               <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{new Date(target.created_at).toLocaleString()}</div>
@@ -146,8 +146,9 @@ export default function Rollback() {
       </div>
 
       {error && (
-        <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 9, background: 'rgba(241,85,108,.08)', border: '1px solid rgba(241,85,108,.3)', fontSize: 12.5, color: '#ff8497' }}>
-          {error}
+        <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 9, background: 'rgba(241,85,108,.08)', border: '1px solid rgba(241,85,108,.3)', fontSize: 12.5, color: '#ff8497', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>{error}</span>
+          {error === GITHUB_IDENTITY_ERROR && <GithubIdentityPrompt onConfigured={() => setError('')} />}
         </div>
       )}
 

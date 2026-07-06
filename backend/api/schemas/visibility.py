@@ -48,8 +48,6 @@ class ApplicationEnvironmentStatus(BaseModel):
     id: uuid.UUID
     environment_name: str
     lifecycle_status: Optional[LifecycleStatus] = None
-    version_label: Optional[str] = None
-    previous_version_label: Optional[str] = None
     # Set only when there's no DeploymentVersion yet (nothing deployed via DevShip) — a
     # live K8s read of whatever's already running in the namespace, so a freshly onboarded
     # cluster with real workloads doesn't show "Unknown" for pods that are actually healthy.
@@ -83,7 +81,6 @@ class DeploymentVersionDetail(BaseModel):
     id: uuid.UUID
     image_tag: Optional[str] = None
     image_digest: Optional[str] = None
-    version_label: Optional[str] = None
     source_commit_sha: Optional[str] = None
     argocd_sync_revision: Optional[str] = None
     kubernetes_deployment_revision: Optional[str] = None

@@ -581,29 +581,6 @@ def get_homepage(
     for ae in all_ae:
         ae_by_app.setdefault(ae.application_id, []).append(ae)
 
-    # For AEs currently Deploying, resolve the version being replaced (most recent
-    # terminal-by-supersession version for the same ae) to show "vX → vY" in the UI.
-    deploying_ae_ids = [
-        ae_id for ae_id, v in latest_by_ae.items() if v.lifecycle_status == LifecycleStatus.DEPLOYING
-    ]
-    previous_label_by_ae: dict[uuid.UUID, str] = {}
-    if deploying_ae_ids:
-        for prev in (
-            db.query(DeploymentVersion)
-            .filter(
-                DeploymentVersion.application_environment_id.in_(deploying_ae_ids),
-                DeploymentVersion.lifecycle_status.in_(
-                    [LifecycleStatus.SUPERSEDED, LifecycleStatus.ROLLED_BACK]
-                ),
-            )
-            .order_by(DeploymentVersion.application_environment_id, desc(DeploymentVersion.created_at))
-            .distinct(DeploymentVersion.application_environment_id)
-            .all()
-        ):
-            label = prev.version_label or (prev.image_tag.split("-")[0] if prev.image_tag else None)
-            if label:
-                previous_label_by_ae[prev.application_environment_id] = label
-
     # AEs with no DeploymentVersion yet (nothing deployed via DevShip) — Unknown, no
     # live cluster read (reverted: was making the homepage slow, see refresh button instead).
     undeployed_ae = [ae for ae in all_ae if ae.id not in latest_by_ae]
@@ -618,12 +595,6 @@ def get_homepage(
                     id=ae.id,
                     environment_name=env_names.get(ae.environment_id, ""),
                     lifecycle_status=latest_by_ae[ae.id].lifecycle_status if ae.id in latest_by_ae else None,
-                    version_label=(
-                        latest_by_ae[ae.id].version_label
-                        or (latest_by_ae[ae.id].image_tag.split("-")[0] if latest_by_ae[ae.id].image_tag else None)
-                        if ae.id in latest_by_ae else None
-                    ),
-                    previous_version_label=previous_label_by_ae.get(ae.id),
                     discovered_status=discovered_by_ae.get(ae.id),
                 )
                 for ae in ae_by_app.get(app.id, [])

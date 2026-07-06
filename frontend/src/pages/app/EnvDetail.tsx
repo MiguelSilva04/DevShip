@@ -24,7 +24,6 @@ function upToDatePill(s: UpToDateStatus) {
 interface DeploymentVersionDetail {
   id: string;
   image_tag: string | null;
-  version_label: string | null;
   source_commit_sha: string | null;
   lifecycle_status: LifecycleStatus;
   deployed_at: string | null;
@@ -172,7 +171,7 @@ export default function EnvDetail() {
           {cv ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 11, fontSize: 12.5 }}>
               {([
-                ['Version', cv.version_label ?? cv.image_tag ?? '—', 'var(--teal)'],
+                ['Version', cv.image_tag ?? '—', 'var(--teal)'],
                 ['Commit', cv.source_commit_sha ? cv.source_commit_sha.slice(0, 7) : '—', ''],
                 [`HEAD (${label.toUpperCase()})`, upToDate?.gitops_head_sha ? upToDate.gitops_head_sha.slice(0, 7) : '—', ''],
                 ['Started', cv.deployed_at ? new Date(cv.deployed_at).toLocaleString() : '—', ''],

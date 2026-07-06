@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
-import { OB_TEAM_ID } from '../Onboarding';
+import { OB_TEAM_ID, OB_PROJECT_ID } from '../Onboarding';
 
 interface Candidate { user_id: string; name: string; email: string; }
+interface AppItem { id: string; name: string; source_repository: string; }
 
 type AllowedRole = 'DEVELOPER' | 'TECH_LEAD';
 
@@ -24,8 +25,11 @@ export default function AddMember() {
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
   const [hasCloudEngineer, setHasCloudEngineer] = useState(false);
+  const [apps, setApps] = useState<AppItem[]>([]);
+  const [appIds, setAppIds] = useState<string[]>([]);
 
   const teamId = localStorage.getItem(OB_TEAM_ID);
+  const projectId = localStorage.getItem(OB_PROJECT_ID);
 
   useEffect(() => {
     if (!teamId) return;
@@ -35,7 +39,14 @@ export default function AddMember() {
         setHasCloudEngineer(members.some(m => m.role === 'CLOUD_ENGINEER'));
       })
       .catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Erro ao carregar candidatos.'));
+    if (projectId) {
+      apiFetch(`/projects/${projectId}/applications`).then(setApps).catch(() => setApps([]));
+    }
   }, [teamId]);
+
+  function toggleApp(appId: string) {
+    setAppIds(prev => prev.includes(appId) ? prev.filter(id => id !== appId) : [...prev, appId]);
+  }
 
   async function submit() {
     if (!selected) { setErr('Seleciona um utilizador.'); return; }
@@ -44,7 +55,7 @@ export default function AddMember() {
     try {
       await apiFetch(`/teams/${teamId}/members`, {
         method: 'POST',
-        body: JSON.stringify({ user_id: selected, role }),
+        body: JSON.stringify({ user_id: selected, role, application_ids: role === 'DEVELOPER' ? appIds : [] }),
       });
       nav('/app/team');
     } catch (e: unknown) {
@@ -113,6 +124,27 @@ export default function AddMember() {
           ))}
         </div>
       </div>
+
+      {role === 'DEVELOPER' && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 10 }}>Applications</div>
+          {apps.length === 0 ? (
+            <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>Nenhuma application neste projeto ainda — podes atribuir mais tarde em Team.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {apps.map(a => (
+                <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '10px 13px', border: `1px solid ${appIds.includes(a.id) ? 'rgba(43,199,180,.4)' : 'var(--border)'}`, borderRadius: 10, cursor: 'pointer', background: appIds.includes(a.id) ? 'rgba(43,199,180,.05)' : 'var(--surface)' }}>
+                  <input type="checkbox" checked={appIds.includes(a.id)} onChange={() => toggleApp(a.id)} style={{ accentColor: 'var(--teal)', flex: 'none' }} />
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>{a.name}</div>
+                    <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>{a.source_repository}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 10 }}>
         <button

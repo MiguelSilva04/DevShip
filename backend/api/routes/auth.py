@@ -34,4 +34,11 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
 
 @router.get("/me", response_model=UserResponse)
 def me(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return UserResponse(id=str(current_user.id), name=current_user.name, email=current_user.email, team_id=None)
+    return UserResponse(
+        id=str(current_user.id),
+        name=current_user.name,
+        email=current_user.email,
+        team_id=None,
+        github_username=current_user.github_username,
+        github_email=current_user.github_email,
+    )

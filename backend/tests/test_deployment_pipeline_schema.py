@@ -289,7 +289,6 @@ def test_version_with_all_fields(db_session):
         deployment_request_id=req.id,
         image_tag="v1.2.3",
         image_digest="sha256:abc123" + "a" * 58,
-        version_label="release-1.2.3",
         git_ops_commit_sha="a" * 40,
         source_commit_sha="b" * 40,
         argocd_sync_revision="rev-123",

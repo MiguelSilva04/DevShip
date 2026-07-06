@@ -8,8 +8,6 @@ interface AEStatus {
   id: string;
   environment_name: string;
   lifecycle_status: LifecycleStatus | null;
-  version_label: string | null;
-  previous_version_label: string | null;
   discovered_status: LifecycleStatus | null;
 }
 
@@ -127,9 +125,6 @@ export default function Home() {
                       <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.dot, animation: isActive(status) ? 'ds-pulse 1.4s infinite' : 'none' }} />
                       {status ?? 'Unknown'}
                     </span>
-                    {isActive(status) && ae.previous_version_label && ae.version_label && (
-                      <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>{ae.previous_version_label} → {ae.version_label}</span>
-                    )}
                     <span style={{ marginLeft: 'auto', color: 'var(--text-3)', fontSize: 13 }}>→</span>
                   </button>
                 );

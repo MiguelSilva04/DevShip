@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useUser } from '../../context/UserContext';
 import { apiFetch } from '../../api/client';
+import GithubIdentityPrompt, { GITHUB_IDENTITY_ERROR } from '../../components/GithubIdentityPrompt';
 
 interface AEDetail {
   id: string;
   application_id: string;
   environment_id: string;
   deployment_name: string;
-  current_version: { version_label: string | null; image_tag: string | null; source_commit_sha: string | null } | null;
+  current_version: { image_tag: string | null; source_commit_sha: string | null } | null;
 }
 
 interface PendingCommit {
@@ -113,7 +114,7 @@ export default function Deploy() {
             <span style={{ color: 'var(--text-3)', fontSize: 12 }}>Current</span>
             <div className="mono" style={{ marginTop: 3 }}>
               {aeDetail?.current_version
-                ? `${aeDetail.current_version.version_label ?? aeDetail.current_version.image_tag ?? '—'} · ${(aeDetail.current_version.source_commit_sha ?? pending?.current_sha ?? '').slice(0, 7) || '—'}`
+                ? `${aeDetail.current_version.image_tag ?? '—'} · ${(aeDetail.current_version.source_commit_sha ?? pending?.current_sha ?? '').slice(0, 7) || '—'}`
                 : 'Sem deploy anterior'}
             </div>
           </div>
@@ -169,8 +170,9 @@ export default function Deploy() {
       </div>
 
       {error && (
-        <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 9, background: 'rgba(241,85,108,.08)', border: '1px solid rgba(241,85,108,.3)', fontSize: 12.5, color: '#ff8497' }}>
-          {error}
+        <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 9, background: 'rgba(241,85,108,.08)', border: '1px solid rgba(241,85,108,.3)', fontSize: 12.5, color: '#ff8497', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>{error}</span>
+          {error === GITHUB_IDENTITY_ERROR && <GithubIdentityPrompt onConfigured={() => setError('')} />}
         </div>
       )}
 
