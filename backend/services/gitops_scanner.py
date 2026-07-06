@@ -99,6 +99,16 @@ def scan_gitops_repo(repo_url: str, env_paths: list[tuple[str, str]] | None = No
     return candidates
 
 
+def repo_exists(repo_url: str) -> bool:
+    owner, repo = _parse_owner_repo(repo_url)
+    resp = requests.get(
+        f"https://api.github.com/repos/{owner}/{repo}",
+        headers=_github_headers(),
+        timeout=10,
+    )
+    return resp.status_code == 200
+
+
 def validate_branch(repo_url: str, branch: str) -> bool:
     owner, repo = _parse_owner_repo(repo_url)
     resp = requests.get(

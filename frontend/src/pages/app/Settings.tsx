@@ -20,8 +20,33 @@ interface EnvItem {
   id: string;
   name: string;
   display_name: string | null;
+  namespace: string | null;
+  git_ops_base_path: string | null;
+  source_branch: string | null;
+  gitops_branch: string | null;
+  argocd_application_name: string | null;
+  deployment_order: number;
   requires_approval: boolean;
   approval_required_role: string | null;
+}
+
+interface AppItem {
+  id: string;
+  name: string;
+  description: string | null;
+  source_repository: string;
+  container_registry_repository: string;
+  ci_workflow_file: string;
+}
+
+interface ValidationResult {
+  namespace_status: string;
+  namespace_error: string | null;
+  branch_status: string;
+  branch_error: string | null;
+  git_ops_path_status: string;
+  git_ops_path_error: string | null;
+  overall_status: string;
 }
 
 const ROLE_LABEL: Record<string, string> = {
@@ -57,6 +82,18 @@ export default function Settings() {
   const [savingCreds, setSavingCreds] = useState(false);
   const [credsErr, setCredsErr] = useState('');
 
+  const [editEnv, setEditEnv] = useState<EnvItem | null>(null);
+  const [envForm, setEnvForm] = useState<Partial<EnvItem>>({});
+  const [savingEnv, setSavingEnv] = useState(false);
+  const [envErr, setEnvErr] = useState('');
+  const [envValidation, setEnvValidation] = useState<ValidationResult | null>(null);
+
+  const [apps, setApps] = useState<AppItem[]>([]);
+  const [editApp, setEditApp] = useState<AppItem | null>(null);
+  const [appForm, setAppForm] = useState<Partial<AppItem>>({});
+  const [savingApp, setSavingApp] = useState(false);
+  const [appErr, setAppErr] = useState('');
+
   const [isArchived, setIsArchived] = useState(false);
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
   const [archiveConfirmText, setArchiveConfirmText] = useState('');
@@ -69,7 +106,75 @@ export default function Settings() {
       .then((c: Cluster) => { setCluster(c); setClusterArn(c.cluster_arn); })
       .catch((e: unknown) => setClusterErr(e instanceof Error ? e.message : 'Erro ao carregar cluster.'));
     apiFetch(`/projects/${projectId}/environments`).then(setEnvs).catch(() => setEnvs([]));
+    apiFetch(`/projects/${projectId}/applications`).then(setApps).catch(() => setApps([]));
   }, [projectId]);
+
+  function openEditEnv(env: EnvItem) {
+    setEditEnv(env);
+    setEnvForm(env);
+    setEnvErr('');
+    setEnvValidation(null);
+  }
+
+  async function saveEnv() {
+    if (!projectId || !editEnv) return;
+    setSavingEnv(true); setEnvErr(''); setEnvValidation(null);
+    try {
+      const updated: EnvItem = await apiFetch(`/projects/${projectId}/environments/${editEnv.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          display_name: envForm.display_name ?? null,
+          namespace: envForm.namespace ?? null,
+          git_ops_base_path: envForm.git_ops_base_path ?? null,
+          source_branch: envForm.source_branch ?? null,
+          gitops_branch: envForm.gitops_branch ?? null,
+          argocd_application_name: envForm.argocd_application_name ?? null,
+          requires_approval: envForm.requires_approval ?? false,
+          approval_required_role: envForm.approval_required_role ?? null,
+          deployment_order: envForm.deployment_order,
+        }),
+      });
+      setEnvs(prev => prev.map(e => e.id === updated.id ? { ...e, ...envForm, id: updated.id } as EnvItem : e));
+      setEditEnv(null);
+    } catch (e: unknown) {
+      if (e instanceof Error) {
+        try {
+          const parsed = JSON.parse(e.message) as ValidationResult;
+          if (parsed.overall_status) { setEnvValidation(parsed); setEnvErr('A configuração não passou na validação — corrige os campos assinalados.'); return; }
+        } catch { /* not a validation payload */ }
+        setEnvErr(e.message);
+      } else {
+        setEnvErr('Erro ao guardar environment.');
+      }
+    } finally { setSavingEnv(false); }
+  }
+
+  function openEditApp(app: AppItem) {
+    setEditApp(app);
+    setAppForm(app);
+    setAppErr('');
+  }
+
+  async function saveApp() {
+    if (!editApp) return;
+    setSavingApp(true); setAppErr('');
+    try {
+      const updated: AppItem = await apiFetch(`/applications/${editApp.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: appForm.name,
+          description: appForm.description ?? null,
+          source_repository: appForm.source_repository,
+          container_registry_repository: appForm.container_registry_repository,
+          ci_workflow_file: appForm.ci_workflow_file,
+        }),
+      });
+      setApps(prev => prev.map(a => a.id === updated.id ? { ...a, ...appForm, id: updated.id } as AppItem : a));
+      setEditApp(null);
+    } catch (e: unknown) {
+      setAppErr(e instanceof Error ? e.message : 'Erro ao guardar application.');
+    } finally { setSavingApp(false); }
+  }
 
   function openEditProject() {
     setEditName(project?.name ?? projName);
@@ -233,14 +338,30 @@ export default function Settings() {
           {envs.map(env => (
             <div key={env.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid var(--border-soft)' }}>
               <span className="mono" style={{ fontSize: 12.5, fontWeight: 600 }}>{(env.display_name || env.name).toUpperCase()}</span>
-              <span style={{ fontSize: 12, color: env.requires_approval ? '#ecc26b' : 'var(--text-3)' }}>
-                {env.requires_approval
-                  ? `aprovação por ${env.approval_required_role ? ROLE_LABEL[env.approval_required_role] ?? env.approval_required_role : '—'}`
-                  : 'sem aprovação'}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 12, color: env.requires_approval ? '#ecc26b' : 'var(--text-3)' }}>
+                  {env.requires_approval
+                    ? `aprovação por ${env.approval_required_role ? ROLE_LABEL[env.approval_required_role] ?? env.approval_required_role : '—'}`
+                    : 'sem aprovação'}
+                </span>
+                <button onClick={() => openEditEnv(env)} style={{ ...btnSecondary, padding: '5px 11px', fontSize: 11.5 }}>Editar</button>
+              </div>
             </div>
           ))}
-          <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 6 }}>A aprovação é configurada por environment durante o onboarding.</div>
+        </Section>
+      )}
+
+      {apps.length > 0 && (
+        <Section title="Applications">
+          {apps.map(app => (
+            <div key={app.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid var(--border-soft)' }}>
+              <div>
+                <span style={{ fontSize: 12.5, fontWeight: 600 }}>{app.name}</span>
+                <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{app.source_repository}</div>
+              </div>
+              <button onClick={() => openEditApp(app)} style={{ ...btnSecondary, padding: '5px 11px', fontSize: 11.5 }}>Editar</button>
+            </div>
+          ))}
         </Section>
       )}
 
@@ -261,6 +382,102 @@ export default function Settings() {
               {savingCreds ? 'A validar…' : 'Guardar e revalidar'}
             </button>
             <button onClick={() => setShowEditCreds(false)} style={btnGhost}>Cancelar</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Edit environment modal */}
+      {editEnv && (
+        <Modal onClose={() => setEditEnv(null)}>
+          <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 4px' }}>Editar {editEnv.display_name || editEnv.name}</h2>
+          <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 16px' }}>Guardar revalida namespace, branch e caminho GitOps antes de aplicar.</p>
+          {envErr && <div style={{ fontSize: 12, color: '#ff9aaa', marginBottom: 10 }}>{envErr}</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 360, overflowY: 'auto', paddingRight: 2 }}>
+            <Field label="Nome a mostrar">
+              <input value={envForm.display_name ?? ''} onChange={e => setEnvForm(f => ({ ...f, display_name: e.target.value }))} style={inputStyle} />
+            </Field>
+            <Field label="Namespace">
+              <input value={envForm.namespace ?? ''} onChange={e => setEnvForm(f => ({ ...f, namespace: e.target.value }))} style={inputStyle} className="mono" />
+              {envValidation && envValidation.namespace_status === 'INVALID' && (
+                <div style={{ fontSize: 11.5, color: '#ff9aaa', marginTop: 5 }}>{envValidation.namespace_error}</div>
+              )}
+            </Field>
+            <Field label="GitOps branch">
+              <input value={envForm.gitops_branch ?? ''} onChange={e => setEnvForm(f => ({ ...f, gitops_branch: e.target.value }))} style={inputStyle} className="mono" />
+              {envValidation && envValidation.branch_status === 'INVALID' && (
+                <div style={{ fontSize: 11.5, color: '#ff9aaa', marginTop: 5 }}>{envValidation.branch_error}</div>
+              )}
+            </Field>
+            <Field label="GitOps path">
+              <input value={envForm.git_ops_base_path ?? ''} onChange={e => setEnvForm(f => ({ ...f, git_ops_base_path: e.target.value }))} style={inputStyle} className="mono" />
+              {envValidation && envValidation.git_ops_path_status === 'INVALID' && (
+                <div style={{ fontSize: 11.5, color: '#ff9aaa', marginTop: 5 }}>{envValidation.git_ops_path_error}</div>
+              )}
+            </Field>
+            <Field label="Source branch">
+              <input value={envForm.source_branch ?? ''} onChange={e => setEnvForm(f => ({ ...f, source_branch: e.target.value }))} style={inputStyle} className="mono" />
+            </Field>
+            <Field label="ArgoCD application">
+              <input value={envForm.argocd_application_name ?? ''} onChange={e => setEnvForm(f => ({ ...f, argocd_application_name: e.target.value }))} style={inputStyle} className="mono" />
+            </Field>
+            <Field label="Deployment order">
+              <input type="number" value={envForm.deployment_order ?? 0} onChange={e => setEnvForm(f => ({ ...f, deployment_order: Number(e.target.value) }))} style={inputStyle} />
+            </Field>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 12.5, color: 'var(--text-2)' }}>
+              <input type="checkbox" checked={envForm.requires_approval ?? false} onChange={e => setEnvForm(f => ({ ...f, requires_approval: e.target.checked }))} style={{ accentColor: 'var(--teal)' }} />
+              Requer aprovação
+            </label>
+            {envForm.requires_approval && (
+              <Field label="Role que aprova">
+                <select
+                  value={envForm.approval_required_role ?? ''}
+                  onChange={e => setEnvForm(f => ({ ...f, approval_required_role: e.target.value || null }))}
+                  className="select-base"
+                >
+                  <option value="">—</option>
+                  <option value="TECH_LEAD">Tech Lead</option>
+                  <option value="CLOUD_ENGINEER">Cloud Engineer</option>
+                </select>
+              </Field>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+            <button onClick={saveEnv} disabled={savingEnv} className="btn-primary hover-bright" style={{ fontSize: 13, padding: '10px 18px', borderRadius: 9, fontWeight: 600, opacity: savingEnv ? .6 : 1 }}>
+              {savingEnv ? 'A validar…' : 'Guardar e validar'}
+            </button>
+            <button onClick={() => setEditEnv(null)} style={btnGhost}>Cancelar</button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Edit application modal */}
+      {editApp && (
+        <Modal onClose={() => setEditApp(null)}>
+          <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 4px' }}>Editar {editApp.name}</h2>
+          <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 16px' }}>Se o repositório mudar, é confirmado no GitHub antes de aplicar.</p>
+          {appErr && <div style={{ fontSize: 12, color: '#ff9aaa', marginBottom: 10 }}>{appErr}</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Field label="Nome">
+              <input value={appForm.name ?? ''} onChange={e => setAppForm(f => ({ ...f, name: e.target.value }))} style={inputStyle} />
+            </Field>
+            <Field label="Descrição">
+              <textarea value={appForm.description ?? ''} onChange={e => setAppForm(f => ({ ...f, description: e.target.value }))} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
+            </Field>
+            <Field label="Repositório (source)">
+              <input value={appForm.source_repository ?? ''} onChange={e => setAppForm(f => ({ ...f, source_repository: e.target.value }))} style={inputStyle} className="mono" />
+            </Field>
+            <Field label="Container registry">
+              <input value={appForm.container_registry_repository ?? ''} onChange={e => setAppForm(f => ({ ...f, container_registry_repository: e.target.value }))} style={inputStyle} className="mono" />
+            </Field>
+            <Field label="CI workflow file">
+              <input value={appForm.ci_workflow_file ?? ''} onChange={e => setAppForm(f => ({ ...f, ci_workflow_file: e.target.value }))} style={inputStyle} className="mono" />
+            </Field>
+          </div>
+          <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+            <button onClick={saveApp} disabled={savingApp} className="btn-primary hover-bright" style={{ fontSize: 13, padding: '10px 18px', borderRadius: 9, fontWeight: 600, opacity: savingApp ? .6 : 1 }}>
+              {savingApp ? 'A validar…' : 'Guardar'}
+            </button>
+            <button onClick={() => setEditApp(null)} style={btnGhost}>Cancelar</button>
           </div>
         </Modal>
       )}

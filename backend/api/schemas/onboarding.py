@@ -151,6 +151,18 @@ class EnvironmentResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class EnvironmentUpdate(BaseModel):
+    display_name: Optional[str] = None
+    namespace: Optional[str] = None
+    git_ops_base_path: Optional[str] = None
+    source_branch: Optional[str] = None
+    gitops_branch: Optional[str] = None
+    argocd_application_name: Optional[str] = None
+    requires_approval: Optional[bool] = None
+    approval_required_role: Optional[TeamMemberRole] = None
+    deployment_order: Optional[int] = None
+
+
 # --- GitOps scan ---
 
 class GitOpsScanResult(BaseModel):
@@ -199,6 +211,14 @@ class ApplicationResponse(BaseModel):
     source_repository: str
 
     model_config = {"from_attributes": True}
+
+
+class ApplicationUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    source_repository: Optional[str] = None
+    container_registry_repository: Optional[str] = None
+    ci_workflow_file: Optional[str] = None
 
 
 # --- GitHub identity ---

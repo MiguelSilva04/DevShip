@@ -33,7 +33,10 @@ class EnvironmentListItem(BaseModel):
 class ApplicationListItem(BaseModel):
     id: uuid.UUID
     name: str
+    description: Optional[str] = None
     source_repository: str
+    container_registry_repository: str
+    ci_workflow_file: str
     model_config = {"from_attributes": True}
 
 

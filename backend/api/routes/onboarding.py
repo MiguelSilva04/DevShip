@@ -14,8 +14,10 @@ from backend.api.schemas.onboarding import (
     ClusterConfigRequest,
     ClusterContextResponse,
     ClusterSetupInfo,
+    ApplicationUpdate,
     EnvironmentCreate,
     EnvironmentResponse,
+    EnvironmentUpdate,
     EnvironmentValidationResult,
     GithubIdentityRequest,
     GithubIdentityResponse,
@@ -43,7 +45,7 @@ from backend.bd.models.team_member import TeamMember, TeamMemberRole
 from backend.bd.models.user import User
 from backend.services import cluster_validation as cv
 from backend.services import gitops_scanner as gs
-from backend.services.gitops_scanner import is_repo_collaborator, path_exists, validate_branch
+from backend.services.gitops_scanner import is_repo_collaborator, path_exists, repo_exists, validate_branch
 from backend.services.kubernetes_reader import list_namespaces
 
 router = APIRouter()
@@ -730,6 +732,46 @@ def _env_response(env: Environment, validation: EnvironmentValidation) -> Enviro
     )
 
 
+@router.patch("/projects/{project_id}/environments/{environment_id}", response_model=EnvironmentResponse)
+def update_environment(
+    project_id: uuid.UUID,
+    environment_id: uuid.UUID,
+    body: EnvironmentUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Edits an existing Environment and re-runs the same namespace/branch/gitops-path
+    checks used at onboarding time before persisting — an edit that breaks the config
+    fails the request with the validation errors, same as creation."""
+    project = _require_cloud_engineer(db, project_id, current_user)
+    env = db.get(Environment, environment_id)
+    if env is None or env.project_id != project_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Environment not found")
+
+    data = body.model_dump(exclude_unset=True)
+    for field, value in data.items():
+        setattr(env, field, value)
+    db.flush()
+
+    cluster = db.query(ClusterContext).filter(ClusterContext.project_id == project_id).first()
+    validation = db.query(EnvironmentValidation).filter(EnvironmentValidation.environment_id == env.id).first()
+    if validation is None:
+        validation = EnvironmentValidation(environment_id=env.id)
+        db.add(validation)
+    _run_environment_validations(validation, env, cluster, project.git_ops_repository_url)
+
+    if validation.overall_status != ValidationStatus.VALID:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=EnvironmentValidationResult.model_validate(validation).model_dump(mode="json"),
+        )
+
+    db.commit()
+    db.refresh(env)
+    return _env_response(env, validation)
+
+
 # ---------------------------------------------------------------------------
 # GitOps scan
 # ---------------------------------------------------------------------------
@@ -805,3 +847,45 @@ def import_applications(
     project.setup_status = SetupStatus.CONFIGURED
     db.commit()
     return created
+
+
+@router.patch("/applications/{app_id}", response_model=ApplicationResponse)
+def update_application(
+    app_id: uuid.UUID,
+    body: ApplicationUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Edits an Application. If source_repository changes, checks the repo actually
+    exists on GitHub before persisting — a typo'd repo would otherwise silently break
+    every future deploy/rollback for this application."""
+    app = db.get(Application, app_id)
+    if app is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+    _require_cloud_engineer(db, app.project_id, current_user)
+
+    data = body.model_dump(exclude_unset=True)
+
+    new_repo = data.get("source_repository")
+    if new_repo is not None and new_repo != app.source_repository:
+        if not repo_exists(new_repo):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Repositório '{new_repo}' não encontrado no GitHub.",
+            )
+
+    for field, value in data.items():
+        setattr(app, field, value)
+
+    try:
+        with db.begin_nested():
+            db.flush()
+    except IntegrityError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"source_repository '{new_repo}' already belongs to another project",
+        )
+
+    db.commit()
+    db.refresh(app)
+    return app
