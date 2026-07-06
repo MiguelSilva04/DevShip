@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
-import { useUser } from '../../context/UserContext';
+import { useUser, userFromBackend } from '../../context/UserContext';
+import { OB_TEAM_ID } from '../Onboarding';
+
+interface TeamEntry { team_id: string; role: 'CLOUD_ENGINEER' | 'TECH_LEAD' | 'DEVELOPER'; }
 
 export default function AppLayout() {
   const nav = useNavigate();
   const loc = useLocation();
-  const { user, logout: authLogout } = useUser();
+  const { user, setUser, logout: authLogout } = useUser();
   const [project, setProject] = useState<{ name: string; team_name: string } | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
 
@@ -15,6 +18,20 @@ export default function AppLayout() {
     if (!projectId) return;
     apiFetch(`/projects/${projectId}`).then(setProject).catch(() => setProject(null));
   }, []);
+
+  // Role só é normalmente definido pelo Lobby ao escolher a team — se por alguma razão
+  // chegámos aqui sem role (ex: sessão restaurada de um estado antigo), resolve-o aqui
+  // para o nav e a role label não ficarem em branco indefinidamente.
+  useEffect(() => {
+    if (!user || user.role) return;
+    const teamId = localStorage.getItem(OB_TEAM_ID);
+    apiFetch('/users/me/teams')
+      .then((teams: TeamEntry[]) => {
+        const t = teamId ? teams.find(t => t.team_id === teamId) : teams[0];
+        if (t) setUser(userFromBackend(user.name, user.email, t.role));
+      })
+      .catch(() => {});
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isCloud = user?.role === 'cloud';
   const canApprove = user?.role === 'cloud' || user?.role === 'tech';
