@@ -94,6 +94,22 @@ def _require_team_manager(db: Session, team_id: uuid.UUID, user: User) -> tuple[
     return team, member
 
 
+def _require_team_reader(db: Session, team_id: uuid.UUID, user: User) -> Team:
+    """Any TeamMember (Developer included) can read the Team page — only mutating it
+    (add/edit/remove members, edit team identity) requires _require_team_manager."""
+    team = db.get(Team, team_id)
+    if team is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    member = (
+        db.query(TeamMember)
+        .filter(TeamMember.team_id == team_id, TeamMember.user_id == user.id)
+        .first()
+    )
+    if member is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Não pertences a esta equipa.")
+    return team
+
+
 # ---------------------------------------------------------------------------
 # Current user's teams (Lobby)
 # ---------------------------------------------------------------------------
@@ -217,11 +233,7 @@ def get_team(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _require_team_manager(db, team_id, current_user)
-    team = db.get(Team, team_id)
-    if team is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-    return team
+    return _require_team_reader(db, team_id, current_user)
 
 
 @router.patch("/teams/{team_id}", response_model=TeamResponse)
@@ -264,7 +276,7 @@ def list_team_members(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    team, _ = _require_team_manager(db, team_id, current_user)
+    team = _require_team_reader(db, team_id, current_user)
 
     members = db.query(TeamMember).filter(TeamMember.team_id == team_id).all()
     member_entries = [_member_entry(db, m, db.get(User, m.user_id)) for m in members]
@@ -291,7 +303,16 @@ def add_team_member(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _require_team_manager(db, team_id, current_user)
+    _, caller = _require_team_manager(db, team_id, current_user)
+
+    # A Tech Lead can only add Developers — promoting straight to Tech Lead or
+    # Cloud Engineer is reserved for the Cloud Engineer (mirrors _require_manageable_target,
+    # which applies the same rule to edits of an existing member).
+    if caller.role == TeamMemberRole.TECH_LEAD and body.role != TeamMemberRole.DEVELOPER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Um Tech Lead só pode adicionar membros como Developer.",
+        )
 
     target = db.get(User, body.user_id)
     if target is None:
@@ -544,6 +565,7 @@ def configure_cluster(
         ca_file_path=info.ca_file_path,
         iam_role_arn=body.iam_role_arn,
         external_id=external_id,
+        argocd_namespace=body.argocd_namespace or "argocd",
     )
     db.add(cluster)
     project.setup_status = SetupStatus.PENDING_ENVIRONMENTS
@@ -602,6 +624,8 @@ def update_cluster_credentials(
     cluster.eks_endpoint = info.endpoint
     cluster.ca_certificate = info.ca_certificate
     cluster.ca_file_path = info.ca_file_path
+    if body.argocd_namespace:
+        cluster.argocd_namespace = body.argocd_namespace
     db.commit()
     db.refresh(cluster)
     return cluster

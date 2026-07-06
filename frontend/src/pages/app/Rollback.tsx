@@ -101,8 +101,7 @@ export default function Rollback() {
         <div style={{ fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 12 }}>Versão atual (FROM)</div>
         {current ? (
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 14 }}>
-            <span className="mono" style={{ fontSize: 16, fontWeight: 600, color: 'var(--teal)' }}>{current.image_tag ?? '—'}</span>
-            <span className="mono" style={{ fontSize: 12, color: 'var(--text-2)' }}>{current.source_commit_sha ? current.source_commit_sha.slice(0, 7) : '—'}</span>
+            <span className="mono" style={{ fontSize: 16, fontWeight: 600, color: 'var(--teal)' }}>{current.source_commit_sha ? current.source_commit_sha.slice(0, 7) : '—'}</span>
             <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{new Date(current.created_at).toLocaleString()}</span>
           </div>
         ) : (
@@ -119,8 +118,7 @@ export default function Rollback() {
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '14px 20px' }}>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span className="mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{target.image_tag}</span>
-                <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)' }}>{target.source_commit_sha ? target.source_commit_sha.slice(0, 7) : '—'}</span>
+                <span className="mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{target.source_commit_sha ? target.source_commit_sha.slice(0, 7) : '—'}</span>
               </div>
               <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{new Date(target.created_at).toLocaleString()}</div>
             </div>

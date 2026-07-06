@@ -50,6 +50,125 @@ function statusLabel(s: RequestStatus) {
   return map[s] ?? s;
 }
 
+// ─── Pipeline stages ─────────────────────────────────────────────────────────
+// Every DeploymentEventType maps onto one of these 5 conceptual stages, in a
+// fixed, known order — this lets the whole pipeline be shown as a stepper with
+// live progress instead of a flat scrolling log.
+type StageState = 'pending' | 'active' | 'done' | 'failed' | 'skipped';
+
+interface Stage {
+  key: string;
+  label: string;
+  icon: string;
+  startTypes: string[];
+  doneTypes: string[];
+  failTypes: string[];
+}
+
+const STAGES: Stage[] = [
+  { key: 'build',   label: 'Build (GitHub Actions)', icon: '⚙',  startTypes: ['WORKFLOW_STARTED'], doneTypes: ['BUILD_COMPLETED', 'IMAGE_PUSHED'], failTypes: ['IMAGE_BUILD_FAILED'] },
+  { key: 'sync',     label: 'Sync (ArgoCD / GitOps)', icon: '🔄', startTypes: ['GITOPS_UPDATED', 'SYNC_STARTED'], doneTypes: ['SYNC_COMPLETED'], failTypes: ['SYNC_FAILED'] },
+  { key: 'rollout',  label: 'Rollout (Kubernetes)',   icon: '🚀', startTypes: ['ROLLOUT_STARTED'], doneTypes: ['ROLLOUT_COMPLETED'], failTypes: [] },
+  { key: 'pods',     label: 'Pods prontos',           icon: '✓',  startTypes: ['POD_CREATED'], doneTypes: ['READINESS_PASSED'], failTypes: ['READINESS_FAILED', 'CRASH_LOOP_BACKOFF'] },
+];
+
+function computeStageStates(events: DeploymentEvent[], requestStatus: RequestStatus): Record<string, { state: StageState; events: DeploymentEvent[] }> {
+  const result: Record<string, { state: StageState; events: DeploymentEvent[] }> = {};
+  const seenTypes = new Set(events.map(e => e.event_type));
+  const anyFailed = requestStatus === 'FAILED' || requestStatus === 'CANCELLED';
+
+  let priorStageDone = true;
+  for (const stage of STAGES) {
+    const stageEvents = events.filter(e =>
+      stage.startTypes.includes(e.event_type) || stage.doneTypes.includes(e.event_type) || stage.failTypes.includes(e.event_type)
+    );
+    const failed = stage.failTypes.some(t => seenTypes.has(t));
+    const done = stage.doneTypes.some(t => seenTypes.has(t));
+    const started = stage.startTypes.some(t => seenTypes.has(t)) || done || failed;
+
+    let state: StageState;
+    if (!priorStageDone) state = 'skipped';
+    else if (failed) state = 'failed';
+    else if (done) state = 'done';
+    else if (started) state = anyFailed ? 'skipped' : 'active';
+    else state = 'pending';
+
+    result[stage.key] = { state, events: stageEvents };
+    priorStageDone = done && !failed;
+  }
+  return result;
+}
+
+function StageIcon({ state, icon }: { state: StageState; icon: string }) {
+  const size = 30;
+  if (state === 'done') {
+    return (
+      <div style={{ width: size, height: size, borderRadius: '50%', background: 'rgba(52,199,89,.15)', border: '1.5px solid rgba(52,199,89,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12.5L10 17.5L19 7" stroke="#5dd57b" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </div>
+    );
+  }
+  if (state === 'failed') {
+    return (
+      <div style={{ width: size, height: size, borderRadius: '50%', background: 'rgba(241,85,108,.15)', border: '1.5px solid rgba(241,85,108,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M6 6L18 18M18 6L6 18" stroke="#ff8497" strokeWidth="3" strokeLinecap="round" /></svg>
+      </div>
+    );
+  }
+  if (state === 'active') {
+    return (
+      <div style={{ width: size, height: size, borderRadius: '50%', background: 'rgba(224,169,59,.15)', border: '1.5px solid rgba(224,169,59,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', position: 'relative' }}>
+        <span style={{ position: 'absolute', inset: -1.5, borderRadius: '50%', border: '1.5px solid transparent', borderTopColor: '#ecc26b', animation: 'ds-spin 1s linear infinite' }} />
+        <span style={{ fontSize: 13 }}>{icon}</span>
+      </div>
+    );
+  }
+  return (
+    <div style={{ width: size, height: size, borderRadius: '50%', background: 'var(--surface-2)', border: '1.5px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', opacity: state === 'skipped' ? .4 : .7 }}>
+      <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{icon}</span>
+    </div>
+  );
+}
+
+function StageRow({ stage, state, events, isLast }: { stage: Stage; state: StageState; events: DeploymentEvent[]; isLast: boolean }) {
+  const [open, setOpen] = useState(false);
+  const labelColor = state === 'done' ? 'var(--text)' : state === 'failed' ? '#ff8497' : state === 'active' ? '#ecc26b' : 'var(--text-3)';
+  const lineColor = state === 'done' ? 'rgba(52,199,89,.35)' : state === 'failed' ? 'rgba(241,85,108,.35)' : 'var(--border)';
+
+  return (
+    <div style={{ display: 'flex', gap: 14 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 'none' }}>
+        <StageIcon state={state} icon={stage.icon} />
+        {!isLast && <span style={{ width: 1.5, flex: 1, minHeight: 22, background: lineColor, margin: '4px 0' }} />}
+      </div>
+      <div style={{ flex: 1, paddingBottom: isLast ? 0 : 18 }}>
+        <button
+          onClick={() => events.length > 0 && setOpen(v => !v)}
+          style={{ background: 'transparent', border: 'none', padding: 0, cursor: events.length > 0 ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left' }}
+        >
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: labelColor }}>{stage.label}</span>
+          {state === 'active' && <span style={{ fontSize: 11, color: '#ecc26b', animation: 'ds-pulse 1.4s infinite' }}>a decorrer…</span>}
+          {events.length > 0 && (
+            <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--text-3)', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>▶</span>
+          )}
+        </button>
+        {open && events.length > 0 && (
+          <div className="mono" style={{ marginTop: 8, padding: '10px 12px', borderRadius: 8, background: 'var(--bg-2)', fontSize: 11, lineHeight: 1.8 }}>
+            {events.map(ev => (
+              <div key={ev.id}>
+                <span style={{ color: 'var(--text-3)', marginRight: 10 }}>{new Date(ev.event_timestamp).toLocaleTimeString()}</span>
+                <span style={{ color: ev.severity !== 'INFO' ? severityColor(ev.severity) : 'var(--text-2)' }}>
+                  {ev.event_type}{ev.message ? ` — ${ev.message}` : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Execution() {
   const { appId, aeId, reqId } = useParams<{ appId: string; aeId: string; reqId: string }>();
   const nav = useNavigate();
@@ -73,7 +192,7 @@ export default function Execution() {
         setError(e instanceof Error ? e.message : String(e));
         clearInterval(id);
       }
-    }, 3000);
+    }, 2000);
 
     return () => clearInterval(id);
   }, [reqId]);
@@ -84,6 +203,7 @@ export default function Execution() {
   const { request, events } = data;
   const st = statusStyle(request.status);
   const isTerminal = TERMINAL.includes(request.status);
+  const stageStates = computeStageStates(events, request.status);
 
   return (
     <div>
@@ -109,46 +229,35 @@ export default function Execution() {
         </div>
       )}
 
-      {/* Events timeline */}
-      <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', overflow: 'hidden', marginBottom: 18 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 18px', borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>
-          <span style={{ fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>Eventos</span>
+      {/* Pipeline stepper */}
+      <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '22px 22px 6px', marginBottom: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+          <span style={{ fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>Pipeline</span>
           {!isTerminal && <span style={{ fontSize: 11, color: 'var(--teal)', animation: 'ds-pulse 1.4s infinite' }}>● live</span>}
         </div>
-
-        {events.length === 0 ? (
-          <div style={{ padding: '20px 18px', fontSize: 13, color: 'var(--text-3)' }}>
-            {isTerminal ? 'Sem eventos registados.' : 'A aguardar eventos…'}
-          </div>
-        ) : (
-          <div className="mono" style={{ background: 'var(--bg-2)', padding: '14px 18px', fontSize: 11.5, lineHeight: 1.9, maxHeight: 320, overflowY: 'auto' }}>
-            {events.map(ev => {
-              const ts = new Date(ev.event_timestamp).toLocaleTimeString();
-              const col = severityColor(ev.severity);
-              return (
-                <div key={ev.id}>
-                  <span style={{ color: 'var(--text-3)', marginRight: 12 }}>{ts}</span>
-                  <span style={{ marginRight: 10, color: col }}>[{ev.severity}]</span>
-                  <span style={{ color: ev.severity !== 'INFO' ? col : 'var(--text-2)' }}>
-                    {ev.event_type}{ev.message ? ` — ${ev.message}` : ''}
-                  </span>
-                </div>
-              );
-            })}
-            {!isTerminal && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                <span style={{ borderRight: '2px solid var(--teal)', animation: 'ds-blink 1s step-end infinite', paddingRight: 2 }} />
-              </div>
-            )}
-          </div>
-        )}
+        {STAGES.map((stage, i) => (
+          <StageRow
+            key={stage.key}
+            stage={stage}
+            state={stageStates[stage.key].state}
+            events={stageStates[stage.key].events}
+            isLast={i === STAGES.length - 1}
+          />
+        ))}
       </div>
 
       <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-        {isTerminal && request.status === 'SUCCESS' && (
-          <button onClick={() => nav(`/app/${appId}/${aeId}`)} className="btn-primary" style={{ fontSize: 12.5, padding: '9px 16px', borderRadius: 9 }}>Ver Environment →</button>
-        )}
-        <button onClick={() => nav(`/app/${appId}/${aeId}`)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)', fontSize: 12.5, padding: '9px 16px', borderRadius: 9, cursor: 'pointer' }}>Voltar ao Environment</button>
+        <button
+          onClick={() => nav(`/app/${appId}/${aeId}`)}
+          className={isTerminal && request.status === 'SUCCESS' ? 'btn-primary' : undefined}
+          style={
+            isTerminal && request.status === 'SUCCESS'
+              ? { fontSize: 12.5, padding: '9px 16px', borderRadius: 9 }
+              : { background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)', fontSize: 12.5, padding: '9px 16px', borderRadius: 9, cursor: 'pointer' }
+          }
+        >
+          Voltar ao Environment
+        </button>
       </div>
     </div>
   );

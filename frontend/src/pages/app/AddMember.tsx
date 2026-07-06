@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { OB_TEAM_ID, OB_PROJECT_ID } from '../Onboarding';
+import { useUser } from '../../context/UserContext';
 
 interface Candidate { user_id: string; name: string; email: string; }
 interface AppItem { id: string; name: string; source_repository: string; }
@@ -19,6 +20,9 @@ function initials(name: string) {
 
 export default function AddMember() {
   const nav = useNavigate();
+  const { user } = useUser();
+  const isTechLead = user?.role === 'tech';
+  const availableRoles = isTechLead ? ROLES.filter(r => r.id === 'DEVELOPER') : ROLES;
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [role, setRole] = useState<AllowedRole>('DEVELOPER');
@@ -113,7 +117,7 @@ export default function AddMember() {
       <div style={{ marginBottom: 24 }}>
         <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 10 }}>Role</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-          {ROLES.map(r => (
+          {availableRoles.map(r => (
             <label key={r.id} htmlFor={`role-${r.id}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 13, padding: '14px 16px', border: `1px solid ${role === r.id ? 'rgba(43,199,180,.4)' : 'var(--border)'}`, borderRadius: 11, cursor: 'pointer', background: role === r.id ? 'rgba(43,199,180,.05)' : 'var(--surface)' }}>
               <input id={`role-${r.id}`} type="radio" name="role" value={r.id} checked={role === r.id} onChange={() => setRole(r.id)} style={{ marginTop: 2, accentColor: 'var(--teal)', flex: 'none' }} />
               <div>

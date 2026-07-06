@@ -179,6 +179,58 @@ class TestTeamMembers:
         )
         assert r.status_code == 403
 
+    def test_tech_lead_cannot_add_member_as_tech_lead(self, client):
+        token_ce, team_id = _setup(client, "techleadperm.io")
+        tl_data = _register(client, "tl@techleadperm.io", name="TL")
+        client.post(
+            f"/teams/{team_id}/members",
+            json={"user_id": tl_data["id"], "role": "TECH_LEAD"},
+            headers=_auth(token_ce),
+        )
+        tl_token = _login(client, "tl@techleadperm.io")
+
+        third_data = _register(client, "third@techleadperm.io", name="Third")
+        r = client.post(
+            f"/teams/{team_id}/members",
+            json={"user_id": third_data["id"], "role": "TECH_LEAD"},
+            headers=_auth(tl_token),
+        )
+        assert r.status_code == 403
+
+    def test_tech_lead_can_add_member_as_developer(self, client):
+        token_ce, team_id = _setup(client, "techleadok.io")
+        tl_data = _register(client, "tl@techleadok.io", name="TL")
+        client.post(
+            f"/teams/{team_id}/members",
+            json={"user_id": tl_data["id"], "role": "TECH_LEAD"},
+            headers=_auth(token_ce),
+        )
+        tl_token = _login(client, "tl@techleadok.io")
+
+        dev_data = _register(client, "dev@techleadok.io", name="Dev")
+        r = client.post(
+            f"/teams/{team_id}/members",
+            json={"user_id": dev_data["id"], "role": "DEVELOPER"},
+            headers=_auth(tl_token),
+        )
+        assert r.status_code == 201
+
+    def test_developer_can_read_team_members(self, client):
+        token_ce, team_id = _setup(client, "devread.io")
+        dev_data = _register(client, "dev@devread.io", name="Dev")
+        client.post(
+            f"/teams/{team_id}/members",
+            json={"user_id": dev_data["id"], "role": "DEVELOPER"},
+            headers=_auth(token_ce),
+        )
+        dev_token = _login(client, "dev@devread.io")
+
+        r = client.get(f"/teams/{team_id}/members", headers=_auth(dev_token))
+        assert r.status_code == 200
+
+        r_team = client.get(f"/teams/{team_id}", headers=_auth(dev_token))
+        assert r_team.status_code == 200
+
     def test_different_domain_user_not_in_candidates(self, client):
         token, team_id = _setup(client, "alpha.io")
         _register(client, "outsider@beta.io", name="Outsider")
@@ -557,3 +609,57 @@ class TestApplicationImport:
 
         r = client.get(f"/projects/{project_id}/applications", headers=_auth(token))
         assert len([a for a in r.json() if a["source_repository"] == "https://github.com/org/reimport-api"]) == 1
+
+    def test_argocd_application_name_is_shared_across_apps_in_same_environment(self, client):
+        # Confirmed against a real ArgoCD instance: one Application per Environment,
+        # syncing the whole apps/{project}/{env} path — shared by every Application
+        # deployed into that Environment, not one per (Application, Environment).
+        token, team_id = _setup(client, "argocdscope.io")
+        project_id = _project(client, token, team_id, git_ops_repository_url="https://github.com/org/gitops")
+
+        with (
+            patch("backend.api.routes.onboarding.validate_branch", return_value=True),
+            patch("backend.api.routes.onboarding.path_exists", return_value=True),
+        ):
+            env_id = client.post(
+                f"/projects/{project_id}/environments",
+                json=[{"name": "dev", "deployment_order": 1, "argocd_application_name": "demo-app-dev"}],
+                headers=_auth(token),
+            ).json()[0]["id"]
+
+        payload = {"applications": [
+            {"name": "backend", "source_repository": "https://github.com/org/argocdscope-backend", "ci_workflow_file": "deploy.yml",
+             "environments": [{"environment_id": env_id, "deployment_name": "backend"}]},
+            {"name": "frontend", "source_repository": "https://github.com/org/argocdscope-frontend", "ci_workflow_file": "deploy.yml",
+             "environments": [{"environment_id": env_id, "deployment_name": "frontend"}]},
+        ]}
+        r = client.post(f"/projects/{project_id}/applications/import", json=payload, headers=_auth(token))
+        assert r.status_code == 201
+
+        env = client.get(f"/projects/{project_id}/environments", headers=_auth(token)).json()[0]
+        assert env["argocd_application_name"] == "demo-app-dev"
+        assert set(env["application_names"]) == {"backend", "frontend"}
+
+    def test_update_environment_argocd_application_name(self, client):
+        token, team_id = _setup(client, "argocdpatch.io")
+        project_id = _project(client, token, team_id, git_ops_repository_url="https://github.com/org/gitops")
+
+        with (
+            patch("backend.api.routes.onboarding.validate_branch", return_value=True),
+            patch("backend.api.routes.onboarding.path_exists", return_value=True),
+        ):
+            env_id = client.post(
+                f"/projects/{project_id}/environments",
+                json=[{"name": "dev", "deployment_order": 1}],
+                headers=_auth(token),
+            ).json()[0]["id"]
+
+        r = client.patch(
+            f"/projects/{project_id}/environments/{env_id}",
+            json={"argocd_application_name": "demo-app-dev", "deployment_order": 1},
+            headers=_auth(token),
+        )
+        assert r.status_code == 200
+
+        env = client.get(f"/projects/{project_id}/environments", headers=_auth(token)).json()[0]
+        assert env["argocd_application_name"] == "demo-app-dev"

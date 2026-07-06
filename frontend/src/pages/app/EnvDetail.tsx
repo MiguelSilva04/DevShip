@@ -171,9 +171,8 @@ export default function EnvDetail() {
           {cv ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 11, fontSize: 12.5 }}>
               {([
-                ['Version', cv.image_tag ?? '—', 'var(--teal)'],
-                ['Commit', cv.source_commit_sha ? cv.source_commit_sha.slice(0, 7) : '—', ''],
-                [`HEAD (${label.toUpperCase()})`, upToDate?.gitops_head_sha ? upToDate.gitops_head_sha.slice(0, 7) : '—', ''],
+                ['Commit desta versão', cv.source_commit_sha ? cv.source_commit_sha.slice(0, 7) : '—', 'var(--teal)'],
+                [`HEAD atual (${label.toUpperCase()})`, upToDate?.gitops_head_sha ? upToDate.gitops_head_sha.slice(0, 7) : '—', ''],
                 ['Started', cv.deployed_at ? new Date(cv.deployed_at).toLocaleString() : '—', ''],
                 ['Autor', cv.requested_by_email ?? '—', ''],
               ] as [string, string, string][]).map(([k, v, c]) => (

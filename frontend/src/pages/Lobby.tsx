@@ -56,7 +56,10 @@ export default function Lobby() {
         const isNonCloud = teamsData.length > 0 && teamsData.every(t => t.role !== 'CLOUD_ENGINEER');
         if (allConfigured && isNonCloud) {
           const t = teamsData[0];
+          localStorage.setItem(OB_TEAM_ID, t.team_id);
+          localStorage.setItem(OB_TEAM_NAME, t.team_name);
           if (t.project_id) localStorage.setItem(OB_PROJECT_ID, t.project_id);
+          if (t.project_name) localStorage.setItem(OB_PROJ_NAME, t.project_name);
           if (user) setUser(userFromBackend(user.name, user.email, t.role));
           nav('/app/home', { replace: true });
         }

@@ -169,17 +169,23 @@ export default function Team() {
   }
 
   const cloudEngineers = members.filter(m => m.role === 'CLOUD_ENGINEER');
+  const canAddMembers = user?.role === 'cloud' || user?.role === 'tech';
+  const readOnly = !canAddMembers; // Developer: read-only access to the Team page
 
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 4px' }}>Team</h1>
-          <p style={{ fontSize: 13, color: 'var(--text-2)', margin: 0 }}>Membros da equipa e candidatos descobertos automaticamente.</p>
+          <p style={{ fontSize: 13, color: 'var(--text-2)', margin: 0 }}>
+            {readOnly ? 'Membros da equipa.' : 'Membros da equipa e candidatos descobertos automaticamente.'}
+          </p>
         </div>
-        <button onClick={() => nav('/app/team/add')} className="btn-primary hover-bright" style={{ fontSize: 12.5, padding: '9px 16px', borderRadius: 9, display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-          <span>+</span> Adicionar membro
-        </button>
+        {canAddMembers && (
+          <button onClick={() => nav('/app/team/add')} className="btn-primary hover-bright" style={{ fontSize: 12.5, padding: '9px 16px', borderRadius: 9, display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+            <span>+</span> Adicionar membro
+          </button>
+        )}
       </div>
 
       {err && (
@@ -373,8 +379,8 @@ export default function Team() {
         )}
       </div>
 
-      {/* Candidates */}
-      {candidates.length > 0 && (
+      {/* Candidates — only visible to whoever can act on them (CE, Tech Lead) */}
+      {canAddMembers && candidates.length > 0 && (
         <div>
           <div className="mono" style={{ fontSize: 10.5, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 13 }}>Candidatos do mesmo domínio</div>
           <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', overflow: 'hidden' }}>
@@ -389,10 +395,11 @@ export default function Team() {
                   value={candidateRoles[c.user_id] ?? 'DEVELOPER'}
                   onChange={e => setCandidateRoles(prev => ({ ...prev, [c.user_id]: e.target.value as AllowedRole }))}
                   className="select-base"
-                  disabled={busy === c.user_id}
+                  disabled={busy === c.user_id || user?.role === 'tech'}
+                  title={user?.role === 'tech' ? 'Um Tech Lead só pode adicionar Developers.' : undefined}
                 >
                   <option value="DEVELOPER">Developer</option>
-                  <option value="TECH_LEAD">Tech Lead</option>
+                  {user?.role === 'cloud' && <option value="TECH_LEAD">Tech Lead</option>}
                 </select>
                 <button
                   onClick={() => addCandidate(c)}

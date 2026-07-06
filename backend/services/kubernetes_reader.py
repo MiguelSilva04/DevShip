@@ -3,6 +3,12 @@ import requests
 from backend.services.eks_discovery import EKSClusterInfo
 
 
+class KubernetesNotFoundError(Exception):
+    """404 from the K8s API — the resource genuinely doesn't exist at this path,
+    as opposed to an auth/connectivity failure. Callers that need to tell
+    "wrong name/namespace" apart from "cluster unreachable" catch this specifically."""
+
+
 def api_request(endpoint: str, path: str, token: str, cluster_name: str, ca_file: str, method: str = "GET"):
     headers = {
         "Authorization": f"Bearer {token}",
@@ -16,6 +22,8 @@ def api_request(endpoint: str, path: str, token: str, cluster_name: str, ca_file
         raise Exception(f"Unauthorized (401): {response.text}")
     elif response.status_code == 403:
         raise Exception(f"Authenticated but without access entries permissions: {response.text}")
+    elif response.status_code == 404:
+        raise KubernetesNotFoundError(f"Not found (404): {path}")
     elif response.status_code >= 400:
         raise Exception(f"HTTP {response.status_code}: {response.text}")
 
@@ -161,8 +169,8 @@ def list_deployments(cluster: EKSClusterInfo, namespace: str):
     return _list_items(cluster, f"/apis/apps/v1/namespaces/{namespace}/deployments", parse_deployments)
 
 
-def get_argocd_application(cluster: EKSClusterInfo, app_name: str):
-    return _list_items(cluster, f"/apis/argoproj.io/v1alpha1/namespaces/argocd/applications/{app_name}", parse_argocd_application)
+def get_argocd_application(cluster: EKSClusterInfo, app_name: str, namespace: str = "argocd"):
+    return _list_items(cluster, f"/apis/argoproj.io/v1alpha1/namespaces/{namespace}/applications/{app_name}", parse_argocd_application)
 
 
 def pod_metrics(cluster: EKSClusterInfo, namespace: str) -> dict[str, dict[str, str]]:

@@ -101,6 +101,7 @@ class ClusterSetupInfo(BaseModel):
 class ClusterConfigRequest(BaseModel):
     cluster_arn: str
     iam_role_arn: str
+    argocd_namespace: Optional[str] = None
 
 
 class ClusterContextResponse(BaseModel):
@@ -110,6 +111,7 @@ class ClusterContextResponse(BaseModel):
     region: str
     eks_endpoint: str
     external_id: str
+    argocd_namespace: str
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -37,6 +37,9 @@ class Environment(Base):
     git_ops_base_path: Mapped[str | None] = mapped_column(String(512))
     source_branch: Mapped[str | None] = mapped_column(String(255))
     gitops_branch: Mapped[str | None] = mapped_column(String(255))
+    # One ArgoCD Application per Environment — confirmed against the real ArgoCD instance:
+    # "demo-app-dev"/"demo-app-staging"/"demo-app-prod" each sync the whole apps/demo-app/{env}
+    # path (every Application in that environment together), not one per Application.
     argocd_application_name: Mapped[str | None] = mapped_column(String(255))
     requires_approval: Mapped[bool] = mapped_column(Boolean(), server_default="false")
     approval_required_role: Mapped[TeamMemberRole | None] = mapped_column(_approval_role_enum)

@@ -7,6 +7,7 @@ interface Cluster {
   cluster_name: string;
   region: string;
   eks_endpoint: string;
+  argocd_namespace: string;
   created_at: string;
 }
 
@@ -79,6 +80,7 @@ export default function Settings() {
   const [showEditCreds, setShowEditCreds] = useState(false);
   const [clusterArn, setClusterArn] = useState('');
   const [iamRoleArn, setIamRoleArn] = useState('');
+  const [argocdNamespace, setArgocdNamespace] = useState('');
   const [savingCreds, setSavingCreds] = useState(false);
   const [credsErr, setCredsErr] = useState('');
 
@@ -103,7 +105,7 @@ export default function Settings() {
     if (!projectId) return;
     apiFetch(`/projects/${projectId}`).then(setProject).catch(() => setProject(null));
     apiFetch(`/projects/${projectId}/cluster`)
-      .then((c: Cluster) => { setCluster(c); setClusterArn(c.cluster_arn); })
+      .then((c: Cluster) => { setCluster(c); setClusterArn(c.cluster_arn); setArgocdNamespace(c.argocd_namespace); })
       .catch((e: unknown) => setClusterErr(e instanceof Error ? e.message : 'Erro ao carregar cluster.'));
     apiFetch(`/projects/${projectId}/environments`).then(setEnvs).catch(() => setEnvs([]));
     apiFetch(`/projects/${projectId}/applications`).then(setApps).catch(() => setApps([]));
@@ -216,7 +218,7 @@ export default function Settings() {
     try {
       const c: Cluster = await apiFetch(`/projects/${projectId}/cluster`, {
         method: 'PATCH',
-        body: JSON.stringify({ cluster_arn: clusterArn, iam_role_arn: iamRoleArn }),
+        body: JSON.stringify({ cluster_arn: clusterArn, iam_role_arn: iamRoleArn, argocd_namespace: argocdNamespace || undefined }),
       });
       setCluster(c);
       setShowEditCreds(false);
@@ -304,7 +306,7 @@ export default function Settings() {
               </div>
               <button onClick={() => navigator.clipboard.writeText(cluster.cluster_arn)} style={btnSecondary}>Copiar</button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, fontSize: 12.5 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, fontSize: 12.5 }}>
               <div>
                 <div style={{ color: 'var(--text-3)' }}>Região</div>
                 <div className="mono" style={{ marginTop: 3 }}>{cluster.region}</div>
@@ -315,6 +317,10 @@ export default function Settings() {
                   <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#34C759' }} />
                   Ligado
                 </div>
+              </div>
+              <div>
+                <div style={{ color: 'var(--text-3)' }}>ArgoCD namespace</div>
+                <div className="mono" style={{ marginTop: 3 }}>{cluster.argocd_namespace}</div>
               </div>
               <div>
                 <div style={{ color: 'var(--text-3)' }}>Última validação</div>
@@ -376,6 +382,10 @@ export default function Settings() {
           <Field label="IAM Role ARN">
             <input value={iamRoleArn} onChange={e => setIamRoleArn(e.target.value)} style={inputStyle} className="mono" />
           </Field>
+          <div style={{ height: 12 }} />
+          <Field label="ArgoCD namespace">
+            <input value={argocdNamespace} onChange={e => setArgocdNamespace(e.target.value)} style={inputStyle} className="mono" placeholder="argocd" />
+          </Field>
           <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
             <button onClick={saveCredentials} disabled={savingCreds} className="btn-primary hover-bright" style={{ fontSize: 13, padding: '10px 18px', borderRadius: 9, fontWeight: 600, opacity: savingCreds ? .6 : 1 }}>
               {savingCreds ? 'A validar…' : 'Guardar e revalidar'}
@@ -422,7 +432,7 @@ export default function Settings() {
               <input value={envForm.source_branch ?? ''} onChange={e => setEnvForm(f => ({ ...f, source_branch: e.target.value }))} style={inputStyle} className="mono" />
             </Field>
             <Field label="ArgoCD application">
-              <input value={envForm.argocd_application_name ?? ''} onChange={e => setEnvForm(f => ({ ...f, argocd_application_name: e.target.value }))} style={inputStyle} className="mono" />
+              <input value={envForm.argocd_application_name ?? ''} onChange={e => setEnvForm(f => ({ ...f, argocd_application_name: e.target.value }))} style={inputStyle} className="mono" placeholder="demo-app-dev" />
             </Field>
             <Field label="Deployment order">
               <input type="number" value={envForm.deployment_order ?? 0} onChange={e => setEnvForm(f => ({ ...f, deployment_order: Number(e.target.value) }))} style={inputStyle} />

@@ -671,6 +671,7 @@ interface EnvFormState {
   git_ops_base_path: string;
   source_branch: string;
   gitops_branch: string;
+  argocd_application_name: string;
   deployment_order: number;
   requires_approval: boolean;
   approval_required_role: string;
@@ -700,6 +701,7 @@ function mkEnv(pill: typeof PILLS[0]): EnvFormState {
     git_ops_base_path: pill.path,
     source_branch: 'main',
     gitops_branch: 'main',
+    argocd_application_name: '',
     deployment_order: pill.order,
     requires_approval: pill.name === 'PROD',
     approval_required_role: 'TECH_LEAD',
@@ -730,6 +732,7 @@ export function OnboardingEnvironments() {
       .then((existing: Array<{
         name: string; display_name?: string; namespace?: string;
         git_ops_base_path?: string; source_branch?: string; gitops_branch?: string;
+        argocd_application_name?: string;
         deployment_order: number; requires_approval: boolean;
         approval_required_role?: string;
       }>) => {
@@ -742,6 +745,7 @@ export function OnboardingEnvironments() {
           git_ops_base_path: e.git_ops_base_path ?? '',
           source_branch: e.source_branch ?? 'main',
           gitops_branch: e.gitops_branch ?? 'main',
+          argocd_application_name: e.argocd_application_name ?? '',
           deployment_order: e.deployment_order,
           requires_approval: e.requires_approval,
           approval_required_role: e.approval_required_role ?? 'TECH_LEAD',
@@ -772,6 +776,7 @@ export function OnboardingEnvironments() {
         git_ops_base_path: e.git_ops_base_path || undefined,
         source_branch: e.source_branch || undefined,
         gitops_branch: e.gitops_branch || undefined,
+        argocd_application_name: e.argocd_application_name || undefined,
         requires_approval: e.requires_approval,
         approval_required_role: e.requires_approval ? e.approval_required_role : undefined,
         deployment_order: Number(e.deployment_order),
@@ -863,6 +868,14 @@ export function OnboardingEnvironments() {
                   </FormField>
                   <FormField label="GitOps Branch (repo GitOps)">
                     <input className="input-base input-mono" value={env.gitops_branch} onChange={e => update(env.key, 'gitops_branch', e.target.value)} placeholder="main" />
+                  </FormField>
+                  <FormField label="ArgoCD Application">
+                    <input
+                      className="input-base input-mono"
+                      value={env.argocd_application_name}
+                      onChange={e => update(env.key, 'argocd_application_name', e.target.value)}
+                      placeholder={`demo-app-${env.name.toLowerCase()}`}
+                    />
                   </FormField>
                   <FormField label="Deployment Order">
                     <input className="input-base input-mono" type="number" min={1} value={env.deployment_order} onChange={e => update(env.key, 'deployment_order', Number(e.target.value))} style={{ maxWidth: 80 }} />

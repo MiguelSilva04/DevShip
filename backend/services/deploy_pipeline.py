@@ -22,7 +22,7 @@ from backend.bd.models.environment import Environment
 from backend.bd.session import SessionLocal
 from backend.services.cluster_validation import get_cluster_token
 from backend.services.gitops_scanner import resolve_branch_head as _resolve_branch_head
-from backend.services.kubernetes_reader import get_argocd_application, list_deployment, list_pods_in_namespace
+from backend.services.kubernetes_reader import KubernetesNotFoundError, get_argocd_application, list_deployment, list_pods_in_namespace
 
 _SEVERITY = {
     DeploymentEventType.WORKFLOW_STARTED: Severity.INFO,
@@ -230,9 +230,12 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
             return
 
         # ── 2. ArgoCD sync (opcional) ─────────────────────────────────────────
-        # O nome da Application no ArgoCD é definido pelo Terraform de cada projeto e
-        # não segue nenhuma convenção fixa — por isso é configurável por ambiente.
+        # O nome da Application no ArgoCD é definido pelo Terraform de cada projeto e não
+        # segue nenhuma convenção fixa — por isso é configurável por Environment. Confirmado
+        # contra a instância real de ArgoCD: uma Application sincroniza todo o caminho
+        # apps/demo-app/{env}, partilhada por todas as Applications desse Environment.
         argocd_app_name = env.argocd_application_name or f"demo-app-{env.name.lower()}"
+        argocd_namespace = cluster_ctx.argocd_namespace
         sync_phase_seen: set[str] = set()
         argocd_misses = 0
         argocd_available = True
@@ -240,7 +243,7 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
         while time.monotonic() < deadline and argocd_available:
             time.sleep(_POLL_INTERVAL)
             try:
-                argocd_app = get_argocd_application(eks_info, argocd_app_name)
+                argocd_app = get_argocd_application(eks_info, argocd_app_name, argocd_namespace)
                 argocd_misses = 0
                 phase = argocd_app.status.operation_phase
 
@@ -262,10 +265,18 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                     _fail_request(db, req, f"ArgoCD sync falhou: {phase}", version=version)
                     return
 
+            except KubernetesNotFoundError:
+                # Nome/namespace errados não se resolvem sozinhos com mais tentativas —
+                # desiste já, em vez de gastar _ARGOCD_MAX_MISSES tentativas inúteis.
+                argocd_available = False
+                _emit_event(db, version, DeploymentEventType.GITOPS_UPDATED, EventSource.KUBERNETES,
+                            message=f"ArgoCD Application '{argocd_app_name}' não encontrada no namespace "
+                                    f"'{argocd_namespace}' — a observar K8s directamente.")
+
             except Exception:
                 argocd_misses += 1
                 if argocd_misses >= _ARGOCD_MAX_MISSES:
-                    # ArgoCD não está disponível — continua para K8s directamente
+                    # Ligação/autenticação ao ArgoCD indisponível — continua para K8s directamente
                     argocd_available = False
                     _emit_event(db, version, DeploymentEventType.GITOPS_UPDATED, EventSource.KUBERNETES,
                                 message="ArgoCD não detectado — a observar K8s directamente.")

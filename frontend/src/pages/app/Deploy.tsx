@@ -111,10 +111,10 @@ export default function Deploy() {
         <div style={{ fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 14 }}>Nova versão</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 18, fontSize: 13 }}>
           <div>
-            <span style={{ color: 'var(--text-3)', fontSize: 12 }}>Current</span>
+            <span style={{ color: 'var(--text-3)', fontSize: 12 }}>Commit desta versão</span>
             <div className="mono" style={{ marginTop: 3 }}>
               {aeDetail?.current_version
-                ? `${aeDetail.current_version.image_tag ?? '—'} · ${(aeDetail.current_version.source_commit_sha ?? pending?.current_sha ?? '').slice(0, 7) || '—'}`
+                ? (aeDetail.current_version.source_commit_sha ?? pending?.current_sha ?? '').slice(0, 7) || '—'
                 : 'Sem deploy anterior'}
             </div>
           </div>

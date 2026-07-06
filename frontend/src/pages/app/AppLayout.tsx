@@ -36,6 +36,10 @@ export default function AppLayout() {
 
   const isCloud = user?.role === 'cloud';
   const canApprove = user?.role === 'cloud' || user?.role === 'tech';
+  // Team page: Cloud Engineer manages everything, Tech Lead can add Developers only,
+  // Developer gets read-only access — all three roles can open the page.
+  const canViewTeam = user?.role === 'cloud' || user?.role === 'tech' || user?.role === 'dev';
+  const canManageTeam = user?.role === 'cloud' || user?.role === 'tech';
 
   useEffect(() => {
     if (!canApprove) return;
@@ -45,13 +49,13 @@ export default function AppLayout() {
   }, [canApprove]);
 
   useEffect(() => {
-    if (!isCloud) return;
+    if (!canManageTeam) return;
     const teamId = localStorage.getItem(OB_TEAM_ID);
     if (!teamId) return;
     apiFetch(`/teams/${teamId}/members`)
       .then(({ candidates }: { candidates: unknown[] }) => setCandidateCount(candidates.length))
       .catch(() => setCandidateCount(0));
-  }, [isCloud]);
+  }, [canManageTeam]);
 
   const at = (path: string) => loc.pathname === `/app/${path}` || loc.pathname.startsWith(`/app/${path}/`);
   const active = (path: string): React.CSSProperties => ({
@@ -79,9 +83,9 @@ export default function AppLayout() {
             )}
           </NavBtn>
         )}
-        {isCloud && (
+        {canViewTeam && (
           <NavBtn icon={IconUsers} label="Team" style={active('team')} onClick={() => nav('/app/team')}>
-            {candidateCount > 0 && (
+            {canManageTeam && candidateCount > 0 && (
               <span style={{ marginLeft:'auto', background:'var(--teal)', color:'var(--teal-ink)', fontSize:10, fontWeight:600, minWidth:18, height:18, borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 5px' }}>{candidateCount}</span>
             )}
           </NavBtn>
@@ -124,10 +128,10 @@ export default function AppLayout() {
                 )}
               </button>
             )}
-            {isCloud && (
+            {canViewTeam && (
               <button onClick={() => nav('/app/team')} className="btn-secondary" style={{ display:'inline-flex', alignItems:'center', gap:7, fontSize:12, padding:'7px 12px', borderRadius:8 }}>
                 Team
-                {candidateCount > 0 && (
+                {canManageTeam && candidateCount > 0 && (
                   <span style={{ background:'var(--teal)', color:'var(--teal-ink)', fontSize:10, fontWeight:600, minWidth:17, height:17, borderRadius:9, display:'inline-flex', alignItems:'center', justifyContent:'center' }}>{candidateCount}</span>
                 )}
               </button>
