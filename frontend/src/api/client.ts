@@ -21,6 +21,10 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
     if (response.status === 401 && token) {
       localStorage.removeItem('devship_token');
       localStorage.removeItem('devship_user');
+      localStorage.removeItem('ob_team_id');
+      localStorage.removeItem('ob_project_id');
+      localStorage.removeItem('ob_team_name');
+      localStorage.removeItem('ob_proj_name');
       window.location.href = '/login';
       throw new Error('Sessão expirada. Por favor entra novamente.');
     }

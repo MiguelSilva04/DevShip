@@ -68,6 +68,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
   function logout() {
     localStorage.removeItem('devship_token');
     localStorage.removeItem('devship_user');
+    // Onboarding-scoped ids — must not leak into the next login on this browser,
+    // or the new user could silently reuse another account's team/project id.
+    localStorage.removeItem('ob_team_id');
+    localStorage.removeItem('ob_project_id');
+    localStorage.removeItem('ob_team_name');
+    localStorage.removeItem('ob_proj_name');
     setToken(null);
     setUserState(null);
   }

@@ -200,19 +200,42 @@ export function OnboardingTeam() {
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Pre-fill if team was already created (idempotency on back-navigation)
+  // Pre-fill if team was already created (idempotency on back-navigation) — only if the
+  // stored team still belongs to the logged-in user. A leftover ob_team_id from a previous
+  // session/user would otherwise silently get reused for this one (403s further down the flow).
   useEffect(() => {
     const teamId = localStorage.getItem(OB_TEAM_ID);
     const teamName = localStorage.getItem(OB_TEAM_NAME);
-    if (teamId && teamName) setName(teamName);
+    if (!teamId) return;
+    apiFetch(`/teams/${teamId}`)
+      .then(() => { if (teamName) setName(teamName); })
+      .catch(() => {
+        localStorage.removeItem(OB_TEAM_ID);
+        localStorage.removeItem(OB_TEAM_NAME);
+        localStorage.removeItem(OB_PROJECT_ID);
+        localStorage.removeItem(OB_PROJ_NAME);
+      });
   }, []);
 
   async function submit() {
     if (!name.trim()) { setErr('O nome da equipa é obrigatório.'); return; }
-    // If team already exists in localStorage, skip creation and advance
-    const existingId = localStorage.getItem(OB_TEAM_ID);
-    if (existingId) { nav('/onboarding/project'); return; }
     setLoading(true); setErr('');
+    // If a team is already stored, confirm it's still the caller's before reusing it —
+    // never trust a cached id as authorization.
+    const existingId = localStorage.getItem(OB_TEAM_ID);
+    if (existingId) {
+      try {
+        await apiFetch(`/teams/${existingId}`);
+        setLoading(false);
+        nav('/onboarding/project');
+        return;
+      } catch {
+        localStorage.removeItem(OB_TEAM_ID);
+        localStorage.removeItem(OB_TEAM_NAME);
+        localStorage.removeItem(OB_PROJECT_ID);
+        localStorage.removeItem(OB_PROJ_NAME);
+      }
+    }
     try {
       const team = await apiFetch('/teams', { method: 'POST', body: JSON.stringify({ name: name.trim(), description: desc || undefined }) });
       localStorage.setItem(OB_TEAM_ID, team.id);
