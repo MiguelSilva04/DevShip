@@ -767,6 +767,8 @@ export function OnboardingApplications() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [registry, setRegistry] = useState<Record<string, string>>({});
   const [ciWorkflow, setCiWorkflow] = useState<Record<string, string>>({});
+  const [workflowFiles, setWorkflowFiles] = useState<Record<string, string[]>>({});
+  const [workflowLoading, setWorkflowLoading] = useState<Record<string, boolean>>({});
   const [envIds, setEnvIds] = useState<EnvIdMap>({});
   const [err, setErr] = useState('');
   const [scanErr, setScanErr] = useState('');
@@ -794,6 +796,19 @@ export function OnboardingApplications() {
       const res: ScanResult[] = await apiFetch(`/projects/${projectId}/gitops-scan`);
       setCandidates(res);
       setSelected(new Set(res.map(r => r.name)));
+
+      res.forEach(c => {
+        setWorkflowLoading(p => ({ ...p, [c.name]: true }));
+        apiFetch(`/projects/${projectId}/workflow-files?source_repository=${encodeURIComponent(c.source_repository)}`)
+          .then((files: string[]) => {
+            setWorkflowFiles(p => ({ ...p, [c.name]: files }));
+            if (files.length === 1) {
+              setCiWorkflow(p => (p[c.name] ? p : { ...p, [c.name]: files[0] })); // não sobrescrever edição manual já feita
+            }
+          })
+          .catch(() => setWorkflowFiles(p => ({ ...p, [c.name]: [] })))
+          .finally(() => setWorkflowLoading(p => ({ ...p, [c.name]: false })));
+      });
     } catch (e: unknown) {
       setScanErr(e instanceof Error ? e.message : 'Erro ao escanear repositório.');
     } finally { setScanning(false); }
@@ -811,13 +826,18 @@ export function OnboardingApplications() {
     const toImport = candidates.filter(c => selected.has(c.name));
     if (toImport.length === 0) { setErr('Seleciona pelo menos uma application.'); return; }
     if (!projectId) { setErr('Projeto não encontrado.'); return; }
+    const missingWorkflow = toImport.filter(c => !ciWorkflow[c.name]);
+    if (missingWorkflow.length > 0) {
+      setErr('Falta indicar o CI Workflow File de: ' + missingWorkflow.map(c => c.name).join(', '));
+      return;
+    }
     setLoading(true); setErr('');
     try {
       const applications: AppImportItem[] = toImport.map(c => ({
         name: c.name,
         source_repository: c.source_repository,
         container_registry_repository: registry[c.name] ?? '',
-        ci_workflow_file: ciWorkflow[c.name] ?? `${c.name}.yml`,
+        ci_workflow_file: ciWorkflow[c.name] ?? '',
         environments: c.environments
           .filter(envName => envIds[envName])
           .map(envName => ({ environment_id: envIds[envName], deployment_name: c.name, manifest_path: c.manifest_path })),
@@ -904,7 +924,28 @@ export function OnboardingApplications() {
                         <input className="input-base input-mono" value={registry[c.name] ?? ''} onChange={e => setRegistry(p => ({ ...p, [c.name]: e.target.value }))} placeholder="company/backend" />
                       </FormField>
                       <FormField label="CI Workflow File">
-                        <input className="input-base input-mono" value={ciWorkflow[c.name] ?? `${c.name}.yml`} onChange={e => setCiWorkflow(p => ({ ...p, [c.name]: e.target.value }))} placeholder="gitops-deploy.yml" />
+                        {workflowLoading[c.name] ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-3)', padding: '9px 0' }}>
+                            <span style={{ width: 13, height: 13, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--teal)', animation: 'ds-spin .8s linear infinite', display: 'inline-block' }} />
+                            A procurar workflows no repositório…
+                          </div>
+                        ) : (workflowFiles[c.name]?.length ?? 0) > 1 ? (
+                          <select
+                            className="input-base input-mono"
+                            value={ciWorkflow[c.name] ?? ''}
+                            onChange={e => setCiWorkflow(p => ({ ...p, [c.name]: e.target.value }))}
+                          >
+                            <option value="" disabled>Escolhe um workflow…</option>
+                            {workflowFiles[c.name]!.map(f => <option key={f} value={f}>{f}</option>)}
+                          </select>
+                        ) : (
+                          <input
+                            className="input-base input-mono"
+                            value={ciWorkflow[c.name] ?? ''}
+                            onChange={e => setCiWorkflow(p => ({ ...p, [c.name]: e.target.value }))}
+                            placeholder={workflowFiles[c.name]?.length === 0 ? 'Não detetado — escreve o nome do ficheiro' : 'gitops-deploy.yml'}
+                          />
+                        )}
                       </FormField>
                     </div>
                   )}

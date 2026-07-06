@@ -21,7 +21,7 @@ class UserResponse(BaseModel):
     id: str
     name: str
     email: str
-    team_id: str | None = None  # set when register auto-creates a team (first user of domain)
+    team_id: str | None = None  # always None from register/me — team creation happens via POST /teams
     github_username: str | None = None
     github_email: str | None = None
 

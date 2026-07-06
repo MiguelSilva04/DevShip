@@ -31,7 +31,9 @@ def client(db_session: Session):
 
 
 def _register(client: TestClient, email: str, name: str = "Eng") -> dict:
-    """Register a user and return the response JSON (includes team_id when first of domain)."""
+    """Register a user and return the response JSON. Registration no longer auto-creates
+    a team (that logic was removed to stop duplicate-team creation against the real
+    onboarding flow) — callers that need a team must create one via POST /teams."""
     r = client.post("/auth/register", json={"name": name, "email": email, "password": "pw123456"})
     assert r.status_code == 201, r.text
     return r.json()
@@ -47,11 +49,14 @@ def _auth(token: str) -> dict:
 
 
 def _setup(client: TestClient, domain: str) -> tuple[str, str]:
-    """Register first user for a unique domain; return (token, team_id)."""
+    """Register the first user for a unique domain and create their team via POST /teams
+    (mirrors the real onboarding flow). Returns (token, team_id)."""
     email = f"eng@{domain}"
-    data = _register(client, email)
+    _register(client, email)
     token = _login(client, email)
-    return token, data["team_id"]
+    r = client.post("/teams", json={"name": domain}, headers=_auth(token))
+    assert r.status_code == 201, r.text
+    return token, r.json()["id"]
 
 
 def _project(client: TestClient, token: str, team_id: str, **kwargs) -> str:
@@ -66,10 +71,12 @@ def _project(client: TestClient, token: str, team_id: str, **kwargs) -> str:
 # ---------------------------------------------------------------------------
 
 class TestAuth:
-    def test_register_first_user_creates_team(self, client):
+    def test_register_does_not_auto_create_team(self, client):
+        """Registration never auto-creates a team — that's POST /teams's job, kept
+        separate to avoid the duplicate-team bug this used to cause."""
         data = _register(client, "alice@newdomain.com")
         assert data["email"] == "alice@newdomain.com"
-        assert data["team_id"] is not None
+        assert data["team_id"] is None
 
     def test_register_second_user_same_domain_no_team(self, client):
         _register(client, "first@shared.com")
@@ -104,7 +111,7 @@ class TestAuth:
 class TestTeams:
     def test_post_teams_fails_if_domain_already_has_team(self, client):
         token, _ = _setup(client, "acme.io")
-        # register already created the team for acme.io; manual POST must 409
+        # _setup already created the team for acme.io; a second POST must 409
         r = client.post("/teams", json={"name": "Another"}, headers=_auth(token))
         assert r.status_code == 409
 
@@ -341,6 +348,55 @@ class TestGitOpsScan:
 
 
 # ---------------------------------------------------------------------------
+# Workflow file discovery
+# ---------------------------------------------------------------------------
+
+class TestWorkflowFiles:
+    def test_lists_workflow_files_from_repo(self, client):
+        token, team_id = _setup(client, "workflows.io")
+        project_id = _project(client, token, team_id)
+
+        with patch("backend.api.routes.onboarding.gs.list_workflow_files", return_value=["gitops-deploy.yml"]):
+            r = client.get(
+                f"/projects/{project_id}/workflow-files",
+                params={"source_repository": "https://github.com/org/backend"},
+                headers=_auth(token),
+            )
+
+        assert r.status_code == 200
+        assert r.json() == ["gitops-deploy.yml"]
+
+    def test_returns_empty_list_on_upstream_error(self, client):
+        token, team_id = _setup(client, "workflows2.io")
+        project_id = _project(client, token, team_id)
+
+        with patch("backend.api.routes.onboarding.gs.list_workflow_files", side_effect=Exception("boom")):
+            r = client.get(
+                f"/projects/{project_id}/workflow-files",
+                params={"source_repository": "https://github.com/org/backend"},
+                headers=_auth(token),
+            )
+
+        assert r.status_code == 200
+        assert r.json() == []
+
+    def test_non_cloud_engineer_forbidden(self, client):
+        token, team_id = _setup(client, "workflows3.io")
+        project_id = _project(client, token, team_id)
+
+        dev_email = "dev@workflows3.io"
+        _register(client, dev_email, name="Dev")
+        dev_token = _login(client, dev_email)
+
+        r = client.get(
+            f"/projects/{project_id}/workflow-files",
+            params={"source_repository": "https://github.com/org/backend"},
+            headers=_auth(dev_token),
+        )
+        assert r.status_code == 403
+
+
+# ---------------------------------------------------------------------------
 # Application import
 # ---------------------------------------------------------------------------
 
@@ -368,10 +424,13 @@ class TestApplicationImport:
         assert r.json()[0]["name"] == "api"
 
     def test_duplicate_source_repository_returns_409(self, client):
-        token, team_id = _setup(client, "duprepo.io")
-        proj1 = _project(client, token, team_id, name="P1")
-        proj2 = _project(client, token, team_id, name="P2")
+        # source_repository is unique across the whole system, so this must span two
+        # different teams — a team can only have one project.
+        token1, team1_id = _setup(client, "duprepo1.io")
+        token2, team2_id = _setup(client, "duprepo2.io")
+        proj1 = _project(client, token1, team1_id, name="P1")
+        proj2 = _project(client, token2, team2_id, name="P2")
 
         payload = {"applications": [{"name": "api", "source_repository": "https://github.com/org/shared", "container_registry_repository": "ecr/org/api", "ci_workflow_file": "deploy.yml", "environments": []}]}
-        assert client.post(f"/projects/{proj1}/applications/import", json=payload, headers=_auth(token)).status_code == 201
-        assert client.post(f"/projects/{proj2}/applications/import", json=payload, headers=_auth(token)).status_code == 409
+        assert client.post(f"/projects/{proj1}/applications/import", json=payload, headers=_auth(token1)).status_code == 201
+        assert client.post(f"/projects/{proj2}/applications/import", json=payload, headers=_auth(token2)).status_code == 409

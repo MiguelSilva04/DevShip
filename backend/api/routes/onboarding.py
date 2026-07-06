@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -799,6 +799,22 @@ def gitops_scan(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
     return [GitOpsScanResult(**c) for c in candidates]
+
+
+@router.get("/projects/{project_id}/workflow-files", response_model=list[str])
+def list_workflow_files_for_repo(
+    project_id: uuid.UUID,
+    source_repository: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_cloud_engineer(db, project_id, current_user)
+    try:
+        return gs.list_workflow_files(source_repository)
+    except Exception:
+        # rate limit, repo inacessível, etc. — não bloquear o onboarding por isto,
+        # o frontend cai para o input manual.
+        return []
 
 
 # ---------------------------------------------------------------------------
