@@ -47,6 +47,8 @@ interface ValidationResult {
   branch_error: string | null;
   git_ops_path_status: string;
   git_ops_path_error: string | null;
+  argocd_status: string;
+  argocd_error: string | null;
   overall_status: string;
 }
 
@@ -433,6 +435,9 @@ export default function Settings() {
             </Field>
             <Field label="ArgoCD application">
               <input value={envForm.argocd_application_name ?? ''} onChange={e => setEnvForm(f => ({ ...f, argocd_application_name: e.target.value }))} style={inputStyle} className="mono" placeholder="demo-app-dev" />
+              {envValidation && envValidation.argocd_status === 'INVALID' && (
+                <div style={{ fontSize: 11.5, color: '#ff9aaa', marginTop: 5 }}>{envValidation.argocd_error}</div>
+              )}
             </Field>
             <Field label="Deployment order">
               <input type="number" value={envForm.deployment_order ?? 0} onChange={e => setEnvForm(f => ({ ...f, deployment_order: Number(e.target.value) }))} style={inputStyle} />

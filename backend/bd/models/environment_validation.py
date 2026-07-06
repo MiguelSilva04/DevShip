@@ -46,6 +46,10 @@ class EnvironmentValidation(Base):
         _validation_status_enum, server_default=text("'PENDING'")
     )
     git_ops_path_error: Mapped[str | None] = mapped_column(Text)
+    argocd_status: Mapped[ValidationStatus] = mapped_column(
+        _validation_status_enum, server_default=text("'PENDING'")
+    )
+    argocd_error: Mapped[str | None] = mapped_column(Text)
     overall_status: Mapped[ValidationStatus] = mapped_column(
         _validation_status_enum, server_default=text("'PENDING'")
     )

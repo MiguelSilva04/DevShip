@@ -374,6 +374,77 @@ class TestEnvironments:
         assert r.status_code == 201
         assert r.json()[0]["validation"]["overall_status"] == "VALID"
 
+    @mock_aws
+    def test_argocd_application_not_found_fails_validation(self, client):
+        import boto3
+        boto3.client("eks", region_name="eu-west-1").create_cluster(
+            name="my-cluster", version="1.29", roleArn=FAKE_ROLE_ARN,
+            resourcesVpcConfig={"subnetIds": ["subnet-abc"], "securityGroupIds": []},
+        )
+
+        token, team_id = _setup(client, "envsargocd.io")
+        project_id = _project(client, token, team_id, git_ops_repository_url="https://github.com/org/gitops")
+
+        with patch("backend.services.cluster_validation.list_namespaces", return_value=MagicMock(items=[])):
+            client.post(f"/projects/{project_id}/cluster", json={"cluster_arn": FAKE_ARN, "iam_role_arn": FAKE_ROLE_ARN}, headers=_auth(token))
+
+        from backend.services.kubernetes_reader import KubernetesNotFoundError
+
+        with (
+            patch("backend.api.routes.onboarding.get_argocd_application", side_effect=KubernetesNotFoundError("404")),
+            patch("backend.api.routes.onboarding._get_cluster_token", return_value=MagicMock()),
+        ):
+            r = client.post(
+                f"/projects/{project_id}/environments",
+                json=[{"name": "dev", "deployment_order": 1, "argocd_application_name": "demo-app-dev"}],
+                headers=_auth(token),
+            )
+
+        assert r.status_code == 201
+        validation = r.json()[0]["validation"]
+        assert validation["argocd_status"] == "INVALID"
+        assert "demo-app-dev" in validation["argocd_error"]
+        assert validation["overall_status"] == "INVALID"
+
+    @mock_aws
+    def test_argocd_application_found_passes_validation(self, client):
+        import boto3
+        boto3.client("eks", region_name="eu-west-1").create_cluster(
+            name="my-cluster", version="1.29", roleArn=FAKE_ROLE_ARN,
+            resourcesVpcConfig={"subnetIds": ["subnet-abc"], "securityGroupIds": []},
+        )
+
+        token, team_id = _setup(client, "envsargocdok.io")
+        project_id = _project(client, token, team_id, git_ops_repository_url="https://github.com/org/gitops")
+
+        with patch("backend.services.cluster_validation.list_namespaces", return_value=MagicMock(items=[])):
+            client.post(f"/projects/{project_id}/cluster", json={"cluster_arn": FAKE_ARN, "iam_role_arn": FAKE_ROLE_ARN}, headers=_auth(token))
+
+        with (
+            patch("backend.api.routes.onboarding.get_argocd_application", return_value=MagicMock()),
+            patch("backend.api.routes.onboarding._get_cluster_token", return_value=MagicMock()),
+        ):
+            r = client.post(
+                f"/projects/{project_id}/environments",
+                json=[{"name": "dev", "deployment_order": 1, "argocd_application_name": "demo-app-dev"}],
+                headers=_auth(token),
+            )
+
+        assert r.status_code == 201
+        assert r.json()[0]["validation"]["argocd_status"] == "VALID"
+
+    def test_argocd_check_skipped_when_no_application_name_set(self, client):
+        token, team_id = _setup(client, "envsargocdskip.io")
+        project_id = _project(client, token, team_id, git_ops_repository_url="https://github.com/org/gitops")
+
+        r = client.post(
+            f"/projects/{project_id}/environments",
+            json=[{"name": "dev", "deployment_order": 1}],
+            headers=_auth(token),
+        )
+        assert r.status_code == 201
+        assert r.json()[0]["validation"]["argocd_status"] == "VALID"
+
 
 # ---------------------------------------------------------------------------
 # GitOps scan

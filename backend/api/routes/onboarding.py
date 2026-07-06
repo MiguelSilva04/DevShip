@@ -46,7 +46,7 @@ from backend.bd.models.user import User
 from backend.services import cluster_validation as cv
 from backend.services import gitops_scanner as gs
 from backend.services.gitops_scanner import is_repo_collaborator, path_exists, repo_exists, validate_branch
-from backend.services.kubernetes_reader import list_namespaces
+from backend.services.kubernetes_reader import KubernetesNotFoundError, get_argocd_application, list_namespaces
 
 router = APIRouter()
 
@@ -752,9 +752,26 @@ def _run_environment_validations(
     else:
         v.git_ops_path_status = ValidationStatus.VALID
 
+    # 4. ArgoCD Application existence check — confirms the configured name actually
+    # exists in the cluster's ArgoCD namespace, instead of only discovering a typo
+    # 15+ minutes into a real deploy.
+    if cluster and env.argocd_application_name:
+        try:
+            eks_info = _get_cluster_token(cluster)
+            get_argocd_application(eks_info, env.argocd_application_name, cluster.argocd_namespace)
+            v.argocd_status = ValidationStatus.VALID
+        except KubernetesNotFoundError:
+            v.argocd_status = ValidationStatus.INVALID
+            v.argocd_error = f"ArgoCD Application '{env.argocd_application_name}' not found in namespace '{cluster.argocd_namespace}'"
+        except Exception as e:
+            v.argocd_status = ValidationStatus.INVALID
+            v.argocd_error = str(e)
+    else:
+        v.argocd_status = ValidationStatus.VALID  # skipped — no cluster yet or no ArgoCD name set
+
     all_valid = all(
         s == ValidationStatus.VALID
-        for s in (v.namespace_status, v.branch_status, v.git_ops_path_status)
+        for s in (v.namespace_status, v.branch_status, v.git_ops_path_status, v.argocd_status)
     )
     v.overall_status = ValidationStatus.VALID if all_valid else ValidationStatus.INVALID
 

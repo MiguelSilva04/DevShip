@@ -139,6 +139,8 @@ class EnvironmentValidationResult(BaseModel):
     branch_error: Optional[str] = None
     git_ops_path_status: ValidationStatus
     git_ops_path_error: Optional[str] = None
+    argocd_status: ValidationStatus
+    argocd_error: Optional[str] = None
     overall_status: ValidationStatus
 
     model_config = {"from_attributes": True}
