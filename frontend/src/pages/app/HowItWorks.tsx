@@ -1,3 +1,85 @@
+import { useUser } from '../../context/UserContext';
+
+const TRANSLATION_ROWS: [string, string, string][] = [
+  ['Não escondemos Kubernetes.', 'Traduzimo-lo.', 'Cada estado mostrado vem diretamente da Kubernetes API — versões, réplicas e probes reais, não uma camada que esconde o que corre no cluster.'],
+  ['Não removemos GitOps.', 'Tornamo-lo observável.', 'O repositório GitOps continua a ser a fonte de verdade. A DevShip mostra o diff, o commit e o sync do ArgoCD a acontecer — em vez de os esconder atrás de um botão.'],
+  ['Não substituímos Cloud Engineers.', 'Devolvemos-lhes tempo.', 'Os pedidos repetitivos de deploy deixam de passar por eles. Mantêm IAM, políticas de aprovação e governação do cluster — sem serem o gargalo.'],
+];
+
+const DEV_BENEFITS = [
+  'Deploy e rollback num clique, por environment',
+  'Estado, versões e health em tempo real',
+  'Logs, eventos e pods da tua aplicação',
+  'Acesso aos environments só via as tuas applications',
+];
+
+function HowItWorksDev() {
+  return (
+    <div>
+      <h1 style={{ fontSize:22, fontWeight:600, margin:'0 0 6px' }}>Como funciona</h1>
+      <p style={{ fontSize:13, color:'var(--text-2)', margin:'0 0 30px', lineHeight:1.6 }}>
+        A DevShip existe para tirar o Kubernetes do teu caminho — sem te esconder o que realmente acontece com a tua aplicação.
+      </p>
+
+      {/* O Problema */}
+      <h2 style={{ fontSize:14, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-3)', fontWeight:600, margin:'0 0 16px' }}>O problema que resolvemos</h2>
+      <div style={{ border:'1px solid var(--border)', borderRadius:14, background:'var(--surface)', padding:'22px 24px', marginBottom:28 }}>
+        <p style={{ fontSize:13.5, color:'var(--text-2)', lineHeight:1.7, margin:'0 0 18px', maxWidth:640 }}>
+          Sem uma plataforma interna, publicar uma aplicação significa pedir, esperar e depender de quem domina a infraestrutura.
+          O Cloud Engineer torna-se um gargalo; tu perdes o controlo do que acontece depois do "deploy".
+        </p>
+        <figure style={{ margin:0, border:'1px solid var(--border-soft)', borderRadius:10, overflow:'hidden', background:'var(--bg-2)' }}>
+          <figcaption className="mono" style={{ display:'flex', alignItems:'center', gap:10, fontSize:10.5, color:'var(--text-3)', padding:'9px 14px', borderBottom:'1px solid var(--border-soft)' }}>
+            <span style={{ color:'var(--teal)' }}>FIG.01</span><span>antes_vs_depois.png</span><span style={{ marginLeft:'auto' }}>o custo operacional da espera</span>
+          </figcaption>
+          <img src="/landing-dev.png" alt="A jornada de deploy: sem DevShip vs com DevShip" style={{ width:'100%', display:'block' }} onError={e => { (e.target as HTMLImageElement).style.display='none'; }} />
+        </figure>
+      </div>
+
+      {/* O que ganhas */}
+      <h2 style={{ fontSize:14, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-3)', fontWeight:600, margin:'0 0 16px' }}>Deploy sem aprender Kubernetes</h2>
+      <div style={{ border:'1px solid var(--border)', borderRadius:14, background:'var(--surface)', padding:'20px 24px', marginBottom:28 }}>
+        {DEV_BENEFITS.map(t => (
+          <div key={t} style={{ display:'flex', gap:10, fontSize:13, color:'var(--text-2)', marginBottom:11 }}>
+            <span className="mono" style={{ color:'var(--teal)' }}>+</span> {t}
+          </div>
+        ))}
+      </div>
+
+      {/* Tradução */}
+      <h2 style={{ fontSize:14, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-3)', fontWeight:600, margin:'0 0 16px' }}>A mesma verdade, com menos fricção</h2>
+      <div style={{ display:'flex', flexDirection:'column', gap:1, border:'1px solid var(--border)', borderRadius:14, overflow:'hidden', marginBottom:28 }}>
+        {TRANSLATION_ROWS.map(([t1, t2, body], i) => (
+          <div key={i} style={{ display:'grid', gridTemplateColumns:'260px 1fr', background:'var(--surface)', borderBottom: i < TRANSLATION_ROWS.length - 1 ? '1px solid var(--border-soft)' : 'none' }}>
+            <div style={{ padding:'17px 20px', borderRight:'1px solid var(--border-soft)' }}>
+              <span style={{ fontSize:14, fontWeight:600 }}>{t1}</span><br />
+              <span style={{ fontSize:14, fontWeight:600, color:'var(--teal)' }}>{t2}</span>
+            </div>
+            <div style={{ padding:'17px 20px', fontSize:12.5, color:'var(--text-2)', lineHeight:1.6, display:'flex', alignItems:'center' }}>{body}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Permissões — reaproveita a mesma tabela de roles */}
+      <h2 style={{ fontSize:14, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-3)', fontWeight:600, margin:'0 0 16px' }}>Permissões por role</h2>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:13 }}>
+        {ROLES.map(r => (
+          <div key={r.name} style={{ border:`1px solid ${r.border}`, borderRadius:13, background:r.bg, padding:'18px 18px' }}>
+            <div style={{ fontSize:14, fontWeight:600, color:r.color, marginBottom:13 }}>{r.name}</div>
+            <ul style={{ margin:0, padding:0, listStyle:'none', display:'flex', flexDirection:'column', gap:7 }}>
+              {r.perms.map(p => (
+                <li key={p} style={{ display:'flex', alignItems:'baseline', gap:8, fontSize:12.5, color:'var(--text-2)', lineHeight:1.45 }}>
+                  <span style={{ color:r.color, flex:'none', fontSize:11 }}>✓</span>{p}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const PIPELINE = [
   { step:1, title:'Developer faz commit', desc:'Push para o repositório Git. O DevShip deteta a nova versão disponível.', icon:'💻' },
   { step:2, title:'Escolha do environment', desc:'Developer seleciona o environment de destino (DEV, STAGING ou PROD).', icon:'🎯' },
@@ -15,6 +97,9 @@ const ROLES = [
 ];
 
 export default function HowItWorks() {
+  const { user } = useUser();
+  if (user?.role !== 'cloud') return <HowItWorksDev />;
+
   return (
     <div>
       <h1 style={{ fontSize:22, fontWeight:600, margin:'0 0 6px' }}>Como funciona</h1>

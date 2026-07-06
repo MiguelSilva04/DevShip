@@ -109,6 +109,24 @@ def repo_exists(repo_url: str) -> bool:
     return resp.status_code == 200
 
 
+def list_workflow_files(repo_url: str) -> list[str]:
+    """Lista os .yml/.yaml em .github/workflows/ do repo. Lista vazia se a pasta não existir
+    (repo sem workflows é um caso válido, ainda que incomum) — não é erro."""
+    owner, repo = _parse_owner_repo(repo_url)
+    resp = requests.get(
+        f"https://api.github.com/repos/{owner}/{repo}/contents/.github/workflows",
+        headers=_github_headers(),
+        timeout=15,
+    )
+    if resp.status_code == 404:
+        return []
+    resp.raise_for_status()
+    return [
+        f["name"] for f in resp.json()
+        if f["type"] == "file" and f["name"].endswith((".yml", ".yaml"))
+    ]
+
+
 def validate_branch(repo_url: str, branch: str) -> bool:
     owner, repo = _parse_owner_repo(repo_url)
     resp = requests.get(
