@@ -132,8 +132,32 @@ def set_github_identity(
             detail="Este username GitHub não é colaborador em nenhuma das tuas applications.",
         )
 
+    # A GitHub username/account email belongs to exactly one person — two DevShip
+    # accounts must never share one, or deploy/rollback attribution becomes meaningless.
+    claimed = (
+        db.query(User)
+        .filter(
+            User.id != current_user.id,
+            (User.github_username == body.github_username) | (User.github_email == body.github_email),
+        )
+        .first()
+    )
+    if claimed is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Esta identidade GitHub já está associada a outra conta DevShip.",
+        )
+
     current_user.github_username = body.github_username
     current_user.github_email = body.github_email
+    try:
+        with db.begin_nested():
+            db.flush()
+    except IntegrityError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Esta identidade GitHub já está associada a outra conta DevShip.",
+        )
     db.commit()
     return GithubIdentityResponse(github_username=current_user.github_username, github_email=current_user.github_email)
 

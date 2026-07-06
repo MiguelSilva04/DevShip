@@ -279,3 +279,42 @@ class TestGithubIdentityEndpoint:
                 headers=_auth(token),
             )
         assert r.status_code == 200, r.text
+
+    def test_rejects_username_already_claimed_by_another_account(self, client, db_session, scenario):
+        other = User(name="Other", email=f"{uuid.uuid4()}@t.io", password_hash="x", github_username="octocat")
+        db_session.add(other)
+        db_session.flush()
+        token = _token_for(scenario["user"])
+
+        r = client.patch(
+            "/users/me/github-identity",
+            json={"github_username": "octocat", "github_email": "someone-else@example.com"},
+            headers=_auth(token),
+        )
+        assert r.status_code == 409
+
+    def test_rejects_email_already_claimed_by_another_account(self, client, db_session, scenario):
+        other = User(name="Other", email=f"{uuid.uuid4()}@t.io", password_hash="x", github_email="octocat@example.com")
+        db_session.add(other)
+        db_session.flush()
+        token = _token_for(scenario["user"])
+
+        r = client.patch(
+            "/users/me/github-identity",
+            json={"github_username": "someone-else", "github_email": "octocat@example.com"},
+            headers=_auth(token),
+        )
+        assert r.status_code == 409
+
+    def test_allows_updating_own_existing_identity(self, client, db_session, scenario):
+        scenario["user"].github_username = "octocat"
+        scenario["user"].github_email = "octocat@example.com"
+        db_session.flush()
+        token = _token_for(scenario["user"])
+
+        r = client.patch(
+            "/users/me/github-identity",
+            json={"github_username": "octocat", "github_email": "octocat@example.com"},
+            headers=_auth(token),
+        )
+        assert r.status_code == 200, r.text
