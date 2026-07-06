@@ -35,7 +35,6 @@ interface AppItem {
   name: string;
   description: string | null;
   source_repository: string;
-  container_registry_repository: string;
   ci_workflow_file: string;
 }
 
@@ -165,7 +164,6 @@ export default function Settings() {
           name: appForm.name,
           description: appForm.description ?? null,
           source_repository: appForm.source_repository,
-          container_registry_repository: appForm.container_registry_repository,
           ci_workflow_file: appForm.ci_workflow_file,
         }),
       });
@@ -465,9 +463,6 @@ export default function Settings() {
             </Field>
             <Field label="Repositório (source)">
               <input value={appForm.source_repository ?? ''} onChange={e => setAppForm(f => ({ ...f, source_repository: e.target.value }))} style={inputStyle} className="mono" />
-            </Field>
-            <Field label="Container registry">
-              <input value={appForm.container_registry_repository ?? ''} onChange={e => setAppForm(f => ({ ...f, container_registry_repository: e.target.value }))} style={inputStyle} className="mono" />
             </Field>
             <Field label="CI workflow file">
               <input value={appForm.ci_workflow_file ?? ''} onChange={e => setAppForm(f => ({ ...f, ci_workflow_file: e.target.value }))} style={inputStyle} className="mono" />

@@ -4,7 +4,7 @@ compare_commits() helper it relies on.
 """
 import os
 import uuid
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -61,7 +61,6 @@ def scenario(db_session):
     app_ = Application(
         project_id=project.id, name="api",
         source_repository="https://github.com/org/api",
-        container_registry_repository="ecr/org/api",
         ci_workflow_file="deploy.yml",
     )
     db_session.add(app_)
@@ -212,4 +211,51 @@ class TestCompareCommits:
 
         with patch("backend.services.gitops_scanner.requests.get", side_effect=Exception("network error")):
             result = compare_commits("https://github.com/org/api", "base_sha", "main")
+        assert result is None
+
+
+class TestGetFileContent:
+    def test_returns_content_for_existing_file(self):
+        from backend.services.gitops_scanner import get_file_content
+
+        contents_resp = MagicMock()
+        contents_resp.raise_for_status.return_value = None
+        contents_resp.json.return_value = {"download_url": "https://raw.githubusercontent.com/org/repo/main/deploy.yml"}
+
+        file_resp = MagicMock()
+        file_resp.raise_for_status.return_value = None
+        file_resp.text = "apiVersion: apps/v1\nkind: Deployment"
+
+        with patch("backend.services.gitops_scanner.requests.get", side_effect=[contents_resp, file_resp]):
+            result = get_file_content("https://github.com/org/repo", ".github/workflows/deploy.yml")
+
+        assert result == "apiVersion: apps/v1\nkind: Deployment"
+
+    def test_returns_none_for_nonexistent_path(self):
+        from backend.services.gitops_scanner import get_file_content
+        import requests
+
+        with patch("backend.services.gitops_scanner.requests.get", side_effect=requests.HTTPError("404")):
+            result = get_file_content("https://github.com/org/repo", "does/not/exist.yaml")
+
+        assert result is None
+
+    def test_returns_none_on_network_error(self):
+        from backend.services.gitops_scanner import get_file_content
+
+        with patch("backend.services.gitops_scanner.requests.get", side_effect=Exception("network error")):
+            result = get_file_content("https://github.com/org/repo", "some/path.yaml")
+
+        assert result is None
+
+    def test_returns_none_when_no_download_url(self):
+        from backend.services.gitops_scanner import get_file_content
+
+        contents_resp = MagicMock()
+        contents_resp.raise_for_status.return_value = None
+        contents_resp.json.return_value = {}  # e.g. path is a directory, not a file
+
+        with patch("backend.services.gitops_scanner.requests.get", return_value=contents_resp):
+            result = get_file_content("https://github.com/org/repo", "some/dir")
+
         assert result is None

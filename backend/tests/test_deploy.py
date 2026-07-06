@@ -80,7 +80,6 @@ def _setup_chain(db: Session) -> tuple[User, Team, Project, Environment, Applica
         project_id=project.id,
         name="api",
         source_repository="https://github.com/org/api",
-        container_registry_repository="ecr/org/api",
         ci_workflow_file="deploy.yml",
     )
     db.add(app)

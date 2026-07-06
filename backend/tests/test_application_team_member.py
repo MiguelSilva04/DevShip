@@ -66,7 +66,6 @@ def _make_app(db, project, name="api"):
         project_id=project.id,
         name=name,
         source_repository=f"https://github.com/org/{name}-{uuid.uuid4().hex[:4]}",
-        container_registry_repository="ecr/org/api",
         ci_workflow_file="deploy.yml",
     )
     db.add(a)

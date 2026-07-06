@@ -67,7 +67,6 @@ def scenario(db_session):
     app_ = Application(
         project_id=project.id, name="api",
         source_repository="https://github.com/org/api",
-        container_registry_repository="ecr/org/api",
         ci_workflow_file="deploy.yml",
     )
     db_session.add(app_)

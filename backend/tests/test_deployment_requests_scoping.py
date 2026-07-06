@@ -63,7 +63,6 @@ def _make_team_chain(db, app_name="api"):
     app_ = Application(
         project_id=project.id, name=app_name,
         source_repository=f"https://github.com/org/{app_name}-{uuid.uuid4().hex[:4]}",
-        container_registry_repository="ecr/org/api",
         ci_workflow_file="deploy.yml",
     )
     db.add(app_)
@@ -113,7 +112,7 @@ class TestListDeployRequestsScoping:
         chain_b_app = Application(
             project_id=chain["project"].id, name="app-b",
             source_repository=f"https://github.com/org/app-b-{uuid.uuid4().hex[:4]}",
-            container_registry_repository="ecr/org/api", ci_workflow_file="deploy.yml",
+            ci_workflow_file="deploy.yml",
         )
         db_session.add(chain_b_app)
         db_session.flush()

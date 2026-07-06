@@ -105,6 +105,47 @@ export function ErrBanner({ msg }: { msg: string }) {
   );
 }
 
+// ─── File preview (CI workflow, discovered manifest) ────────────────────────
+function FilePreviewButton({ repoUrl, path, projectId }: { repoUrl: string; path: string; projectId: string }) {
+  const [open, setOpen] = useState(false);
+  const [content, setContent] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  function handleOpen() {
+    setOpen(true);
+    if (content !== null) return; // já carregado, não repetir o fetch
+    setLoading(true); setError('');
+    apiFetch(`/projects/${projectId}/file-preview?repo_url=${encodeURIComponent(repoUrl)}&path=${encodeURIComponent(path)}`)
+      .then((r: { content: string }) => setContent(r.content))
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }
+
+  return (
+    <>
+      <button type="button" onClick={handleOpen} className="btn-ghost" style={{ fontSize: 11.5, padding: '4px 10px', borderRadius: 6 }}>
+        Preview
+      </button>
+      {open && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setOpen(false)}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: '20px 22px', maxWidth: 640, width: '100%', margin: '0 16px', maxHeight: '70vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <span className="mono" style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{path}</span>
+              <button onClick={() => setOpen(false)} className="btn-ghost" style={{ fontSize: 12 }}>Fechar</button>
+            </div>
+            {loading && <div style={{ fontSize: 13, color: 'var(--text-3)' }}>A carregar…</div>}
+            {error && <div style={{ fontSize: 13, color: '#ff8497' }}>{error}</div>}
+            {content !== null && (
+              <pre className="mono" style={{ fontSize: 12, color: 'var(--text)', overflow: 'auto', margin: 0, whiteSpace: 'pre-wrap' }}>{content}</pre>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ─── Validation result badge ────────────────────────────────────────────────
 function ValBadge({ status, error }: { status: string; error?: string | null }) {
   const ok = status === 'VALID';
@@ -777,7 +818,6 @@ interface ScanResult {
 interface AppImportItem {
   name: string;
   source_repository: string;
-  container_registry_repository: string;
   ci_workflow_file: string;
   environments: { environment_id: string; deployment_name: string; manifest_path?: string }[];
 }
@@ -788,11 +828,11 @@ export function OnboardingApplications() {
   const nav = useNavigate();
   const [candidates, setCandidates] = useState<ScanResult[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [registry, setRegistry] = useState<Record<string, string>>({});
   const [ciWorkflow, setCiWorkflow] = useState<Record<string, string>>({});
   const [workflowFiles, setWorkflowFiles] = useState<Record<string, string[]>>({});
   const [workflowLoading, setWorkflowLoading] = useState<Record<string, boolean>>({});
   const [envIds, setEnvIds] = useState<EnvIdMap>({});
+  const [gitOpsUrl, setGitOpsUrl] = useState('');
   const [err, setErr] = useState('');
   const [scanErr, setScanErr] = useState('');
   const [loading, setLoading] = useState(false);
@@ -809,6 +849,9 @@ export function OnboardingApplications() {
       res.forEach(e => { map[e.name] = e.id; });
       setEnvIds(map);
     }).catch(() => {});
+    apiFetch(`/projects/${projectId}`)
+      .then((p: { git_ops_repository_url?: string }) => setGitOpsUrl(p.git_ops_repository_url ?? ''))
+      .catch(() => {});
     scan();
   }, [projectId]);
 
@@ -833,7 +876,7 @@ export function OnboardingApplications() {
           .finally(() => setWorkflowLoading(p => ({ ...p, [c.name]: false })));
       });
     } catch (e: unknown) {
-      setScanErr(e instanceof Error ? e.message : 'Erro ao escanear repositório.');
+      setScanErr(e instanceof Error ? e.message : 'Erro ao fazer scan ao repositório.');
     } finally { setScanning(false); }
   }
 
@@ -859,7 +902,6 @@ export function OnboardingApplications() {
       const applications: AppImportItem[] = toImport.map(c => ({
         name: c.name,
         source_repository: c.source_repository,
-        container_registry_repository: registry[c.name] ?? '',
         ci_workflow_file: ciWorkflow[c.name] ?? '',
         environments: c.environments
           .filter(envName => envIds[envName])
@@ -901,7 +943,7 @@ export function OnboardingApplications() {
     <>
       <StepLabel n={6} label="Importar Applications" sub="A DevShip percorreu o repositório GitOps em busca de Deployments." />
 
-      {scanning && <div style={{ color: 'var(--text-3)', fontSize: 13 }}>A escanear repositório…</div>}
+      {scanning && <div style={{ color: 'var(--text-3)', fontSize: 13 }}>A fazer scan ao repositório…</div>}
       <ErrBanner msg={scanErr} />
 
       {!scanning && scanErr && (
@@ -933,6 +975,7 @@ export function OnboardingApplications() {
                     <input type="checkbox" checked={isSel} onChange={() => toggleSelect(c.name)} style={{ accentColor: 'var(--teal)', width: 16, height: 16, flex: 'none', cursor: 'pointer' }} />
                     <span style={{ fontSize: 14.5, fontWeight: 600 }}>{c.name}</span>
                     <span className="mono" style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{c.manifest_path}</span>
+                    {gitOpsUrl && <FilePreviewButton repoUrl={gitOpsUrl} path={c.manifest_path} projectId={projectId!} />}
                     <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       {c.environments.map(env => (
                         <span key={env} className="mono" style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: envIds[env] ? 'rgba(52,199,89,.12)' : 'var(--surface-2)', color: envIds[env] ? '#5dd57b' : 'var(--text-3)', border: `1px solid ${envIds[env] ? 'rgba(52,199,89,.24)' : 'var(--border)'}` }}>
@@ -942,10 +985,7 @@ export function OnboardingApplications() {
                     </div>
                   </div>
                   {isSel && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 13 }}>
-                      <FormField label="Container Registry Repository">
-                        <input className="input-base input-mono" value={registry[c.name] ?? ''} onChange={e => setRegistry(p => ({ ...p, [c.name]: e.target.value }))} placeholder="company/backend" />
-                      </FormField>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 13 }}>
                       <FormField label="CI Workflow File">
                         {workflowLoading[c.name] ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-3)', padding: '9px 0' }}>
@@ -969,6 +1009,11 @@ export function OnboardingApplications() {
                             placeholder={workflowFiles[c.name]?.length === 0 ? 'Não detetado — escreve o nome do ficheiro' : 'gitops-deploy.yml'}
                           />
                         )}
+                        {ciWorkflow[c.name] && (
+                          <div style={{ marginTop: 8 }}>
+                            <FilePreviewButton repoUrl={c.source_repository} path={`.github/workflows/${ciWorkflow[c.name]}`} projectId={projectId!} />
+                          </div>
+                        )}
                       </FormField>
                     </div>
                   )}
@@ -984,7 +1029,7 @@ export function OnboardingApplications() {
       {!scanning && !scanErr && candidates.length === 0 && !scanning && (
         <div style={{ border: '1px dashed var(--border)', borderRadius: 14, padding: 34, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>
           Nenhum Deployment encontrado no repositório GitOps.
-          <button onClick={scan} className="btn-secondary" style={{ display: 'block', margin: '14px auto 0', fontSize: 13, padding: '9px 18px', borderRadius: 9 }}>Rescanear</button>
+          <button onClick={scan} className="btn-secondary" style={{ display: 'block', margin: '14px auto 0', fontSize: 13, padding: '9px 18px', borderRadius: 9 }}>Refazer scan</button>
         </div>
       )}
     </>

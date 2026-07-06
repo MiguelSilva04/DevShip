@@ -109,6 +109,27 @@ def repo_exists(repo_url: str) -> bool:
     return resp.status_code == 200
 
 
+def get_file_content(repo_url: str, path: str, ref: str | None = None) -> str | None:
+    """Conteúdo em texto de um ficheiro em repo_url/path (opcionalmente num ref/branch
+    específico). None em qualquer falha — repo/ficheiro inacessível, rate limit, etc."""
+    owner, repo = _parse_owner_repo(repo_url)
+    params = {"ref": ref} if ref else {}
+    try:
+        resp = requests.get(
+            f"https://api.github.com/repos/{owner}/{repo}/contents/{path}",
+            headers=_github_headers(), params=params, timeout=15,
+        )
+        resp.raise_for_status()
+        download_url = resp.json().get("download_url")
+        if not download_url:
+            return None
+        content_resp = requests.get(download_url, timeout=15)
+        content_resp.raise_for_status()
+        return content_resp.text
+    except Exception:
+        return None
+
+
 def list_workflow_files(repo_url: str) -> list[str]:
     """Lista os .yml/.yaml em .github/workflows/ do repo. Lista vazia se a pasta não existir
     (repo sem workflows é um caso válido, ainda que incomum) — não é erro."""

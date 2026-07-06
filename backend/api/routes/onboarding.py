@@ -817,6 +817,22 @@ def list_workflow_files_for_repo(
         return []
 
 
+@router.get("/projects/{project_id}/file-preview")
+def preview_file(
+    project_id: uuid.UUID,
+    repo_url: str = Query(...),
+    path: str = Query(...),
+    ref: str | None = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_cloud_engineer(db, project_id, current_user)
+    content = gs.get_file_content(repo_url, path, ref)
+    if content is None:
+        raise HTTPException(status_code=404, detail="Ficheiro não encontrado ou inacessível.")
+    return {"content": content}
+
+
 # ---------------------------------------------------------------------------
 # Application import
 # ---------------------------------------------------------------------------
@@ -836,7 +852,6 @@ def import_applications(
             project_id=project_id,
             name=item.name,
             source_repository=item.source_repository,
-            container_registry_repository=item.container_registry_repository,
             ci_workflow_file=item.ci_workflow_file,
             created_by=current_user.id,
         )

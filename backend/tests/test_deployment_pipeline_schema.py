@@ -54,7 +54,6 @@ def make_application(project: Project) -> Application:
         project_id=project.id,
         name="Test App",
         source_repository="github.com/org/repo",
-        container_registry_repository="123456789012.dkr.ecr.us-east-1.amazonaws.com/repo",
         ci_workflow_file="deploy.yml",
     )
 
@@ -160,7 +159,6 @@ def _fresh_app_env(db_session, project):
         project_id=project.id,
         name=f"a-{uuid.uuid4().hex[:6]}",
         source_repository=f"github.com/org/{uuid.uuid4().hex[:6]}",
-        container_registry_repository="ecr/org/x",
         ci_workflow_file="deploy.yml",
     )
     db_session.add_all([env, app])

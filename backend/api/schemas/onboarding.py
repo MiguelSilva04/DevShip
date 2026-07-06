@@ -196,7 +196,6 @@ class ApplicationEnvironmentImport(BaseModel):
 class ApplicationImportItem(BaseModel):
     name: str
     source_repository: str
-    container_registry_repository: str
     ci_workflow_file: str
     environments: list[ApplicationEnvironmentImport]
 
@@ -217,7 +216,6 @@ class ApplicationUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     source_repository: Optional[str] = None
-    container_registry_repository: Optional[str] = None
     ci_workflow_file: Optional[str] = None
 
 

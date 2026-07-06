@@ -29,7 +29,6 @@ class Application(Base):
     description: Mapped[str | None] = mapped_column(Text)
     source_repository: Mapped[str] = mapped_column(String(512))
     ci_workflow_file: Mapped[str] = mapped_column(String(255))
-    container_registry_repository: Mapped[str] = mapped_column(String(512))
     is_archived: Mapped[bool] = mapped_column(Boolean(), server_default=sa.false())
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[uuid.UUID | None] = mapped_column(

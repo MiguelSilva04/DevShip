@@ -397,6 +397,54 @@ class TestWorkflowFiles:
 
 
 # ---------------------------------------------------------------------------
+# File preview
+# ---------------------------------------------------------------------------
+
+class TestFilePreview:
+    def test_returns_file_content(self, client):
+        token, team_id = _setup(client, "preview.io")
+        project_id = _project(client, team_id=team_id, token=token)
+
+        with patch("backend.api.routes.onboarding.gs.get_file_content", return_value="apiVersion: apps/v1"):
+            r = client.get(
+                f"/projects/{project_id}/file-preview",
+                params={"repo_url": "https://github.com/org/gitops", "path": "envs/prod/api.yaml"},
+                headers=_auth(token),
+            )
+
+        assert r.status_code == 200
+        assert r.json() == {"content": "apiVersion: apps/v1"}
+
+    def test_returns_404_when_content_is_none(self, client):
+        token, team_id = _setup(client, "preview2.io")
+        project_id = _project(client, team_id=team_id, token=token)
+
+        with patch("backend.api.routes.onboarding.gs.get_file_content", return_value=None):
+            r = client.get(
+                f"/projects/{project_id}/file-preview",
+                params={"repo_url": "https://github.com/org/gitops", "path": "does/not/exist.yaml"},
+                headers=_auth(token),
+            )
+
+        assert r.status_code == 404
+
+    def test_non_cloud_engineer_forbidden(self, client):
+        token, team_id = _setup(client, "preview3.io")
+        project_id = _project(client, team_id=team_id, token=token)
+
+        dev_email = "dev@preview3.io"
+        _register(client, dev_email, name="Dev")
+        dev_token = _login(client, dev_email)
+
+        r = client.get(
+            f"/projects/{project_id}/file-preview",
+            params={"repo_url": "https://github.com/org/gitops", "path": "envs/prod/api.yaml"},
+            headers=_auth(dev_token),
+        )
+        assert r.status_code == 403
+
+
+# ---------------------------------------------------------------------------
 # Application import
 # ---------------------------------------------------------------------------
 
@@ -417,7 +465,7 @@ class TestApplicationImport:
 
         r = client.post(
             f"/projects/{project_id}/applications/import",
-            json={"applications": [{"name": "api", "source_repository": "https://github.com/org/api", "container_registry_repository": "ecr/org/api", "ci_workflow_file": "deploy.yml", "environments": [{"environment_id": env_id, "deployment_name": "api-deploy"}]}]},
+            json={"applications": [{"name": "api", "source_repository": "https://github.com/org/api", "ci_workflow_file": "deploy.yml", "environments": [{"environment_id": env_id, "deployment_name": "api-deploy"}]}]},
             headers=_auth(token),
         )
         assert r.status_code == 201
@@ -431,6 +479,6 @@ class TestApplicationImport:
         proj1 = _project(client, token1, team1_id, name="P1")
         proj2 = _project(client, token2, team2_id, name="P2")
 
-        payload = {"applications": [{"name": "api", "source_repository": "https://github.com/org/shared", "container_registry_repository": "ecr/org/api", "ci_workflow_file": "deploy.yml", "environments": []}]}
+        payload = {"applications": [{"name": "api", "source_repository": "https://github.com/org/shared", "ci_workflow_file": "deploy.yml", "environments": []}]}
         assert client.post(f"/projects/{proj1}/applications/import", json=payload, headers=_auth(token1)).status_code == 201
         assert client.post(f"/projects/{proj2}/applications/import", json=payload, headers=_auth(token2)).status_code == 409
