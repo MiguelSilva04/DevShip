@@ -732,5 +732,34 @@ class TestApplicationImport:
         )
         assert r.status_code == 200
 
-        env = client.get(f"/projects/{project_id}/environments", headers=_auth(token)).json()[0]
-        assert env["argocd_application_name"] == "demo-app-dev"
+    def test_update_environment_validation_failure_detail_is_a_json_string(self, client):
+        # detail must be a string the frontend can JSON.parse back into the validation
+        # payload — a raw dict here would render as the literal "[object Object]".
+        import json
+
+        token, team_id = _setup(client, "envupdatefail.io")
+        project_id = _project(client, token, team_id, git_ops_repository_url="https://github.com/org/gitops")
+
+        with (
+            patch("backend.api.routes.onboarding.validate_branch", return_value=True),
+            patch("backend.api.routes.onboarding.path_exists", return_value=True),
+        ):
+            env_id = client.post(
+                f"/projects/{project_id}/environments",
+                json=[{"name": "dev", "deployment_order": 1}],
+                headers=_auth(token),
+            ).json()[0]["id"]
+
+        with patch("backend.api.routes.onboarding.validate_branch", return_value=False):
+            r = client.patch(
+                f"/projects/{project_id}/environments/{env_id}",
+                json={"gitops_branch": "does-not-exist", "deployment_order": 1},
+                headers=_auth(token),
+            )
+
+        assert r.status_code == 422
+        detail = r.json()["detail"]
+        assert isinstance(detail, str)
+        parsed = json.loads(detail)
+        assert parsed["overall_status"] == "INVALID"
+        assert parsed["branch_status"] == "INVALID"

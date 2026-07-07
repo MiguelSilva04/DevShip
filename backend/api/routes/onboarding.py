@@ -826,11 +826,12 @@ def update_environment(
     _run_environment_validations(validation, env, cluster, project.git_ops_repository_url)
 
     if validation.overall_status != ValidationStatus.VALID:
+        # Build the response payload before rolling back — db.rollback() expires every
+        # object in the session, so reading `validation`'s attributes afterwards would
+        # silently re-fetch the pre-mutation (stale) row instead of what was just computed.
+        detail = EnvironmentValidationResult.model_validate(validation).model_dump_json()
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=EnvironmentValidationResult.model_validate(validation).model_dump(mode="json"),
-        )
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail)
 
     db.commit()
     db.refresh(env)
