@@ -118,11 +118,16 @@ export default function EnvDetail() {
           {appName || appId} <span style={{ color: 'var(--text-3)' }}>/</span> {label}
         </h1>
         <span
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 12px', borderRadius: 999, fontSize: 12, background: p.bg, color: p.col, border: `1px solid ${p.bord}` }}
-          title={status === null ? 'Esta aplicação ainda não foi deployada através da DevShip — o estado fica Unknown até ao primeiro deploy.' : undefined}
+          className={status === null ? 'ds-tooltip' : undefined}
+          style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 12px', borderRadius: 999, fontSize: 12, background: p.bg, color: p.col, border: `1px solid ${p.bord}` }}
         >
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.dot, animation: status === 'Deploying' ? 'ds-pulse 1.4s infinite' : 'none' }} />
-          {status ?? 'Unknown'}
+          {status ?? 'Desconhecido'}
+          {status === null && (
+            <span className="ds-tooltip-bubble">
+              A aplicação "{appName || appId}" ainda não foi <em>deployada</em> em {label} através da DevShip — o estado fica Desconhecido até ao primeiro deploy.
+            </span>
+          )}
         </span>
       </div>
 
@@ -146,7 +151,7 @@ export default function EnvDetail() {
             className="btn-primary hover-bright"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, padding: '9px 16px', borderRadius: 8 }}
           >
-            <UpArrow /> {requiresApproval ? 'Solicitar deploy →' : 'Deploy →'}
+            <UpArrow /> {requiresApproval ? 'Solicitar deploy' : 'Deploy'}
           </button>
         )}
         <button onClick={() => nav(`/app/${appId}/${aeId}/rollback`)} className="btn-ghost" style={{ fontSize: 12.5, padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)' }}>Rollback</button>

@@ -176,7 +176,7 @@ export default function Team() {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 4px' }}>Team</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 4px' }}>Equipa</h1>
           <p style={{ fontSize: 13, color: 'var(--text-2)', margin: 0 }}>
             {readOnly ? 'Membros da equipa.' : 'Membros da equipa e candidatos descobertos automaticamente.'}
           </p>

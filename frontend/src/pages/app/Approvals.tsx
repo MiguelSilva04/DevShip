@@ -33,11 +33,11 @@ export default function Approvals() {
 
   return (
     <div>
-      <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.01em', margin: '0 0 6px' }}>Approvals</h1>
+      <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.01em', margin: '0 0 6px' }}>Aprovações</h1>
       <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 24px' }}>Pedidos de deploy a aguardar decisão.</p>
 
       <h2 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 11px', color: '#ecc26b' }}>
-        Pending{' '}
+        Pendentes{' '}
         <span style={{ background: 'rgba(224,169,59,.15)', color: '#ecc26b', fontSize: 11, padding: '1px 7px', borderRadius: 9, marginLeft: 6 }}>{pending.length}</span>
       </h2>
 

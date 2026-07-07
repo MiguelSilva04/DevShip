@@ -75,11 +75,16 @@ export default function AppDetail() {
               <span className="mono" style={{ fontSize: 13 }}>{ae.environment_name}</span>
               <span>
                 <span
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 10px', borderRadius: 999, fontSize: 11, background: p.bg, color: p.col, border: `1px solid ${p.bord}` }}
-                  title={ae.lifecycle_status === null ? 'Esta aplicação ainda não foi deployada através da DevShip — o estado fica Unknown até ao primeiro deploy.' : undefined}
+                  className={ae.lifecycle_status === null ? 'ds-tooltip' : undefined}
+                  style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 10px', borderRadius: 999, fontSize: 11, background: p.bg, color: p.col, border: `1px solid ${p.bord}` }}
                 >
                   <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.dot, animation: ae.lifecycle_status === 'Deploying' ? 'ds-pulse 1.4s infinite' : 'none' }} />
-                  {ae.lifecycle_status ?? 'Unknown'}
+                  {ae.lifecycle_status ?? 'Desconhecido'}
+                  {ae.lifecycle_status === null && (
+                    <span className="ds-tooltip-bubble">
+                      A aplicação "{data.name}" ainda não foi <em>deployada</em> em {ae.environment_name} através da DevShip — o estado fica Desconhecido até ao primeiro deploy.
+                    </span>
+                  )}
                 </span>
               </span>
               <span />

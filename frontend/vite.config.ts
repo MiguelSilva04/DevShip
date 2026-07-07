@@ -7,6 +7,8 @@ const backendUrl = process.env.BACKEND_URL ?? 'http://localhost:8000';
 export default defineConfig({
   plugins: [react()],
   server: {
+    // ponytail: polling, not native fs events, since bind mounts on Docker Desktop (Windows) don't propagate file-change notifications
+    watch: { usePolling: true },
     proxy: {
       '/auth':                     backendUrl,
       '/users':                    backendUrl,

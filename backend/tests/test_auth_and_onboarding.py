@@ -335,6 +335,35 @@ class TestClusterConfigure:
             r = client.post(f"/projects/{project_id}/cluster", json={"cluster_arn": FAKE_ARN, "iam_role_arn": FAKE_ROLE_ARN}, headers=_auth(token))
         assert r.status_code == 409
 
+    @mock_aws
+    def test_revalidate_never_leaks_raw_exception_text(self, client):
+        # Regression: any exception during re-authentication (e.g. botocore's
+        # ProfileNotFound when a cluster was terraform-destroyed and re-auth breaks in
+        # an unexpected way) must still produce the generic user-safe message — never
+        # the raw exception text, and never an unhandled 500.
+        import boto3
+        boto3.client("eks", region_name="eu-west-1").create_cluster(
+            name="my-cluster", version="1.29", roleArn=FAKE_ROLE_ARN,
+            resourcesVpcConfig={"subnetIds": ["subnet-abc"], "securityGroupIds": []},
+        )
+
+        token, team_id = _setup(client, "clusterleak.io")
+        project_id = _project(client, team_id=team_id, token=token)
+
+        with patch("backend.services.cluster_validation.list_namespaces", return_value=MagicMock(items=[])):
+            client.post(f"/projects/{project_id}/cluster", json={"cluster_arn": FAKE_ARN, "iam_role_arn": FAKE_ROLE_ARN}, headers=_auth(token))
+
+        class _WeirdException(Exception):
+            pass
+
+        with patch("backend.services.cluster_validation.assume_user_role", side_effect=_WeirdException("The config profile (devship-service) could not be found")):
+            r = client.post(f"/projects/{project_id}/cluster/revalidate", headers=_auth(token))
+
+        assert r.status_code == 422
+        assert "devship-service" not in r.json()["detail"]
+        assert "config profile" not in r.json()["detail"]
+        assert "cluster ainda existe" in r.json()["detail"]
+
 
 # ---------------------------------------------------------------------------
 # Environments

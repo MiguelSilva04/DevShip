@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiFetch } from '../../api/client';
-import { OB_PROJ_NAME, OB_PROJECT_ID, OB_TEAM_NAME, GitOpsPathPreviewButton } from '../Onboarding';
+import { OB_PROJ_NAME, OB_PROJECT_ID, GitOpsPathPreviewButton } from '../Onboarding';
 
 interface Cluster {
   cluster_arn: string;
@@ -65,7 +65,6 @@ function formatDate(iso: string) {
 export default function Settings() {
   const projectId = localStorage.getItem(OB_PROJECT_ID);
   const projName = localStorage.getItem(OB_PROJ_NAME) ?? 'my-project';
-  const teamName = localStorage.getItem(OB_TEAM_NAME) ?? '—';
 
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [showEditProject, setShowEditProject] = useState(false);
@@ -76,6 +75,7 @@ export default function Settings() {
 
   const [cluster, setCluster] = useState<Cluster | null>(null);
   const [clusterErr, setClusterErr] = useState('');
+  const [clusterConnected, setClusterConnected] = useState<boolean | null>(null); // null = a verificar
   const [envs, setEnvs] = useState<EnvItem[]>([]);
   const [revalidating, setRevalidating] = useState(false);
   const [revalidateMsg, setRevalidateMsg] = useState('');
@@ -107,7 +107,12 @@ export default function Settings() {
     if (!projectId) return;
     apiFetch(`/projects/${projectId}`).then(setProject).catch(() => setProject(null));
     apiFetch(`/projects/${projectId}/cluster`)
-      .then((c: Cluster) => { setCluster(c); setClusterArn(c.cluster_arn); setArgocdNamespace(c.argocd_namespace); })
+      .then((c: Cluster) => {
+        setCluster(c); setClusterArn(c.cluster_arn); setArgocdNamespace(c.argocd_namespace);
+        apiFetch(`/projects/${projectId}/cluster/revalidate`, { method: 'POST' })
+          .then((rc: Cluster) => { setCluster(rc); setClusterConnected(true); })
+          .catch(() => setClusterConnected(false));
+      })
       .catch((e: unknown) => setClusterErr(e instanceof Error ? e.message : 'Erro ao carregar cluster.'));
     apiFetch(`/projects/${projectId}/environments`).then(setEnvs).catch(() => setEnvs([]));
     apiFetch(`/projects/${projectId}/applications`).then(setApps).catch(() => setApps([]));
@@ -208,8 +213,10 @@ export default function Settings() {
     try {
       const c: Cluster = await apiFetch(`/projects/${projectId}/cluster/revalidate`, { method: 'POST' });
       setCluster(c);
+      setClusterConnected(true);
       setRevalidateMsg('Ligação validada com sucesso.');
     } catch (e: unknown) {
+      setClusterConnected(false);
       setRevalidateMsg(e instanceof Error ? e.message : 'Falha ao revalidar ligação.');
     } finally { setRevalidating(false); }
   }
@@ -223,6 +230,7 @@ export default function Settings() {
         body: JSON.stringify({ cluster_arn: clusterArn, iam_role_arn: iamRoleArn, argocd_namespace: argocdNamespace || undefined }),
       });
       setCluster(c);
+      setClusterConnected(true);
       setShowEditCreds(false);
     } catch (e: unknown) {
       setCredsErr(e instanceof Error ? e.message : 'Erro ao guardar credenciais.');
@@ -246,7 +254,7 @@ export default function Settings() {
 
   return (
     <div style={{ maxWidth: 720 }}>
-      <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 6px' }}>Settings</h1>
+      <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 6px' }}>Definições</h1>
       <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 28px' }}>Configurações do projecto. Só o Cloud Engineer pode editar estas definições.</p>
 
       {isArchived && (
@@ -266,14 +274,11 @@ export default function Settings() {
         </div>
         <div style={{ display: 'flex', gap: 40, marginBottom: 10 }}>
           <div>
-            <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>Team</div>
-            <div className="mono" style={{ fontSize: 13.5, fontWeight: 600, marginTop: 3 }}>{teamName}</div>
-          </div>
-          <div>
             <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>Projeto</div>
             <div className="mono" style={{ fontSize: 13.5, fontWeight: 600, marginTop: 3 }}>{project?.name ?? projName}</div>
           </div>
         </div>
+        <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginBottom: 3 }}>Descrição</div>
         <div style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{project?.description || 'Sem descrição.'}</div>
       </div>
 
@@ -316,8 +321,11 @@ export default function Settings() {
               <div>
                 <div style={{ color: 'var(--text-3)' }}>Estado</div>
                 <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#34C759' }} />
-                  Ligado
+                  <span style={{
+                    width: 6, height: 6, borderRadius: '50%',
+                    background: clusterConnected === null ? '#ecc26b' : clusterConnected ? '#34C759' : '#ff5c5c',
+                  }} />
+                  {clusterConnected === null ? 'A verificar…' : clusterConnected ? 'Ligado' : 'Inacessível'}
                 </div>
               </div>
               <div>
@@ -341,7 +349,7 @@ export default function Settings() {
       </Section>
 
       {envs.length > 0 && (
-        <Section title="Environments">
+        <Section title="Ambientes">
           {envs.map(env => (
             <div key={env.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid var(--border-soft)' }}>
               <span className="mono" style={{ fontSize: 12.5, fontWeight: 600 }}>{(env.display_name || env.name).toUpperCase()}</span>
@@ -359,7 +367,7 @@ export default function Settings() {
       )}
 
       {apps.length > 0 && (
-        <Section title="Applications">
+        <Section title="Aplicações">
           {apps.map(app => (
             <div key={app.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid var(--border-soft)' }}>
               <div>

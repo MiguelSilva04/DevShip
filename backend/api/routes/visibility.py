@@ -135,7 +135,7 @@ def _resolve_cluster_and_namespace(db: Session, ae: ApplicationEnvironment) -> t
             cluster_arn=cluster_ctx.cluster_arn,
         )
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Falha ao ligar ao cluster: {e}")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
     namespace = env.namespace or env.name.lower()
     return eks_info, namespace
 

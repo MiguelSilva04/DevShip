@@ -55,6 +55,35 @@ nav a { color: inherit; text-decoration: none; }
 @keyframes ds-blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
 @keyframes ds-up    { from { opacity: 0; transform: translate(-50%,10px); } to { opacity: 1; transform: translate(-50%,0); } }
 
+.ds-tooltip-bubble {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 260px;
+  white-space: normal;
+  text-align: left;
+  background: var(--surface-3, #2a2d36);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  font-weight: 400;
+  box-shadow: 0 6px 18px rgba(0,0,0,.35);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .12s;
+  z-index: 50;
+  pointer-events: none;
+}
+.ds-tooltip:hover .ds-tooltip-bubble {
+  opacity: 1;
+  visibility: visible;
+}
+
 /* ---- Utility hover classes ---- */
 .hover-teal:hover   { color: var(--teal) !important; }
 .hover-bright:hover { filter: brightness(1.08); }

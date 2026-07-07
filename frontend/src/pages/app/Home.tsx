@@ -69,21 +69,20 @@ export default function Home() {
 
   return (
     <div>
-      <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.01em', margin: '0 0 18px' }}>Overview</h1>
+      <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.01em', margin: '0 0 18px' }}>Resumo</h1>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 13, marginBottom: 26 }}>
-        <StatCard label="Total App Environments" value={String(data.total_application_environments)} />
-        <StatCard label="Healthy" value={String(data.healthy_count)} valueColor="#5dd57b" />
-        <StatCard label="Degraded" value={String(data.degraded_count)} valueColor="#ff8497" sub={data.degraded_count > 0 ? 'Needs attention' : undefined} highlight={data.degraded_count > 0} />
+        <StatCard label="Deploys ativos" value={String(data.total_application_environments)} />
+        <StatCard label="Saudáveis" value={String(data.healthy_count)} valueColor="#5dd57b" />
+        <StatCard label="Degradados" value={String(data.degraded_count)} valueColor="#ff8497" sub={data.degraded_count > 0 ? 'Requer atenção' : undefined} highlight={data.degraded_count > 0} />
         <StatCard label="Deploys hoje" value={String(data.deploys_today)} />
       </div>
 
-      <h2 style={{ fontSize: 15, fontWeight: 600, margin: '0 0 13px' }}>Applications</h2>
+      <h2 style={{ fontSize: 15, fontWeight: 600, margin: '0 0 13px' }}>Aplicações</h2>
 
       {data.applications.length === 0 && (
         <div style={{ color: 'var(--text-3)', fontSize: 13, padding: '24px 0' }}>Sem applications configuradas.</div>
       )}
-
       {data.applications.map(app => (
         <div key={app.id} style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', overflow: 'hidden', marginBottom: 12 }}>
           <button
@@ -119,11 +118,16 @@ export default function Home() {
                   >
                     <span className="mono" style={{ fontSize: 12, width: 90, color: 'var(--text-2)' }}>{ae.environment_name}</span>
                     <span
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 10px', borderRadius: 999, fontSize: 11, background: p.bg, color: p.col, border: `1px solid ${p.bord}` }}
-                      title={status === null ? 'Esta aplicação ainda não foi deployada através da DevShip — o estado fica Unknown até ao primeiro deploy.' : undefined}
+                      className={status === null ? 'ds-tooltip' : undefined}
+                      style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 10px', borderRadius: 999, fontSize: 11, background: p.bg, color: p.col, border: `1px solid ${p.bord}` }}
                     >
                       <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.dot, animation: isActive(status) ? 'ds-pulse 1.4s infinite' : 'none' }} />
-                      {status ?? 'Unknown'}
+                      {status ?? 'Desconhecido'}
+                      {status === null && (
+                        <span className="ds-tooltip-bubble">
+                          A aplicação "{app.name}" ainda não foi <em>deployada</em> em {ae.environment_name} através da DevShip — o estado fica Desconhecido até ao primeiro deploy.
+                        </span>
+                      )}
                     </span>
                     <span style={{ marginLeft: 'auto', color: 'var(--text-3)', fontSize: 13 }}>→</span>
                   </button>

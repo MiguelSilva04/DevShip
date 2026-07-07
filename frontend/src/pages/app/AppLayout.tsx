@@ -74,23 +74,23 @@ export default function AppLayout() {
           <span style={{ fontSize:15, fontWeight:600 }}>DevShip</span>
         </div>
 
-        <NavBtn icon={IconGrid}   label="Applications" style={active('home')}         onClick={() => nav('/app/home')} />
-        {isCloud && <NavBtn icon={IconLayers} label="Environments" style={active('environments')} onClick={() => nav('/app/environments')} />}
+        <NavBtn icon={IconGrid}   label="Aplicações" style={active('home')}         onClick={() => nav('/app/home')} />
+        {isCloud && <NavBtn icon={IconLayers} label="Ambientes" style={active('environments')} onClick={() => nav('/app/environments')} />}
         {canApprove && (
-          <NavBtn icon={IconShield} label="Approvals" style={active('approvals')} onClick={() => nav('/app/approvals')}>
+          <NavBtn icon={IconShield} label="Aprovações" style={active('approvals')} onClick={() => nav('/app/approvals')}>
             {pendingCount > 0 && (
               <span style={{ marginLeft:'auto', background:'var(--teal)', color:'var(--teal-ink)', fontSize:10, fontWeight:600, minWidth:18, height:18, borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 5px' }}>{pendingCount}</span>
             )}
           </NavBtn>
         )}
         {canViewTeam && (
-          <NavBtn icon={IconUsers} label="Team" style={active('team')} onClick={() => nav('/app/team')}>
+          <NavBtn icon={IconUsers} label="Equipa" style={active('team')} onClick={() => nav('/app/team')}>
             {canManageTeam && candidateCount > 0 && (
               <span style={{ marginLeft:'auto', background:'var(--teal)', color:'var(--teal-ink)', fontSize:10, fontWeight:600, minWidth:18, height:18, borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 5px' }}>{candidateCount}</span>
             )}
           </NavBtn>
         )}
-        {isCloud && <NavBtn icon={IconSettings} label="Settings"  style={active('settings')}  onClick={() => nav('/app/settings')} />}
+        {isCloud && <NavBtn icon={IconSettings} label="Definições"  style={active('settings')}  onClick={() => nav('/app/settings')} />}
         <NavBtn icon={IconBook} label="Como funciona" style={active('how')} onClick={() => nav('/app/how')} />
 
         {/* User */}
@@ -122,7 +122,7 @@ export default function AppLayout() {
           <div style={{ marginLeft:'auto', display:'flex', gap:8 }}>
             {canApprove && (
               <button onClick={() => nav('/app/approvals')} className="btn-secondary" style={{ display:'inline-flex', alignItems:'center', gap:7, fontSize:12, padding:'7px 12px', borderRadius:8 }}>
-                Approvals
+                Aprovações
                 {pendingCount > 0 && (
                   <span style={{ background:'var(--teal)', color:'var(--teal-ink)', fontSize:10, fontWeight:600, minWidth:17, height:17, borderRadius:9, display:'inline-flex', alignItems:'center', justifyContent:'center' }}>{pendingCount}</span>
                 )}
@@ -130,13 +130,13 @@ export default function AppLayout() {
             )}
             {canViewTeam && (
               <button onClick={() => nav('/app/team')} className="btn-secondary" style={{ display:'inline-flex', alignItems:'center', gap:7, fontSize:12, padding:'7px 12px', borderRadius:8 }}>
-                Team
+                Equipa
                 {canManageTeam && candidateCount > 0 && (
                   <span style={{ background:'var(--teal)', color:'var(--teal-ink)', fontSize:10, fontWeight:600, minWidth:17, height:17, borderRadius:9, display:'inline-flex', alignItems:'center', justifyContent:'center' }}>{candidateCount}</span>
                 )}
               </button>
             )}
-            {isCloud && <button onClick={() => nav('/app/settings')} className="btn-secondary" style={{ fontSize:12, padding:'7px 12px', borderRadius:8 }}>Settings</button>}
+            {isCloud && <button onClick={() => nav('/app/settings')} className="btn-secondary" style={{ fontSize:12, padding:'7px 12px', borderRadius:8 }}>Definições</button>}
           </div>
         </div>
 

@@ -36,7 +36,7 @@ export default function Environments() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 6 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.01em', margin: 0 }}>Environments</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.01em', margin: 0 }}>Ambientes</h1>
       </div>
       <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 18px', maxWidth: 620, lineHeight: 1.6 }}>
         Ambientes configurados no projeto durante o onboarding. <span style={{ color: 'var(--text-3)' }}>Só o Cloud Engineer vê esta lista completa</span> — Developers e Tech Leads acedem aos environments apenas através das applications que neles fazem deploy.
