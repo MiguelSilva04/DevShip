@@ -46,10 +46,13 @@ export default function Rollback() {
         projectId ? apiFetch(`/projects/${projectId}/environments`) : Promise.resolve([]),
       ]);
 
-      // Rollback always targets the last HEALTHY version, excluding the current one —
-      // no manual selection (design doc rule). Mirrors the backend's own target lookup.
+      // Rollback always targets the last version that was healthy, excluding the current
+      // one — no manual selection (design doc rule). Superseded means "was Healthy, later
+      // replaced" (backend/services/deploy_pipeline.py), so it counts here too — otherwise
+      // this preview would go blank the moment a second successful deploy lands, even
+      // though the backend still accepts the rollback. Mirrors the backend's target lookup.
       const lastHealthy = (hist as DeploymentVersionDetail[]).find(
-        v => v.lifecycle_status === 'Healthy' && v.id !== ae.current_version?.id
+        v => (v.lifecycle_status === 'Healthy' || v.lifecycle_status === 'Superseded') && v.id !== ae.current_version?.id
       );
       setTarget(lastHealthy ?? null);
 

@@ -173,13 +173,16 @@ def create_rollback(
         .first()
     )
 
-    # No manual target selection — rollback always targets the last HEALTHY version,
-    # excluding the current one (design doc rule, not the mockup's per-version picker).
+    # No manual target selection — rollback always targets the last version that was
+    # healthy, excluding the current one (design doc rule, not the mockup's per-version
+    # picker). Superseded means "was Healthy, later replaced" (see _supersede_previous_version
+    # in deploy_pipeline.py) — it must count here too, or every AE loses its rollback target
+    # the moment a second successful deploy lands, since only one version can be Healthy at a time.
     target = (
         db.query(DeploymentVersion)
         .filter(
             DeploymentVersion.application_environment_id == app_env_id,
-            DeploymentVersion.lifecycle_status == LifecycleStatus.HEALTHY,
+            DeploymentVersion.lifecycle_status.in_([LifecycleStatus.HEALTHY, LifecycleStatus.SUPERSEDED]),
             DeploymentVersion.id != (current.id if current else None),
         )
         .order_by(DeploymentVersion.created_at.desc())

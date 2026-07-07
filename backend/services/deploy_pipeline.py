@@ -408,11 +408,15 @@ _NON_TERMINAL_STATUSES = (LifecycleStatus.DEPLOYING, LifecycleStatus.HEALTHY, Li
 
 def _supersede_previous_version(db, new_version: DeploymentVersion, deployment_type: DeploymentType) -> None:
     """
-    Called once the new version's rollout is confirmed complete — the point where it
-    actually replaced whatever was running. The most recent non-terminal version for the
-    same application_environment (Healthy/Degraded/Deploying) is marked RolledBack if this
-    replacement came from a ROLLBACK request, or Superseded otherwise. Versions already
-    terminal (Failed/RolledBack/Superseded) are untouched — they were already resolved.
+    Chamada quando o rollout da nova versão está confirmado como completo. A versão
+    não-terminal mais recente da mesma application_environment é:
+    - marcada RolledBack, se este deploy for um ROLLBACK (independente do estado em que
+      estava — RolledBack é um registo factual do que aconteceu, não um juízo de qualidade);
+    - marcada Superseded, SÓ SE estava Healthy no momento da substituição — Superseded
+      significa "foi boa, entretanto foi ultrapassada", nunca "estava avariada e foi
+      ultrapassada". Se estava Degraded (ou outro estado não-Healthy), mantém esse estado —
+      é histórico real que não deve ser apagado, e não deve voltar a ser oferecida como alvo
+      de rollback mais tarde.
     """
     previous = (
         db.query(DeploymentVersion)
@@ -426,9 +430,11 @@ def _supersede_previous_version(db, new_version: DeploymentVersion, deployment_t
     )
     if previous is None:
         return
-    previous.lifecycle_status = (
-        LifecycleStatus.ROLLED_BACK if deployment_type == DeploymentType.ROLLBACK else LifecycleStatus.SUPERSEDED
-    )
+    if deployment_type == DeploymentType.ROLLBACK:
+        previous.lifecycle_status = LifecycleStatus.ROLLED_BACK
+    elif previous.lifecycle_status == LifecycleStatus.HEALTHY:
+        previous.lifecycle_status = LifecycleStatus.SUPERSEDED
+    # else: estava Degraded (ou outro não-Healthy) — não mexer, fica como está.
 
 
 def compute_lifecycle_status(events: list[DeploymentEvent]) -> LifecycleStatus:

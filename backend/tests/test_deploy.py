@@ -617,6 +617,29 @@ class TestDeployPipeline:
         assert healthy_old.lifecycle_status == LifecycleStatus.SUPERSEDED
         assert failed_attempt.lifecycle_status == LifecycleStatus.FAILED
 
+    def test_supersede_keeps_degraded_previous_as_degraded_on_standard_deploy(self, db_session):
+        """Regression: Superseded must mean 'was Healthy, later replaced' — never 'was
+        Degraded, later replaced'. Otherwise a version that never worked could be offered
+        as a rollback target once it stops being 'current', which is wrong twice over:
+        it wasn't healthy, and create_rollback treats Superseded as a valid target."""
+        from datetime import datetime, timedelta, timezone
+        from backend.services.deploy_pipeline import _supersede_previous_version
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+
+        now = datetime.now(timezone.utc)
+        old = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.DEGRADED, created_at=now)
+        db_session.add(old)
+        db_session.flush()
+        new = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY, created_at=now + timedelta(seconds=1))
+        db_session.add(new)
+        db_session.flush()
+
+        _supersede_previous_version(db_session, new, DeploymentType.STANDARD)
+        db_session.flush()
+
+        db_session.refresh(old)
+        assert old.lifecycle_status == LifecycleStatus.DEGRADED
+
     def test_supersede_no_previous_version_is_a_no_op(self, db_session):
         from backend.services.deploy_pipeline import _supersede_previous_version
         _, team, project, env, app, app_env = _setup_chain(db_session)
@@ -791,6 +814,42 @@ class TestRollback:
         assert r.status_code == 201, r.text
         data = r.json()
         assert data["deployment_type"] == "ROLLBACK"
+        assert data["rollback_target_version_id"] == str(target.id)
+        mock_trigger.assert_called_once()
+
+    def test_rollback_endpoint_accepts_superseded_target(self, client, db_session):
+        """Regression: from the second successful deploy onward, the previous version is
+        marked Superseded (not Healthy) — only one version can be Healthy at a time. If
+        create_rollback only looked for Healthy, every AE would permanently lose its
+        rollback target after one more successful deploy. Superseded means 'was Healthy,
+        later replaced', so it must be an accepted target."""
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        target = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.SUPERSEDED, image_tag="v1", created_at=now)
+        db_session.add(target)
+        db_session.flush()
+        current = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY, image_tag="v2", created_at=now + timedelta(seconds=1))
+        db_session.add(current)
+        db_session.flush()
+
+        api_user_email = f"ce@{team.domain}"
+        _register(client, api_user_email)
+        token = _login(client, api_user_email)
+        api_user = db_session.query(User).filter(User.email == api_user_email).first()
+        api_user.github_username = "octocat"
+        db_session.add(TeamMember(team_id=team.id, user_id=api_user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        db_session.flush()
+
+        with patch("backend.services.deploy_pipeline.trigger_deploy") as mock_trigger:
+            r = client.post(
+                f"/application-environments/{app_env.id}/rollback",
+                json={},
+                headers=_auth(token),
+            )
+        assert r.status_code == 201, r.text
+        data = r.json()
         assert data["rollback_target_version_id"] == str(target.id)
         mock_trigger.assert_called_once()
 
