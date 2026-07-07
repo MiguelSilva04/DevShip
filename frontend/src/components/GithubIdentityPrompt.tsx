@@ -5,12 +5,15 @@ export const GITHUB_IDENTITY_ERROR = 'Configura a tua identidade GitHub antes de
 
 interface Props {
   onConfigured: () => void;
+  configured?: boolean;
+  currentUsername?: string | null;
+  currentEmail?: string | null;
 }
 
-export default function GithubIdentityPrompt({ onConfigured }: Props) {
+export default function GithubIdentityPrompt({ onConfigured, configured, currentUsername, currentEmail }: Props) {
   const [open, setOpen] = useState(false);
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState(currentUsername ?? '');
+  const [email, setEmail] = useState(currentEmail ?? '');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
 
@@ -31,10 +34,12 @@ export default function GithubIdentityPrompt({ onConfigured }: Props) {
   return (
     <>
       <button
-        onClick={() => setOpen(true)}
-        style={{ fontSize: 12, padding: '5px 12px', borderRadius: 7, border: '1px solid rgba(241,85,108,.4)', background: 'transparent', color: '#ff8497', cursor: 'pointer', flex: 'none', marginLeft: 10 }}
+        onClick={() => { setUsername(currentUsername ?? ''); setEmail(currentEmail ?? ''); setOpen(true); }}
+        style={configured
+          ? { fontSize: 12, padding: '5px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer', flex: 'none', marginLeft: 10 }
+          : { fontSize: 12, padding: '5px 12px', borderRadius: 7, border: '1px solid rgba(241,85,108,.4)', background: 'transparent', color: '#ff8497', cursor: 'pointer', flex: 'none', marginLeft: 10 }}
       >
-        Configurar
+        {configured ? 'Alterar' : 'Configurar'}
       </button>
 
       {open && (

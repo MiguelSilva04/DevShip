@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 
 type LifecycleStatus = 'Deploying' | 'Healthy' | 'Degraded' | 'Failed' | 'RolledBack' | 'Superseded';
+type UpToDateStatus = 'UpToDate' | 'Outdated' | 'Unknown';
 
 interface AEStatus {
   id: string;
@@ -35,11 +36,19 @@ export default function AppDetail() {
   const nav = useNavigate();
   const [data, setData] = useState<AppDetail | null>(null);
   const [error, setError] = useState('');
+  const [upToDate, setUpToDate] = useState<Record<string, UpToDateStatus>>({});
 
   useEffect(() => {
     if (!appId) return;
     apiFetch(`/applications/${appId}`)
-      .then(setData)
+      .then((d: AppDetail) => {
+        setData(d);
+        d.environments.forEach(ae => {
+          apiFetch(`/application-environments/${ae.id}/up-to-date`)
+            .then((r: { status: UpToDateStatus }) => setUpToDate(prev => ({ ...prev, [ae.id]: r.status })))
+            .catch(() => {});
+        });
+      })
       .catch(e => setError(e.message));
   }, [appId]);
 
@@ -81,7 +90,7 @@ export default function AppDetail() {
                   <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.dot, animation: ae.lifecycle_status === 'Deploying' ? 'ds-pulse 1.4s infinite' : 'none' }} />
                   {ae.lifecycle_status ?? 'Desconhecido'}
                   {ae.lifecycle_status === null && (
-                    <span className="ds-tooltip-bubble">
+                    <span className={`ds-tooltip-bubble${i === 0 ? ' ds-tooltip-bubble-below' : ''}`}>
                       A aplicação "{data.name}" ainda não foi <em>deployada</em> em {ae.environment_name} através da DevShip — o estado fica Desconhecido até ao primeiro deploy.
                     </span>
                   )}
@@ -89,7 +98,21 @@ export default function AppDetail() {
               </span>
               <span />
               <span style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button onClick={() => nav(`/app/${appId}/${ae.id}/deploy`)} className="btn-primary" style={{ fontSize: 11.5, padding: '6px 13px', borderRadius: 7 }}>Deploy</button>
+                {!upToDate[ae.id] ? (
+                  <button disabled style={{ fontSize: 11.5, padding: '6px 13px', borderRadius: 7, background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)', cursor: 'default', opacity: .7 }}>
+                    A verificar…
+                  </button>
+                ) : upToDate[ae.id] === 'UpToDate' ? (
+                  <button
+                    disabled
+                    title="Já está tudo deployado — sem commits novos desde o último deploy."
+                    style={{ fontSize: 11.5, padding: '6px 13px', borderRadius: 7, background: 'rgba(52,199,89,.13)', color: '#5dd57b', border: '1px solid rgba(52,199,89,.24)', cursor: 'default' }}
+                  >
+                    Up to date
+                  </button>
+                ) : (
+                  <button onClick={() => nav(`/app/${appId}/${ae.id}/deploy`)} className="btn-primary" style={{ fontSize: 11.5, padding: '6px 13px', borderRadius: 7 }}>Deploy</button>
+                )}
                 <button onClick={() => nav(`/app/${appId}/${ae.id}`)} className="btn-secondary" style={{ fontSize: 11.5, padding: '6px 13px', borderRadius: 7 }}>Ver detalhes</button>
               </span>
             </div>

@@ -27,6 +27,7 @@ services:
       DATABASE_URL: postgresql+psycopg2://devship:devship@postgres:5432/devship_dev
     volumes:
       - ./backend:/app/backend
+      - ${USERPROFILE}/.aws:/root/.aws:ro
     ports:
       - "8000:8000"
     depends_on:

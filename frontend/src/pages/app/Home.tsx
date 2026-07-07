@@ -45,12 +45,18 @@ function effectiveStatus(ae: AEStatus): LifecycleStatus | null {
   return ae.lifecycle_status ?? ae.discovered_status;
 }
 
+type UpToDateStatus = 'UpToDate' | 'Outdated' | 'Unknown';
+
 export default function Home() {
   const nav = useNavigate();
   const [data, setData] = useState<HomepageData | null>(null);
   const [error, setError] = useState('');
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [picker, setPicker] = useState<Record<string, boolean>>({});
+  // Só verificado quando o accordion de uma app é aberto — perguntar ao GitHub o HEAD de
+  // cada AE de cada app logo no load da Home seria uma chamada por AE, sempre, mesmo para
+  // apps que o utilizador nunca expande.
+  const [upToDate, setUpToDate] = useState<Record<string, UpToDateStatus>>({});
 
   useEffect(() => {
     const projectId = localStorage.getItem('ob_project_id');
@@ -63,6 +69,15 @@ export default function Home() {
       })
       .catch(e => setError(e.message));
   }, []);
+
+  function checkUpToDate(environments: AEStatus[]) {
+    environments.forEach(ae => {
+      if (upToDate[ae.id]) return;
+      apiFetch(`/application-environments/${ae.id}/up-to-date`)
+        .then((r: { status: UpToDateStatus }) => setUpToDate(prev => ({ ...prev, [ae.id]: r.status })))
+        .catch(() => {});
+    });
+  }
 
   if (error) return <div style={{ color: '#ff8497', fontSize: 13, padding: '40px 0' }}>{error}</div>;
   if (!data) return <Spinner />;
@@ -86,7 +101,11 @@ export default function Home() {
       {data.applications.map(app => (
         <div key={app.id} style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', overflow: 'hidden', marginBottom: 12 }}>
           <button
-            onClick={() => setOpen(p => ({ ...p, [app.id]: !p[app.id] }))}
+            onClick={() => {
+              const wasOpen = open[app.id];
+              setOpen(p => ({ ...p, [app.id]: !wasOpen }));
+              if (!wasOpen) checkUpToDate(app.environments);
+            }}
             style={{ display: 'flex', alignItems: 'center', gap: 13, width: '100%', background: 'transparent', border: 'none', cursor: 'pointer', padding: '16px 18px', textAlign: 'left', color: 'var(--text)' }}
           >
             <span style={{ color: 'var(--text-3)', fontSize: 12, width: 12 }}>{open[app.id] ? '▼' : '▶'}</span>
@@ -124,7 +143,7 @@ export default function Home() {
                       <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.dot, animation: isActive(status) ? 'ds-pulse 1.4s infinite' : 'none' }} />
                       {status ?? 'Desconhecido'}
                       {status === null && (
-                        <span className="ds-tooltip-bubble">
+                        <span className={`ds-tooltip-bubble${i === 0 ? ' ds-tooltip-bubble-below' : ''}`}>
                           A aplicação "{app.name}" ainda não foi <em>deployada</em> em {ae.environment_name} através da DevShip — o estado fica Desconhecido até ao primeiro deploy.
                         </span>
                       )}
@@ -138,7 +157,11 @@ export default function Home() {
 
           <div style={{ borderTop: '1px solid var(--border-soft)', padding: '11px 18px', display: 'flex', alignItems: 'center', gap: 10 }}>
             <button
-              onClick={() => setPicker(p => ({ ...p, [app.id]: !p[app.id] }))}
+              onClick={() => {
+                const wasOpen = picker[app.id];
+                setPicker(p => ({ ...p, [app.id]: !wasOpen }));
+                if (!wasOpen) checkUpToDate(app.environments);
+              }}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: '1px solid rgba(43,199,180,.3)', background: 'rgba(43,199,180,.08)', color: 'var(--teal)', fontWeight: 600, fontSize: 12, padding: '7px 14px', borderRadius: 8, cursor: 'pointer' }}
               className="hover-bright"
             >
@@ -147,16 +170,41 @@ export default function Home() {
             {picker[app.id] ? (
               <>
                 <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>para:</span>
-                {app.environments.map(ae => (
-                  <button
-                    key={ae.id}
-                    onClick={() => nav(`/app/${app.id}/${ae.id}/deploy`)}
-                    className="mono"
-                    style={{ fontSize: 11.5, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', padding: '6px 12px', borderRadius: 7, cursor: 'pointer' }}
-                  >
-                    {ae.environment_name}
-                  </button>
-                ))}
+                {app.environments.map(ae => {
+                  const checked = upToDate[ae.id];
+                  if (!checked) {
+                    return (
+                      <button
+                        key={ae.id}
+                        disabled
+                        className="mono"
+                        style={{ fontSize: 11.5, border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text-3)', padding: '6px 12px', borderRadius: 7, cursor: 'default', opacity: .7 }}
+                      >
+                        {ae.environment_name} · a verificar…
+                      </button>
+                    );
+                  }
+                  return checked === 'UpToDate' ? (
+                    <button
+                      key={ae.id}
+                      disabled
+                      title="Já está tudo deployado — sem commits novos desde o último deploy."
+                      className="mono"
+                      style={{ fontSize: 11.5, border: '1px solid rgba(52,199,89,.24)', background: 'rgba(52,199,89,.08)', color: '#5dd57b', padding: '6px 12px', borderRadius: 7, cursor: 'default' }}
+                    >
+                      {ae.environment_name} · Up to date
+                    </button>
+                  ) : (
+                    <button
+                      key={ae.id}
+                      onClick={() => nav(`/app/${app.id}/${ae.id}/deploy`)}
+                      className="mono"
+                      style={{ fontSize: 11.5, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', padding: '6px 12px', borderRadius: 7, cursor: 'pointer' }}
+                    >
+                      {ae.environment_name}
+                    </button>
+                  );
+                })}
               </>
             ) : (
               <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>Escolhe o environment de destino</span>

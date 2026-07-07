@@ -596,6 +596,10 @@ class TestComputeUpToDate:
 
 
 class TestUpToDateEndpoint:
+    # Compara latest.source_commit_sha contra o HEAD do repositório SOURCE da application
+    # (app.source_repository / env.source_branch) — não o repositório/branch GitOps, que é
+    # um artefacto derivado e sempre um passo atrás do código-fonte por natureza.
+
     def test_no_current_version_returns_unknown(self, client, db_session):
         user, _, _, _, _, ae = _setup_chain(db_session)
         token = _token_for(user)
@@ -604,7 +608,7 @@ class TestUpToDateEndpoint:
         assert r.status_code == 200
         assert r.json()["status"] == "Unknown"
 
-    def test_no_argocd_sync_revision_returns_unknown(self, client, db_session):
+    def test_no_source_commit_sha_returns_unknown(self, client, db_session):
         user, _, _, _, _, ae = _setup_chain(db_session)
         _make_version(db_session, ae, LifecycleStatus.HEALTHY)
         token = _token_for(user)
@@ -613,24 +617,11 @@ class TestUpToDateEndpoint:
         assert r.status_code == 200
         assert r.json()["status"] == "Unknown"
 
-    def test_missing_gitops_branch_returns_unknown(self, client, db_session):
-        user, _, project, _, _, ae = _setup_chain(db_session)
-        project.git_ops_repository_url = "https://github.com/org/gitops"
-        v = _make_version(db_session, ae, LifecycleStatus.HEALTHY)
-        v.argocd_sync_revision = "abc123"
-        db_session.flush()
-        token = _token_for(user)
-
-        r = client.get(f"/application-environments/{ae.id}/up-to-date", headers=_auth(token))
-        assert r.status_code == 200
-        assert r.json()["status"] == "Unknown"
-
     def test_matching_head_returns_up_to_date(self, client, db_session):
-        user, _, project, env, _, ae = _setup_chain(db_session)
-        project.git_ops_repository_url = "https://github.com/org/gitops"
-        env.gitops_branch = "main"
+        user, _, _, env, _, ae = _setup_chain(db_session)
+        env.source_branch = "main"
         v = _make_version(db_session, ae, LifecycleStatus.HEALTHY)
-        v.argocd_sync_revision = "abc123"
+        v.source_commit_sha = "abc123"
         db_session.flush()
         token = _token_for(user)
 
@@ -638,13 +629,13 @@ class TestUpToDateEndpoint:
             r = client.get(f"/application-environments/{ae.id}/up-to-date", headers=_auth(token))
         assert r.status_code == 200
         assert r.json()["status"] == "UpToDate"
+        assert r.json()["source_head_sha"] == "abc123"
 
     def test_diverging_head_returns_outdated(self, client, db_session):
-        user, _, project, env, _, ae = _setup_chain(db_session)
-        project.git_ops_repository_url = "https://github.com/org/gitops"
-        env.gitops_branch = "main"
+        user, _, _, env, _, ae = _setup_chain(db_session)
+        env.source_branch = "main"
         v = _make_version(db_session, ae, LifecycleStatus.HEALTHY)
-        v.argocd_sync_revision = "abc123"
+        v.source_commit_sha = "abc123"
         db_session.flush()
         token = _token_for(user)
 
@@ -654,11 +645,10 @@ class TestUpToDateEndpoint:
         assert r.json()["status"] == "Outdated"
 
     def test_github_lookup_failure_returns_unknown(self, client, db_session):
-        user, _, project, env, _, ae = _setup_chain(db_session)
-        project.git_ops_repository_url = "https://github.com/org/gitops"
-        env.gitops_branch = "main"
+        user, _, _, env, _, ae = _setup_chain(db_session)
+        env.source_branch = "main"
         v = _make_version(db_session, ae, LifecycleStatus.HEALTHY)
-        v.argocd_sync_revision = "abc123"
+        v.source_commit_sha = "abc123"
         db_session.flush()
         token = _token_for(user)
 

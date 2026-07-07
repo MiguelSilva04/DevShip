@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { OB_TEAM_ID, OB_PROJECT_ID } from '../Onboarding';
 import { useUser } from '../../context/UserContext';
+import GithubIdentityPrompt from '../../components/GithubIdentityPrompt';
 
 interface Member { team_member_id: string; user_id: string; name: string; email: string; role: string; joined_at: string; application_ids: string[]; }
 interface Candidate { user_id: string; name: string; email: string; }
 interface TeamInfo { id: string; name: string; description: string | null; domain: string; }
 interface AppItem { id: string; name: string; source_repository: string; }
+interface MeInfo { github_username: string | null; github_email: string | null; }
 
 const ROLE_LABEL: Record<string, string> = {
   CLOUD_ENGINEER: 'Cloud Engineer',
@@ -33,6 +35,7 @@ type AllowedRole = 'DEVELOPER' | 'TECH_LEAD';
 
 export default function Team() {
   const nav = useNavigate();
+  const location = useLocation();
   const { user } = useUser();
   const [members, setMembers] = useState<Member[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -51,6 +54,15 @@ export default function Team() {
   const [accessSelection, setAccessSelection] = useState<string[]>([]);
   const [savingAccess, setSavingAccess] = useState(false);
   const [accessErr, setAccessErr] = useState('');
+  const [me, setMe] = useState<MeInfo | null>(null);
+  const [highlightMemberId, setHighlightMemberId] = useState<string | null>(
+    (location.state as { newDeveloperId?: string } | null)?.newDeveloperId ?? null
+  );
+
+  useEffect(() => {
+    if (location.state) nav(location.pathname, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const teamId = localStorage.getItem(OB_TEAM_ID);
   const projectId = localStorage.getItem(OB_PROJECT_ID);
@@ -64,6 +76,7 @@ export default function Team() {
       })
       .catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Erro ao carregar team.'));
     apiFetch(`/teams/${teamId}`).then(setTeam).catch(() => setTeam(null));
+    apiFetch(`/auth/me`).then(setMe).catch(() => setMe(null));
     if (projectId) {
       apiFetch(`/projects/${projectId}/applications`).then(setApps).catch(() => setApps([]));
     }
@@ -129,6 +142,7 @@ export default function Team() {
       });
       setMembers(prev => [...prev, member]);
       setCandidates(prev => prev.filter(c => c.user_id !== candidate.user_id));
+      if (role === 'DEVELOPER') setHighlightMemberId(member.team_member_id);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Erro ao adicionar membro.');
     } finally { setBusy(null); }
@@ -216,6 +230,30 @@ export default function Team() {
         </div>
       )}
 
+      {/* A tua conta — identidade GitHub, sítio proativo para configurar fora do fluxo
+          de erro de deploy/rollback (onde só aparece quando já bloqueou uma ação). */}
+      <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '18px 20px', marginBottom: 24 }}>
+        <div style={{ fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 14 }}>A tua conta</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 13.5, fontWeight: 500 }}>Identidade GitHub</div>
+            <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 3 }}>
+              {me?.github_username ? (
+                <span className="mono">{me.github_username}</span>
+              ) : (
+                'Ainda não configurada — necessária para fazer deploy ou rollback.'
+              )}
+            </div>
+          </div>
+          <GithubIdentityPrompt
+            onConfigured={load}
+            configured={!!me?.github_username}
+            currentUsername={me?.github_username}
+            currentEmail={me?.github_email}
+          />
+        </div>
+      </div>
+
       {/* Edit team modal */}
       {showEditTeam && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setShowEditTeam(false)}>
@@ -288,13 +326,20 @@ export default function Team() {
                 )}
                 {m.role === 'DEVELOPER' ? (
                   manageable ? (
-                    <button
-                      onClick={() => openAccess(m)}
-                      disabled={isBusy}
-                      style={{ fontSize: 11.5, padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: isBusy ? 'default' : 'pointer', textAlign: 'left' }}
-                    >
-                      {m.application_ids.length} app{m.application_ids.length !== 1 ? 's' : ''} · editar
-                    </button>
+                    <div style={{ position: 'relative' }}>
+                      <button
+                        onClick={() => { openAccess(m); setHighlightMemberId(null); }}
+                        disabled={isBusy}
+                        style={{ fontSize: 11.5, padding: '5px 11px', borderRadius: 7, border: `1px solid ${highlightMemberId === m.team_member_id ? 'var(--teal)' : 'var(--border)'}`, background: 'transparent', color: 'var(--text-2)', cursor: isBusy ? 'default' : 'pointer', textAlign: 'left' }}
+                      >
+                        {m.application_ids.length} app{m.application_ids.length !== 1 ? 's' : ''} · editar
+                      </button>
+                      {highlightMemberId === m.team_member_id && (
+                        <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, width: 220, zIndex: 20, background: 'var(--surface-3, #2a2d36)', border: '1px solid var(--teal)', borderRadius: 8, padding: '9px 11px', fontSize: 11.5, lineHeight: 1.4, color: 'var(--text)', boxShadow: '0 6px 18px rgba(0,0,0,.35)' }}>
+                          Próximo passo: escolhe as applications a que {m.name.split(' ')[0]} vai ter acesso.
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{m.application_ids.length} app{m.application_ids.length !== 1 ? 's' : ''}</span>
                   )

@@ -143,7 +143,7 @@ class LogsResponse(BaseModel):
 
 class UpToDateResponse(BaseModel):
     status: UpToDateStatus
-    gitops_head_sha: Optional[str] = None
+    source_head_sha: Optional[str] = None
     argocd_sync_revision: Optional[str] = None
     reason: Optional[str] = None
 

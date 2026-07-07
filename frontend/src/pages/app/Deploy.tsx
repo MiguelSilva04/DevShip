@@ -92,6 +92,10 @@ export default function Deploy() {
 
   const envLabel = envName || aeDetail?.deployment_name || aeId || '';
   const appLabel = appName || appId || '';
+  // Já up to date: sem commit anterior não há nada para comparar (deixa prosseguir, é o
+  // primeiro deploy); com deploy anterior e pending-commits a devolver 0 commits novos,
+  // não há nada para enviar — mesma regra usada no botão da lista em EnvDetail.tsx.
+  const isUpToDate = !!aeDetail?.current_version && !!pending && !pending.reason && pending.commits.length === 0;
 
   return (
     <div style={{ maxWidth: 720 }}>
@@ -177,14 +181,28 @@ export default function Deploy() {
       )}
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        <button
-          className="btn-primary hover-bright"
-          onClick={submit}
-          disabled={loading}
-          style={{ fontSize: 13, padding: '10px 20px', borderRadius: 9, fontWeight: 600, opacity: loading ? 0.7 : 1, cursor: loading ? 'not-allowed' : 'pointer' }}
-        >
-          {loading ? 'A enviar…' : requiresApproval ? 'Solicitar deploy →' : 'Confirmar deploy →'}
-        </button>
+        {!pending ? (
+          <button disabled style={{ fontSize: 13, padding: '10px 20px', borderRadius: 9, fontWeight: 600, background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)', cursor: 'default', opacity: .7 }}>
+            A verificar…
+          </button>
+        ) : isUpToDate ? (
+          <button
+            disabled
+            title="Já está tudo deployado — sem commits novos desde o último deploy."
+            style={{ fontSize: 13, padding: '10px 20px', borderRadius: 9, fontWeight: 600, background: 'rgba(52,199,89,.13)', color: '#5dd57b', border: '1px solid rgba(52,199,89,.24)', cursor: 'default' }}
+          >
+            Up to date
+          </button>
+        ) : (
+          <button
+            className="btn-primary hover-bright"
+            onClick={submit}
+            disabled={loading}
+            style={{ fontSize: 13, padding: '10px 20px', borderRadius: 9, fontWeight: 600, opacity: loading ? 0.7 : 1, cursor: loading ? 'not-allowed' : 'pointer' }}
+          >
+            {loading ? 'A enviar…' : requiresApproval ? 'Solicitar deploy →' : 'Confirmar deploy →'}
+          </button>
+        )}
         <button onClick={() => nav(-1)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>Cancelar</button>
         <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--text-3)' }}>
           A fazer deploy como <span style={{ color: 'var(--text-2)' }}>{user?.name ?? '—'}</span>

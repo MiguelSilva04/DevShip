@@ -57,11 +57,14 @@ export default function AddMember() {
     if (!teamId) { setErr('Team não encontrada.'); return; }
     setLoading(true); setErr('');
     try {
-      await apiFetch(`/teams/${teamId}/members`, {
+      const member: { team_member_id: string } = await apiFetch(`/teams/${teamId}/members`, {
         method: 'POST',
         body: JSON.stringify({ user_id: selected, role, application_ids: role === 'DEVELOPER' ? appIds : [] }),
       });
-      nav('/app/team');
+      // Se ficou sem apps atribuídas, aponta para o botão "editar apps" na lista da Team —
+      // sem isto o Developer fica sem acesso a nada e ninguém percebe porquê.
+      const newDeveloperId = role === 'DEVELOPER' && appIds.length === 0 ? member.team_member_id : undefined;
+      nav('/app/team', { state: newDeveloperId ? { newDeveloperId } : undefined });
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Erro ao adicionar membro.');
     } finally { setLoading(false); }

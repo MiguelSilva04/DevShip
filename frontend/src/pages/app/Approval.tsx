@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useUser } from '../../context/UserContext';
 import { apiFetch } from '../../api/client';
+import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
 
 type RequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
 
@@ -24,6 +25,7 @@ export default function Approval() {
   const canDecide = user?.role === 'tech' || user?.role === 'cloud';
 
   const [req, setReq] = useState<DeploymentRequest | null>(null);
+  const { appLabel, envLabel } = useAppEnvBreadcrumb(undefined, req?.application_environment_id);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [rejectNote, setRejectNote] = useState('');
@@ -98,13 +100,14 @@ export default function Approval() {
 
   return (
     <div style={{ maxWidth: 660 }}>
-      <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 6 }}>approvals / {reqId}</div>
+      <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 6 }}>approvals / {appLabel} / {envLabel}</div>
       <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 20px' }}>Pedido de Aprovação de Deploy</h1>
 
       <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '20px 22px', marginBottom: 14 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '13px 28px', fontSize: 13 }}>
           {([
-            ['Application Env', req.application_environment_id],
+            ['Application', appLabel],
+            ['Environment', envLabel],
             ['Status', req.status],
             ['Commit', req.source_commit_sha ? req.source_commit_sha.slice(0, 7) : '—'],
             ['Pedido em', new Date(req.requested_at).toLocaleString()],

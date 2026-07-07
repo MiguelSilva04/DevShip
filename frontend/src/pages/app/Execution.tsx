@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
+import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
 
 type RequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
 type Severity = 'INFO' | 'WARNING' | 'ERROR';
@@ -171,6 +172,7 @@ function StageRow({ stage, state, events, isLast }: { stage: Stage; state: Stage
 
 export default function Execution() {
   const { appId, aeId, reqId } = useParams<{ appId: string; aeId: string; reqId: string }>();
+  const { appLabel, envLabel } = useAppEnvBreadcrumb(appId, aeId);
   const nav = useNavigate();
   const [data, setData] = useState<RequestWithEvents | null>(null);
   const [error, setError] = useState('');
@@ -207,7 +209,7 @@ export default function Execution() {
 
   return (
     <div>
-      <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 6 }}>{appId} / {aeId} / execução</div>
+      <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 6 }}>{appLabel} / {envLabel} / execução</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 22 }}>
         <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>Execução do Deploy</h1>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 12px', borderRadius: 999, fontSize: 12, background: st.bg, color: st.col, border: `1px solid ${st.bord}` }}>
@@ -256,7 +258,7 @@ export default function Execution() {
               : { background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)', fontSize: 12.5, padding: '9px 16px', borderRadius: 9, cursor: 'pointer' }
           }
         >
-          Voltar ao Environment
+          Voltar
         </button>
       </div>
     </div>

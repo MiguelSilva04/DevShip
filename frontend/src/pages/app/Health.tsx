@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
+import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
 
 interface ProbeSpec {
   path: string | null;
@@ -40,6 +41,7 @@ function relativeTime(iso: string | null): string {
 
 export default function Health() {
   const { appId, aeId } = useParams<{ appId:string; aeId:string }>();
+  const { appLabel, envLabel } = useAppEnvBreadcrumb(appId, aeId);
   const nav = useNavigate();
   const [containers, setContainers] = useState<ContainerProbeStatus[] | null>(null);
   const [error, setError] = useState('');
@@ -53,7 +55,7 @@ export default function Health() {
 
   return (
     <div>
-      <div className="mono" style={{ fontSize:11, color:'var(--text-3)', marginBottom:6 }}>{appId} / {aeId}</div>
+      <div className="mono" style={{ fontSize:11, color:'var(--text-3)', marginBottom:6 }}>{appLabel} / {envLabel}</div>
       <h1 style={{ fontSize:22, fontWeight:600, margin:'0 0 20px' }}>Health details</h1>
 
       <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 16px', borderRadius:10, background:'var(--bg-2)', border:'1px solid var(--border-soft)', fontSize:12.5, color:'var(--text-2)', marginBottom:20 }}>

@@ -636,25 +636,27 @@ def get_up_to_date(
     ae = _get_ae_or_404(db, ae_id, current_user)
 
     latest = _latest_versions_subquery(db, [ae_id]).first()
-    if latest is None or latest.argocd_sync_revision is None:
-        return UpToDateResponse(status=UpToDateStatus.UNKNOWN, reason="Sem argocd_sync_revision para esta versão")
+    if latest is None or latest.source_commit_sha is None:
+        return UpToDateResponse(status=UpToDateStatus.UNKNOWN, reason="Sem deploys ainda")
 
+    # Compara o commit desta versão contra o HEAD do repositório SOURCE da application
+    # (não o GitOps) — é o mesmo par que o utilizador vê em "Commit desta versão" no
+    # EnvDetail e no ecrã de Deploy ("pending-commits"), por isso tem de vir da mesma
+    # fonte para os dois lados nunca contarem histórias diferentes.
     env = db.get(Environment, ae.environment_id)
-    project = db.get(Project, env.project_id)
-    if not project.git_ops_repository_url or not env.gitops_branch:
-        return UpToDateResponse(status=UpToDateStatus.UNKNOWN, reason="GitOps branch ou repositório não configurados")
+    app = db.get(Application, ae.application_id)
+    branch = env.source_branch or "main"
 
-    head_sha = resolve_branch_head(project.git_ops_repository_url, env.gitops_branch)
+    head_sha = resolve_branch_head(app.source_repository, branch)
     if head_sha is None:
         return UpToDateResponse(
             status=UpToDateStatus.UNKNOWN,
-            argocd_sync_revision=latest.argocd_sync_revision,
-            reason="Não foi possível resolver o HEAD da branch GitOps via GitHub",
+            reason="Não foi possível resolver o HEAD da branch via GitHub",
         )
 
     return UpToDateResponse(
-        status=compute_up_to_date(latest.argocd_sync_revision, head_sha),
-        gitops_head_sha=head_sha,
+        status=compute_up_to_date(latest.source_commit_sha, head_sha),
+        source_head_sha=head_sha,
         argocd_sync_revision=latest.argocd_sync_revision,
     )
 

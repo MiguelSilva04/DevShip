@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
+import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
 
 type LifecycleStatus = 'Deploying' | 'Healthy' | 'Degraded' | 'Failed' | 'RolledBack' | 'Superseded';
 
@@ -28,6 +29,7 @@ function statusBadge(s: LifecycleStatus) {
 
 export default function History() {
   const { appId, aeId } = useParams<{ appId?: string; aeId?: string }>();
+  const { appLabel, envLabel } = useAppEnvBreadcrumb(appId, aeId);
   const [versions, setVersions] = useState<DeploymentVersionDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -42,12 +44,10 @@ export default function History() {
   if (loading) return <Spinner />;
   if (error) return <div style={{ color: '#ff8497', fontSize: 13, padding: '40px 0' }}>{error}</div>;
 
-  const title = appId && aeId ? `${appId} / ${aeId}` : aeId ?? 'Histórico';
-
   return (
     <div>
       <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.01em', margin: '0 0 4px' }}>Histórico</h1>
-      <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 22px' }}>{title}</p>
+      <p className="mono" style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 22px' }}>{appLabel} / {envLabel}</p>
 
       {versions.length === 0 ? (
         <div style={{ fontSize: 13, color: 'var(--text-3)', padding: '20px 0' }}>Sem deploys registados.</div>

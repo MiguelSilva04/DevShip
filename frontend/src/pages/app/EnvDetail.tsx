@@ -7,7 +7,7 @@ type UpToDateStatus = 'UpToDate' | 'Outdated' | 'Unknown';
 
 interface UpToDateResult {
   status: UpToDateStatus;
-  gitops_head_sha: string | null;
+  source_head_sha: string | null;
   argocd_sync_revision: string | null;
   reason: string | null;
 }
@@ -132,17 +132,19 @@ export default function EnvDetail() {
       </div>
 
       <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap', alignItems: 'center', marginBottom: 22 }}>
-        {upToDate?.status === 'UpToDate' ? (() => {
+        {utdLoading && !upToDate ? (
+          <button disabled className="btn-ghost" style={{ fontSize: 12.5, padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)', cursor: 'default', opacity: .7 }}>
+            A verificar…
+          </button>
+        ) : upToDate?.status === 'UpToDate' ? (() => {
           const u = upToDatePill(upToDate.status);
           return (
             <button
-              onClick={loadUpToDate}
-              disabled={utdLoading}
-              title={upToDate.reason ?? undefined}
-              className="btn-ghost"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, padding: '9px 14px', borderRadius: 8, background: u.bg, color: u.col, border: `1px solid ${u.bord}`, cursor: utdLoading ? 'not-allowed' : 'pointer' }}
+              disabled
+              title="Já está tudo deployado — sem commits novos desde o último deploy."
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, padding: '9px 14px', borderRadius: 8, background: u.bg, color: u.col, border: `1px solid ${u.bord}`, cursor: 'default', opacity: .85 }}
             >
-              {utdLoading ? '…' : u.label}
+              {u.label}
             </button>
           );
         })() : (
@@ -177,7 +179,7 @@ export default function EnvDetail() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 11, fontSize: 12.5 }}>
               {([
                 ['Commit desta versão', cv.source_commit_sha ? cv.source_commit_sha.slice(0, 7) : '—', 'var(--teal)'],
-                [`HEAD atual (${label.toUpperCase()})`, upToDate?.gitops_head_sha ? upToDate.gitops_head_sha.slice(0, 7) : '—', ''],
+                ['HEAD do repositório', upToDate?.source_head_sha ? upToDate.source_head_sha.slice(0, 7) : '—', ''],
                 ['Started', cv.deployed_at ? new Date(cv.deployed_at).toLocaleString() : '—', ''],
                 ['Autor', cv.requested_by_email ?? '—', ''],
               ] as [string, string, string][]).map(([k, v, c]) => (
