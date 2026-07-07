@@ -78,16 +78,13 @@ def _check_github_gate(app: Application, environment: Environment, user: User, c
 
 
 def _require_approver(db: Session, req: DeploymentRequest, user: User) -> None:
-    """Check user has the approval_required_role for this request's environment."""
+    """Check user has the approval_required_role for this request's environment, and —
+    same as every other Application-scoped route — that a DEVELOPER approver also holds
+    an ApplicationTeamMember grant for it. Without this, a Tech Lead with no grant on the
+    Application could still approve/reject its deploys off team membership alone."""
     ae = db.get(ApplicationEnvironment, req.application_environment_id)
     env = db.get(Environment, ae.environment_id)
-    project = db.get(Project, env.project_id)
-    member = db.query(TeamMember).filter(
-        TeamMember.team_id == project.team_id,
-        TeamMember.user_id == user.id,
-    ).first()
-    if member is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a team member")
+    member = _require_application_access(db, ae.application_id, user)
     if env.requires_approval and env.approval_required_role is not None:
         if member.role != env.approval_required_role:
             raise HTTPException(
