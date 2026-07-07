@@ -1,17 +1,20 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+// ponytail: BACKEND_URL env override so the same config works both on the host (localhost) and inside docker compose (service name)
+const backendUrl = process.env.BACKEND_URL ?? 'http://localhost:8000';
+
 export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/auth':                     'http://localhost:8000',
-      '/users':                    'http://localhost:8000',
-      '/teams':                    'http://localhost:8000',
-      '/projects':                 'http://localhost:8000',
-      '/applications':             'http://localhost:8000',
-      '/application-environments': 'http://localhost:8000',
-      '/deployment-requests':      'http://localhost:8000',
+      '/auth':                     backendUrl,
+      '/users':                    backendUrl,
+      '/teams':                    backendUrl,
+      '/projects':                 backendUrl,
+      '/applications':             backendUrl,
+      '/application-environments': backendUrl,
+      '/deployment-requests':      backendUrl,
     },
   },
 });
