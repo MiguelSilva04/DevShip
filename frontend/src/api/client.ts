@@ -37,5 +37,8 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
     }
     throw new Error(detail || `Erro ${response.status}`);
   }
+  // 204 No Content (ex: DELETE) tem corpo vazio — response.json() rebenta com
+  // "Unexpected end of JSON input" se tentado incondicionalmente.
+  if (response.status === 204) return undefined;
   return response.json();
 }

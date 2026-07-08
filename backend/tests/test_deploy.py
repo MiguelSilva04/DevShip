@@ -161,6 +161,49 @@ class TestCreateDeploy:
         assert req.github_workflow_run_id == 42
         assert req.source_commit_sha == "abc123"
 
+    def test_deploy_blocked_before_github_dispatch_when_cluster_unreachable(self, client, db_session):
+        """Regression: the cluster used to only be checked in observe_deployment(), AFTER
+        the GitHub Actions build already ran — burning a real CI build for a deploy that
+        was always going to fail once it got to the K8s phase. The cluster reachability
+        check must happen before create_deploy even creates the DeploymentRequest, so an
+        unreachable cluster is caught without ever calling GitHub."""
+        user, team, project, env, app, app_env = _setup_chain(db_session)
+        cluster_ctx = ClusterContext(
+            project_id=project.id,
+            cluster_arn="arn:aws:eks:us-east-1:123:cluster/c",
+            cluster_name="c",
+            region="us-east-1",
+            eks_endpoint="https://k8s.example.com",
+            ca_certificate="CERT",
+            ca_file_path="/tmp/ca.crt",
+            iam_role_arn="arn:aws:iam::123:role/r",
+            external_id=str(uuid.uuid4()),
+        )
+        db_session.add(cluster_ctx)
+        db_session.flush()
+
+        api_user_email = f"ce@{team.domain}"
+        _register(client, api_user_email)
+        token = _login(client, api_user_email)
+        api_user = db_session.query(User).filter(User.email == api_user_email).first()
+        api_user.github_username = "octocat"
+        db_session.add(TeamMember(team_id=team.id, user_id=api_user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        db_session.flush()
+
+        with (
+            patch("backend.api.routes.deploy.is_repo_collaborator", return_value=True),
+            patch("backend.api.routes.deploy.validate_cluster", side_effect=ValueError("Não foi possível ligar ao cluster.")),
+            patch("backend.services.deploy_pipeline.http.post") as mock_post,
+        ):
+            r = client.post(f"/application-environments/{app_env.id}/deploy", json={}, headers=_auth(token))
+            mock_post.assert_not_called()
+
+        assert r.status_code == 502
+        assert "cluster" in r.json()["detail"].lower()
+        assert db_session.query(DeploymentRequest).filter(
+            DeploymentRequest.application_environment_id == app_env.id
+        ).count() == 0
+
     def test_in_flight_deploy_blocks_second(self, client, db_session):
         _, team, project, env, app, app_env = _setup_chain(db_session)
 

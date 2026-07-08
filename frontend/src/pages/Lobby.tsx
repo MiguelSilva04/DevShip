@@ -105,7 +105,7 @@ export default function Lobby() {
                 <div style={{ fontSize:15, fontWeight:600, marginBottom:10 }}>A aguardar aprovação</div>
                 <div style={{ fontSize:13, color:'var(--text-2)', lineHeight:1.7, maxWidth:420, margin:'0 auto' }}>
                   O domínio <span className="mono" style={{ color:'var(--text)' }}>@{domainStatus.domain}</span> já tem uma equipa na plataforma.
-                  O Cloud Engineer dessa equipa vai adicionarte assim que revir os candidatos no separador <strong>Team</strong>.
+                  O Cloud Engineer dessa equipa vai adicionarte assim que revir os candidatos no separador <strong>Equipa</strong>.
                 </div>
               </div>
             ) : (

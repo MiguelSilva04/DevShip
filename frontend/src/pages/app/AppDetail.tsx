@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
-
-type LifecycleStatus = 'Deploying' | 'Healthy' | 'Degraded' | 'Failed' | 'RolledBack' | 'Superseded';
-type UpToDateStatus = 'UpToDate' | 'Outdated' | 'Unknown';
+import { type LifecycleStatus, type UpToDateStatus, lifecycleColor, UP_TO_DATE_LABEL } from '../../lib/lifecycle';
 
 interface AEStatus {
   id: string;
@@ -20,15 +18,7 @@ interface AppDetail {
 }
 
 function statusPill(s: LifecycleStatus | null) {
-  const map: Record<string, { bg: string; col: string; bord: string; dot: string }> = {
-    Healthy:    { bg: 'rgba(52,199,89,.13)',  col: '#5dd57b', bord: 'rgba(52,199,89,.24)',   dot: '#34C759' },
-    Deploying:  { bg: 'rgba(224,169,59,.13)', col: '#ecc26b', bord: 'rgba(224,169,59,.26)',  dot: '#E0A93B' },
-    Degraded:   { bg: 'rgba(241,85,108,.13)', col: '#ff8497', bord: 'rgba(241,85,108,.26)',  dot: '#F1556C' },
-    Failed:     { bg: 'rgba(241,85,108,.13)', col: '#ff8497', bord: 'rgba(241,85,108,.26)',  dot: '#F1556C' },
-    RolledBack: { bg: 'rgba(120,120,180,.13)',col: '#aab4ff', bord: 'rgba(120,120,180,.26)', dot: '#7880cc' },
-    Superseded: { bg: 'rgba(150,150,150,.13)',col: 'var(--text-3)', bord: 'rgba(150,150,150,.26)', dot: '#888' },
-  };
-  return map[s ?? ''] ?? { bg: 'var(--surface)', col: 'var(--text-3)', bord: 'var(--border)', dot: '#888' };
+  return lifecycleColor(s, { bg: 'var(--surface)', col: 'var(--text-3)', bord: 'var(--border)', dot: '#888' });
 }
 
 export default function AppDetail() {
@@ -41,16 +31,22 @@ export default function AppDetail() {
   useEffect(() => {
     if (!appId) return;
     apiFetch(`/applications/${appId}`)
-      .then((d: AppDetail) => {
-        setData(d);
-        d.environments.forEach(ae => {
-          apiFetch(`/application-environments/${ae.id}/up-to-date`)
-            .then((r: { status: UpToDateStatus }) => setUpToDate(prev => ({ ...prev, [ae.id]: r.status })))
-            .catch(() => {});
-        });
-      })
+      .then((d: AppDetail) => setData(d))
       .catch(e => setError(e.message));
   }, [appId]);
+
+  // Recomputa quando o lifecycle_status de algum environment muda (ex: deploy concluído) —
+  // manter isto preso a [appId] deixava o badge "Up to date" parado no valor do primeiro load.
+  const statusesKey = data?.environments.map(ae => `${ae.id}:${ae.lifecycle_status}`).join(',') ?? '';
+  useEffect(() => {
+    if (!data) return;
+    data.environments.forEach(ae => {
+      apiFetch(`/application-environments/${ae.id}/up-to-date`)
+        .then((r: { status: UpToDateStatus }) => setUpToDate(prev => ({ ...prev, [ae.id]: r.status })))
+        .catch(() => {});
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusesKey]);
 
   if (error) return <div style={{ color: '#ff8497', fontSize: 13, padding: '40px 0' }}>{error}</div>;
   if (!data) return <Spinner />;
@@ -70,7 +66,7 @@ export default function AppDetail() {
 
       <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', overflow: 'hidden' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '160px 130px 1fr 200px', gap: 12, padding: '13px 20px', borderBottom: '1px solid var(--border)', fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
-          <span>Environment</span><span>Status</span><span></span><span style={{ textAlign: 'right' }}>Actions</span>
+          <span>Environment</span><span>Estado</span><span></span><span style={{ textAlign: 'right' }}>Ações</span>
         </div>
 
         {data.environments.length === 0 && (
@@ -108,7 +104,7 @@ export default function AppDetail() {
                     title="Já está tudo deployado — sem commits novos desde o último deploy."
                     style={{ fontSize: 11.5, padding: '6px 13px', borderRadius: 7, background: 'rgba(52,199,89,.13)', color: '#5dd57b', border: '1px solid rgba(52,199,89,.24)', cursor: 'default' }}
                   >
-                    Up to date
+                    {UP_TO_DATE_LABEL.UpToDate}
                   </button>
                 ) : (
                   <button onClick={() => nav(`/app/${appId}/${ae.id}/deploy`)} className="btn-primary" style={{ fontSize: 11.5, padding: '6px 13px', borderRadius: 7 }}>Deploy</button>

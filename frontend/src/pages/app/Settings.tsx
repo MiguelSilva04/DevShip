@@ -102,10 +102,15 @@ export default function Settings() {
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
   const [archiveConfirmText, setArchiveConfirmText] = useState('');
   const [archiving, setArchiving] = useState(false);
+  const [archiveErr, setArchiveErr] = useState('');
+
+  const [loadErr, setLoadErr] = useState('');
 
   useEffect(() => {
     if (!projectId) return;
-    apiFetch(`/projects/${projectId}`).then(setProject).catch(() => setProject(null));
+    apiFetch(`/projects/${projectId}`)
+      .then(setProject)
+      .catch(() => setLoadErr(prev => prev || 'Erro ao carregar informação do projecto.'));
     apiFetch(`/projects/${projectId}/cluster`)
       .then((c: Cluster) => {
         setCluster(c); setClusterArn(c.cluster_arn); setArgocdNamespace(c.argocd_namespace);
@@ -114,8 +119,12 @@ export default function Settings() {
           .catch(() => setClusterConnected(false));
       })
       .catch((e: unknown) => setClusterErr(e instanceof Error ? e.message : 'Erro ao carregar cluster.'));
-    apiFetch(`/projects/${projectId}/environments`).then(setEnvs).catch(() => setEnvs([]));
-    apiFetch(`/projects/${projectId}/applications`).then(setApps).catch(() => setApps([]));
+    apiFetch(`/projects/${projectId}/environments`)
+      .then(setEnvs)
+      .catch(() => setLoadErr(prev => prev || 'Erro ao carregar ambientes.'));
+    apiFetch(`/projects/${projectId}/applications`)
+      .then(setApps)
+      .catch(() => setLoadErr(prev => prev || 'Erro ao carregar applications.'));
   }, [projectId]);
 
   function openEditEnv(env: EnvItem) {
@@ -241,14 +250,14 @@ export default function Settings() {
 
   async function archive() {
     if (!projectId || !canArchive) return;
-    setArchiving(true);
+    setArchiving(true); setArchiveErr('');
     try {
       await apiFetch(`/projects/${projectId}/archive`, { method: 'POST' });
       setIsArchived(true);
       setShowArchiveConfirm(false);
       setArchiveConfirmText('');
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Erro ao arquivar projeto.');
+      setArchiveErr(e instanceof Error ? e.message : 'Erro ao arquivar projeto.');
     } finally { setArchiving(false); }
   }
 
@@ -256,6 +265,13 @@ export default function Settings() {
     <div style={{ maxWidth: 720 }}>
       <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 6px' }}>Definições</h1>
       <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 28px' }}>Configurações do projecto. Só o Cloud Engineer pode editar estas definições.</p>
+
+      {loadErr && (
+        <div style={{ display: 'flex', gap: 9, border: '1px solid rgba(241,85,108,.3)', background: 'rgba(241,85,108,.08)', borderRadius: 9, padding: '10px 13px', marginBottom: 20 }}>
+          <span style={{ color: '#ff8497' }}>✕</span>
+          <span style={{ fontSize: 12, color: '#ff9aaa' }}>{loadErr}</span>
+        </div>
+      )}
 
       {isArchived && (
         <div style={{ display: 'flex', gap: 9, border: '1px solid rgba(236,194,107,.35)', background: 'rgba(236,194,107,.08)', borderRadius: 9, padding: '10px 13px', marginBottom: 20 }}>
@@ -341,7 +357,7 @@ export default function Settings() {
               <button onClick={revalidate} disabled={revalidating} style={{ ...btnSecondary, opacity: revalidating ? .6 : 1 }}>
                 {revalidating ? 'A revalidar…' : 'Revalidar ligação'}
               </button>
-              <button onClick={() => setShowEditCreds(true)} style={btnSecondary}>Editar credenciais</button>
+              <button onClick={() => { setCredsErr(''); setShowEditCreds(true); }} style={btnSecondary}>Editar credenciais</button>
             </div>
             {revalidateMsg && <div style={{ fontSize: 12, color: 'var(--text-2)' }}>{revalidateMsg}</div>}
           </>
@@ -531,6 +547,7 @@ export default function Settings() {
           <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 18px', lineHeight: 1.6 }}>
             O projecto deixa de estar ativo. Para confirmar, escreve o nome do projeto abaixo:
           </p>
+          {archiveErr && <div style={{ fontSize: 12, color: '#ff9aaa', marginBottom: 10 }}>{archiveErr}</div>}
           <div className="mono" style={{ fontSize: 13, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', marginBottom: 12, color: 'var(--text)' }}>
             {projName}
           </div>

@@ -170,7 +170,7 @@ export default function Rollback() {
         >
           {loading ? 'A enviar…' : approvalNeeded ? 'Enviar pedido de rollback' : 'Confirmar rollback'}
         </button>
-        <button onClick={() => nav(-1)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>Cancelar</button>
+        <button onClick={() => nav(`/app/${appId}/${aeId}`)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>Cancelar</button>
         <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--text-3)' }}>
           Como <span style={{ color: 'var(--text-2)' }}>{user?.name ?? '—'}</span>
         </span>

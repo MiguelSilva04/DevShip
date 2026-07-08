@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
-
-type LifecycleStatus = 'Deploying' | 'Healthy' | 'Degraded' | 'Failed' | 'RolledBack' | 'Superseded';
+import { type LifecycleStatus, LIFECYCLE_COLOR } from '../../lib/lifecycle';
 
 interface DeploymentVersionDetail {
   id: string;
@@ -16,15 +15,8 @@ interface DeploymentVersionDetail {
 }
 
 function statusBadge(s: LifecycleStatus) {
-  const map: Record<string, { bg: string; col: string; bord: string; dot: string; anim?: string }> = {
-    Healthy:    { bg: 'rgba(52,199,89,.12)',   col: '#5dd57b', bord: 'rgba(52,199,89,.24)',   dot: '#34C759' },
-    Deploying:  { bg: 'rgba(224,169,59,.12)',  col: '#ecc26b', bord: 'rgba(224,169,59,.26)',  dot: '#E0A93B', anim: 'ds-pulse 1.4s infinite' },
-    Degraded:   { bg: 'rgba(241,85,108,.12)',  col: '#ff8497', bord: 'rgba(241,85,108,.26)',  dot: '#F1556C' },
-    Failed:     { bg: 'rgba(241,85,108,.12)',  col: '#ff8497', bord: 'rgba(241,85,108,.26)',  dot: '#F1556C' },
-    RolledBack: { bg: 'rgba(120,120,180,.12)', col: '#aab4ff', bord: 'rgba(120,120,180,.26)', dot: '#7880cc' },
-    Superseded: { bg: 'rgba(150,150,150,.12)', col: 'var(--text-3)', bord: 'rgba(150,150,150,.26)', dot: '#888' },
-  };
-  return map[s] ?? map['Healthy'];
+  const anim = s === 'Deploying' ? 'ds-pulse 1.4s infinite' : undefined;
+  return { ...(LIFECYCLE_COLOR[s] ?? LIFECYCLE_COLOR.Healthy), anim };
 }
 
 export default function History() {
@@ -54,7 +46,7 @@ export default function History() {
       ) : (
         <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', overflow: 'hidden' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '110px 110px 90px 1fr 140px', gap: 12, padding: '12px 20px', borderBottom: '1px solid var(--border)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
-            <span>Status</span><span>Versão</span><span>Commit</span><span>Trigger</span><span style={{ textAlign: 'right' }}>Deployed at</span>
+            <span>Status</span><span>Versão</span><span>Commit</span><span>Origem</span><span style={{ textAlign: 'right' }}>Deployed em</span>
           </div>
           {versions.map((v, i) => {
             const b = statusBadge(v.lifecycle_status);

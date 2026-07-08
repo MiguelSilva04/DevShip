@@ -1,15 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { OB_TEAM_ID, OB_PROJECT_ID } from '../Onboarding';
 import { useUser } from '../../context/UserContext';
-import GithubIdentityPrompt from '../../components/GithubIdentityPrompt';
 
 interface Member { team_member_id: string; user_id: string; name: string; email: string; role: string; joined_at: string; application_ids: string[]; }
 interface Candidate { user_id: string; name: string; email: string; }
 interface TeamInfo { id: string; name: string; description: string | null; domain: string; }
 interface AppItem { id: string; name: string; source_repository: string; }
-interface MeInfo { github_username: string | null; github_email: string | null; }
 
 const ROLE_LABEL: Record<string, string> = {
   CLOUD_ENGINEER: 'Cloud Engineer',
@@ -29,6 +27,56 @@ function initials(name: string) {
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('pt-PT', { year: 'numeric', month: '2-digit', day: '2-digit' });
+}
+
+// position: fixed ancorado à posição real do botão via getBoundingClientRect — um
+// tooltip absoluto normal fica cortado pelo overflow: hidden da tabela quando a linha
+// está perto do fundo do container; fixed escapa a qualquer ancestral com overflow.
+function HighlightTooltip({ anchor, children }: { anchor: HTMLElement; children: React.ReactNode }) {
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    const r = anchor.getBoundingClientRect();
+    setPos({ top: r.bottom + 8, left: r.left });
+  }, [anchor]);
+
+  if (!pos) return null;
+  return (
+    <div style={{ position: 'fixed', top: pos.top, left: pos.left, width: 240, zIndex: 200, background: 'var(--teal)', border: '1px solid var(--teal)', borderRadius: 8, padding: '10px 12px', fontSize: 12, lineHeight: 1.45, fontWeight: 500, color: 'var(--teal-ink)', boxShadow: '0 8px 22px rgba(0,0,0,.4)' }}>
+      <span style={{ position: 'absolute', top: -6, left: 16, width: 11, height: 11, background: 'var(--teal)', transform: 'rotate(45deg)', borderRadius: 2 }} />
+      {children}
+    </div>
+  );
+}
+
+function MemberAccessButton({ m, isBusy, highlighted, onOpen }: { m: Member; isBusy: boolean; highlighted: boolean; onOpen: () => void }) {
+  const btnRef = useRef<HTMLButtonElement>(null);
+  // No primeiro render depois de o membro passar de candidato a membro, a ref ainda é
+  // null (só fica preenchida depois do commit ao DOM) — sem este estado, a condição
+  // "highlighted && btnRef.current" via renderização falha sempre nesse primeiro ciclo
+  // e a tooltip nunca chega a aparecer. Forçar um re-render extra depois do mount resolve.
+  const [, forceRender] = useState(0);
+  useEffect(() => {
+    if (highlighted) forceRender(n => n + 1);
+  }, [highlighted]);
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        ref={btnRef}
+        onClick={onOpen}
+        disabled={isBusy}
+        style={{ fontSize: 11.5, padding: '5px 11px', borderRadius: 7, border: `1px solid ${highlighted ? 'var(--teal)' : 'var(--border)'}`, background: 'transparent', color: 'var(--text-2)', cursor: isBusy ? 'default' : 'pointer', textAlign: 'left' }}
+      >
+        {m.application_ids.length} app{m.application_ids.length !== 1 ? 's' : ''} · editar
+      </button>
+      {highlighted && btnRef.current && (
+        <HighlightTooltip anchor={btnRef.current}>
+          Próximo passo: escolhe as aplicações a que {m.name.split(' ')[0]} vai ter acesso.
+        </HighlightTooltip>
+      )}
+    </div>
+  );
 }
 
 type AllowedRole = 'DEVELOPER' | 'TECH_LEAD';
@@ -54,7 +102,8 @@ export default function Team() {
   const [accessSelection, setAccessSelection] = useState<string[]>([]);
   const [savingAccess, setSavingAccess] = useState(false);
   const [accessErr, setAccessErr] = useState('');
-  const [me, setMe] = useState<MeInfo | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<Member | null>(null);
+  const [removingErr, setRemovingErr] = useState('');
   const [highlightMemberId, setHighlightMemberId] = useState<string | null>(
     (location.state as { newDeveloperId?: string } | null)?.newDeveloperId ?? null
   );
@@ -76,7 +125,6 @@ export default function Team() {
       })
       .catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Erro ao carregar team.'));
     apiFetch(`/teams/${teamId}`).then(setTeam).catch(() => setTeam(null));
-    apiFetch(`/auth/me`).then(setMe).catch(() => setMe(null));
     if (projectId) {
       apiFetch(`/projects/${projectId}/applications`).then(setApps).catch(() => setApps([]));
     }
@@ -143,6 +191,7 @@ export default function Team() {
       setMembers(prev => [...prev, member]);
       setCandidates(prev => prev.filter(c => c.user_id !== candidate.user_id));
       if (role === 'DEVELOPER') setHighlightMemberId(member.team_member_id);
+      window.dispatchEvent(new CustomEvent('devship:team-changed'));
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Erro ao adicionar membro.');
     } finally { setBusy(null); }
@@ -158,13 +207,17 @@ export default function Team() {
 
   async function removeMember(m: Member) {
     if (!teamId) return;
-    if (!confirm(`Remover ${m.name} da equipa?`)) return;
     setBusy(m.team_member_id);
     try {
       await apiFetch(`/teams/${teamId}/members/${m.team_member_id}`, { method: 'DELETE' });
-      setMembers(prev => prev.filter(x => x.team_member_id !== m.team_member_id));
+      // Refaz a lista toda em vez de só filtrar localmente: o utilizador removido pode
+      // voltar a aparecer como candidato (mesmo domínio, já sem team), e só o backend
+      // sabe dizer isso com certeza.
+      load();
+      setConfirmRemove(null);
+      window.dispatchEvent(new CustomEvent('devship:team-changed'));
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Erro ao remover membro.');
+      setRemovingErr(e instanceof Error ? e.message : 'Erro ao remover membro.');
     } finally { setBusy(null); }
   }
 
@@ -232,30 +285,6 @@ export default function Team() {
         </div>
       )}
 
-      {/* A tua conta — identidade GitHub, sítio proativo para configurar fora do fluxo
-          de erro de deploy/rollback (onde só aparece quando já bloqueou uma ação). */}
-      <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '18px 20px', marginBottom: 24 }}>
-        <div style={{ fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 14 }}>A tua conta</div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontSize: 13.5, fontWeight: 500 }}>Identidade GitHub</div>
-            <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 3 }}>
-              {me?.github_username ? (
-                <span className="mono">{me.github_username}</span>
-              ) : (
-                'Ainda não configurada — necessária para fazer deploy ou rollback.'
-              )}
-            </div>
-          </div>
-          <GithubIdentityPrompt
-            onConfigured={load}
-            configured={!!me?.github_username}
-            currentUsername={me?.github_username}
-            currentEmail={me?.github_email}
-          />
-        </div>
-      </div>
-
       {/* Edit team modal */}
       {showEditTeam && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setShowEditTeam(false)}>
@@ -307,7 +336,7 @@ export default function Team() {
                   <div>
                     <div style={{ fontSize: 13.5, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 7 }}>
                       {m.name}
-                      {isOwner && <span style={{ fontSize: 9.5, padding: '1px 6px', borderRadius: 5, background: 'rgba(43,199,180,.12)', color: 'var(--teal)', border: '1px solid rgba(43,199,180,.28)', fontWeight: 600 }}>OWNER</span>}
+                      {isOwner && <span style={{ fontSize: 9.5, padding: '1px 6px', borderRadius: 5, background: 'rgba(43,199,180,.12)', color: 'var(--teal)', border: '1px solid rgba(43,199,180,.28)', fontWeight: 600 }}>Proprietário</span>}
                     </div>
                     <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{m.email}</div>
                   </div>
@@ -328,20 +357,12 @@ export default function Team() {
                 )}
                 {m.role === 'DEVELOPER' ? (
                   manageable ? (
-                    <div style={{ position: 'relative' }}>
-                      <button
-                        onClick={() => { openAccess(m); setHighlightMemberId(null); }}
-                        disabled={isBusy}
-                        style={{ fontSize: 11.5, padding: '5px 11px', borderRadius: 7, border: `1px solid ${highlightMemberId === m.team_member_id ? 'var(--teal)' : 'var(--border)'}`, background: 'transparent', color: 'var(--text-2)', cursor: isBusy ? 'default' : 'pointer', textAlign: 'left' }}
-                      >
-                        {m.application_ids.length} app{m.application_ids.length !== 1 ? 's' : ''} · editar
-                      </button>
-                      {highlightMemberId === m.team_member_id && (
-                        <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, width: 220, zIndex: 20, background: 'var(--surface-3, #2a2d36)', border: '1px solid var(--teal)', borderRadius: 8, padding: '9px 11px', fontSize: 11.5, lineHeight: 1.4, color: 'var(--text)', boxShadow: '0 6px 18px rgba(0,0,0,.35)' }}>
-                          Próximo passo: escolhe as applications a que {m.name.split(' ')[0]} vai ter acesso.
-                        </div>
-                      )}
-                    </div>
+                    <MemberAccessButton
+                      m={m}
+                      isBusy={isBusy}
+                      highlighted={highlightMemberId === m.team_member_id && !confirmRemove}
+                      onOpen={() => { openAccess(m); setHighlightMemberId(null); }}
+                    />
                   ) : (
                     <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{m.application_ids.length} app{m.application_ids.length !== 1 ? 's' : ''}</span>
                   )
@@ -353,7 +374,7 @@ export default function Team() {
                   <div style={{ textAlign: 'right' }}>
                     {manageable && (
                       <button
-                        onClick={() => removeMember(m)}
+                        onClick={() => { setConfirmRemove(m); setRemovingErr(''); }}
                         disabled={isBusy}
                         style={{ fontSize: 11.5, padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-3)', cursor: isBusy ? 'default' : 'pointer', opacity: isBusy ? .6 : 1 }}
                       >
@@ -365,6 +386,29 @@ export default function Team() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Remove member confirmation modal */}
+      {confirmRemove && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setConfirmRemove(null)}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: '28px 30px', maxWidth: 420, width: '100%', margin: '0 16px' }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 6px' }}>Remover membro</h2>
+            <p style={{ fontSize: 12.5, color: 'var(--text-2)', margin: '0 0 18px', lineHeight: 1.6 }}>
+              Tens a certeza que queres remover <strong>{confirmRemove.name}</strong> da equipa? Perde acesso imediato a todas as applications.
+            </p>
+            {removingErr && <div style={{ fontSize: 12, color: '#ff9aaa', marginBottom: 10 }}>{removingErr}</div>}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={() => removeMember(confirmRemove)}
+                disabled={busy === confirmRemove.team_member_id}
+                style={{ background: 'rgba(241,85,108,.15)', border: '1px solid rgba(241,85,108,.35)', color: '#ff8497', fontSize: 13, padding: '10px 20px', borderRadius: 9, cursor: busy === confirmRemove.team_member_id ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: busy === confirmRemove.team_member_id ? .6 : 1 }}
+              >
+                {busy === confirmRemove.team_member_id ? 'A remover…' : 'Remover'}
+              </button>
+              <button onClick={() => setConfirmRemove(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>Cancelar</button>
+            </div>
+          </div>
         </div>
       )}
 

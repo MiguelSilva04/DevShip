@@ -56,7 +56,7 @@ export default function Events() {
 
       <div style={{ border:'1px solid var(--border)', borderRadius:14, background:'var(--surface)', overflow:'hidden' }}>
         <div style={{ display:'grid', gridTemplateColumns:'70px 110px 220px 1fr 50px', gap:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:10.5, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-3)' }}>
-          <span>Type</span><span>Reason</span><span>Object</span><span>Message</span><span style={{ textAlign:'right' }}>Age</span>
+          <span>Tipo</span><span>Motivo</span><span>Objeto</span><span>Mensagem</span><span style={{ textAlign:'right' }}>Idade</span>
         </div>
         {events.map((e, i) => (
           <div key={i} style={{ display:'grid', gridTemplateColumns:'70px 110px 220px 1fr 50px', gap:12, padding:'11px 18px', borderBottom: i < events.length-1 ? '1px solid var(--border-soft)' : 'none', alignItems:'start', fontSize:12 }}>

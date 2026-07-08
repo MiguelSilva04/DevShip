@@ -30,6 +30,7 @@ export default function AddMember() {
   const [loading, setLoading] = useState(false);
   const [hasCloudEngineer, setHasCloudEngineer] = useState(false);
   const [apps, setApps] = useState<AppItem[]>([]);
+  const [appsErr, setAppsErr] = useState('');
   const [appIds, setAppIds] = useState<string[]>([]);
 
   const teamId = localStorage.getItem(OB_TEAM_ID);
@@ -44,7 +45,9 @@ export default function AddMember() {
       })
       .catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Erro ao carregar candidatos.'));
     if (projectId) {
-      apiFetch(`/projects/${projectId}/applications`).then(setApps).catch(() => setApps([]));
+      apiFetch(`/projects/${projectId}/applications`)
+        .then(setApps)
+        .catch((e: unknown) => setAppsErr(e instanceof Error ? e.message : 'Erro ao carregar applications.'));
     }
   }, [teamId]);
 
@@ -64,6 +67,7 @@ export default function AddMember() {
       // Se ficou sem apps atribuídas, aponta para o botão "editar apps" na lista da Team —
       // sem isto o Developer fica sem acesso a nada e ninguém percebe porquê.
       const newDeveloperId = role === 'DEVELOPER' && appIds.length === 0 ? member.team_member_id : undefined;
+      window.dispatchEvent(new CustomEvent('devship:team-changed'));
       nav('/app/team', { state: newDeveloperId ? { newDeveloperId } : undefined });
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Erro ao adicionar membro.');
@@ -135,7 +139,12 @@ export default function AddMember() {
       {role === 'DEVELOPER' && (
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 10 }}>Applications</div>
-          {apps.length === 0 ? (
+          {appsErr ? (
+            <div style={{ display: 'flex', gap: 9, border: '1px solid rgba(241,85,108,.3)', background: 'rgba(241,85,108,.08)', borderRadius: 9, padding: '10px 13px' }}>
+              <span style={{ color: '#ff8497' }}>✕</span>
+              <span style={{ fontSize: 12, color: '#ff9aaa' }}>{appsErr}</span>
+            </div>
+          ) : apps.length === 0 ? (
             <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>Nenhuma application neste projeto ainda — podes atribuir mais tarde em Team.</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

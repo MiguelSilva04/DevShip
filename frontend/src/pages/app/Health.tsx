@@ -124,7 +124,7 @@ function ProbeCard({ title, spec, passing, errorInfo, onViewLog }: {
           color: passing ? '#5dd57b' : '#ff8497',
           border: passing ? '1px solid rgba(52,199,89,.24)' : '1px solid rgba(241,85,108,.26)' }}>
           <span style={{ width:6, height:6, borderRadius:'50%', background: passing ? '#34C759' : '#F1556C' }}></span>
-          {passing ? 'Passing' : 'Failing'}
+          {passing ? 'A passar' : 'A falhar'}
         </span>
         <span onClick={onViewLog} style={{ marginLeft:'auto', fontSize:11.5, color:'var(--teal)', cursor:'pointer' }}>Ver log →</span>
       </div>
@@ -139,7 +139,7 @@ function ProbeCard({ title, spec, passing, errorInfo, onViewLog }: {
       )}
 
       {lastError ? (
-        <div className="mono" style={{ fontSize:12, color:'#ff8497', marginTop:8 }}>Last error: {lastError}</div>
+        <div className="mono" style={{ fontSize:12, color:'#ff8497', marginTop:8 }}>Último erro: {lastError}</div>
       ) : (
         <div style={{ fontSize:12, color:'var(--text-3)', marginTop:8 }}>Sem erros recentes.</div>
       )}

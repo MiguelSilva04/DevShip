@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -49,6 +50,7 @@ from backend.services.gitops_scanner import is_repo_collaborator, path_exists, r
 from backend.services.kubernetes_reader import KubernetesNotFoundError, get_argocd_application, list_namespaces
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -720,9 +722,10 @@ def _run_environment_validations(
             else:
                 v.namespace_status = ValidationStatus.INVALID
                 v.namespace_error = f"Namespace '{env.namespace}' not found in cluster"
-        except Exception as e:
+        except Exception:
+            logger.exception("_run_environment_validations: namespace check failed (namespace=%s)", env.namespace)
             v.namespace_status = ValidationStatus.INVALID
-            v.namespace_error = str(e)
+            v.namespace_error = "Erro ao validar o namespace no cluster."
     else:
         v.namespace_status = ValidationStatus.VALID  # skipped — no cluster yet or no namespace set
 
@@ -733,9 +736,10 @@ def _run_environment_validations(
             v.branch_status = ValidationStatus.VALID if ok else ValidationStatus.INVALID
             if not ok:
                 v.branch_error = f"Branch '{env.gitops_branch}' not found in {git_ops_url}"
-        except Exception as e:
+        except Exception:
+            logger.exception("_run_environment_validations: branch check failed (branch=%s)", env.gitops_branch)
             v.branch_status = ValidationStatus.INVALID
-            v.branch_error = str(e)
+            v.branch_error = "Erro ao validar a branch no repositório GitOps."
     else:
         v.branch_status = ValidationStatus.VALID
 
@@ -746,9 +750,10 @@ def _run_environment_validations(
             v.git_ops_path_status = ValidationStatus.VALID if ok else ValidationStatus.INVALID
             if not ok:
                 v.git_ops_path_error = f"Path '{env.git_ops_base_path}' not found on branch '{env.gitops_branch}'"
-        except Exception as e:
+        except Exception:
+            logger.exception("_run_environment_validations: GitOps path check failed (path=%s)", env.git_ops_base_path)
             v.git_ops_path_status = ValidationStatus.INVALID
-            v.git_ops_path_error = str(e)
+            v.git_ops_path_error = "Erro ao validar o caminho no repositório GitOps."
     else:
         v.git_ops_path_status = ValidationStatus.VALID
 
@@ -763,9 +768,13 @@ def _run_environment_validations(
         except KubernetesNotFoundError:
             v.argocd_status = ValidationStatus.INVALID
             v.argocd_error = f"ArgoCD Application '{env.argocd_application_name}' not found in namespace '{cluster.argocd_namespace}'"
-        except Exception as e:
+        except Exception:
+            logger.exception(
+                "_run_environment_validations: ArgoCD Application check failed (application=%s)",
+                env.argocd_application_name,
+            )
             v.argocd_status = ValidationStatus.INVALID
-            v.argocd_error = str(e)
+            v.argocd_error = "Erro ao validar a Application no ArgoCD."
     else:
         v.argocd_status = ValidationStatus.VALID  # skipped — no cluster yet or no ArgoCD name set
 
@@ -853,7 +862,7 @@ def gitops_scan(
     if not project.git_ops_repository_url:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Project has no git_ops_repository_url — set it when creating the project",
+            detail="O projeto não tem um repositório GitOps configurado.",
         )
 
     environments = db.query(Environment).filter(Environment.project_id == project_id).all()

@@ -31,8 +31,6 @@ def validate_cluster(cluster_arn: str, iam_role_arn: str, external_id: str) -> E
 
     # 1. STS AssumeRole
     try:
-        print(iam_role_arn)
-        print(external_id)
         session = assume_user_role(role_arn=iam_role_arn, external_id=external_id, region=region)
     except Exception as e:
         logger.exception("validate_cluster: STS AssumeRole phase failed")

@@ -106,6 +106,7 @@ def get_project(
     current_user: User = Depends(get_current_user),
 ):
     project = _get_project_or_404(db, project_id)
+    _require_project_member(db, project_id, current_user)
     team = db.get(Team, project.team_id)
     return ProjectSummary(
         id=project.id, name=project.name, description=project.description,
@@ -619,12 +620,12 @@ def get_homepage(
 # GET /application-environments/{id}/up-to-date — DEV-10.3, one live GitHub call
 # ---------------------------------------------------------------------------
 
-def compute_up_to_date(argocd_sync_revision: str | None, gitops_head_sha: str | None) -> UpToDateStatus:
+def compute_up_to_date(deployed_source_commit_sha: str | None, source_head_sha: str | None) -> UpToDateStatus:
     """Pure: three-state comparison. A missing input on either side means we can't
     know — never collapse that into Outdated, that would read as a false alarm."""
-    if argocd_sync_revision is None or gitops_head_sha is None:
+    if deployed_source_commit_sha is None or source_head_sha is None:
         return UpToDateStatus.UNKNOWN
-    return UpToDateStatus.UP_TO_DATE if argocd_sync_revision == gitops_head_sha else UpToDateStatus.OUTDATED
+    return UpToDateStatus.UP_TO_DATE if deployed_source_commit_sha == source_head_sha else UpToDateStatus.OUTDATED
 
 
 @router.get("/application-environments/{ae_id}/up-to-date", response_model=UpToDateResponse)

@@ -88,7 +88,7 @@ def scan_gitops_repo(repo_url: str, env_paths: list[tuple[str, str]] | None = No
         timeout=15,
     )
     if resp.status_code == 404:
-        raise ValueError(f"GitOps repository not found: {repo_url}")
+        raise ValueError(f"Repositório GitOps não encontrado: {repo_url}")
     resp.raise_for_status()
 
     for entry in resp.json():

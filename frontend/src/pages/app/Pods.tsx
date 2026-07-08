@@ -68,7 +68,7 @@ export default function Pods() {
 
       <div style={{ border:'1px solid var(--border)', borderRadius:14, background:'var(--surface)', overflow:'hidden', marginBottom:16 }}>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 90px 60px 70px 70px 70px 40px 80px', gap:12, padding:'11px 20px', borderBottom:'1px solid var(--border)', fontSize:10.5, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-3)' }}>
-          <span>Name</span><span>Status</span><span>Ready</span><span>CPU</span><span>Memory</span><span>Restarts</span><span>Age</span><span>Node</span>
+          <span>Nome</span><span>Status</span><span>Ready</span><span>CPU</span><span>Memória</span><span>Restarts</span><span>Idade</span><span>Node</span>
         </div>
         {pods.map((pod, i) => {
           const isRunning = pod.phase === 'Running';
@@ -101,7 +101,7 @@ export default function Pods() {
 
       <div style={{ display:'flex', gap:16, fontSize:12, color:'var(--text-3)' }}>
         <span>Total: <strong style={{ color:'var(--text-2)' }}>{pods.length}</strong></span>
-        <span>Running: <strong style={{ color:'#5dd57b' }}>{running}</strong></span>
+        <span>Em execução: <strong style={{ color:'#5dd57b' }}>{running}</strong></span>
       </div>
     </div>
   );

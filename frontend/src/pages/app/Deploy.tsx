@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useUser } from '../../context/UserContext';
 import { apiFetch } from '../../api/client';
 import GithubIdentityPrompt, { GITHUB_IDENTITY_ERROR } from '../../components/GithubIdentityPrompt';
+import { UP_TO_DATE_LABEL } from '../../lib/lifecycle';
 
 interface AEDetail {
   id: string;
@@ -191,7 +192,7 @@ export default function Deploy() {
             title="Já está tudo deployado — sem commits novos desde o último deploy."
             style={{ fontSize: 13, padding: '10px 20px', borderRadius: 9, fontWeight: 600, background: 'rgba(52,199,89,.13)', color: '#5dd57b', border: '1px solid rgba(52,199,89,.24)', cursor: 'default' }}
           >
-            Up to date
+            {UP_TO_DATE_LABEL.UpToDate}
           </button>
         ) : (
           <button
@@ -203,7 +204,7 @@ export default function Deploy() {
             {loading ? 'A enviar…' : requiresApproval ? 'Solicitar deploy →' : 'Confirmar deploy →'}
           </button>
         )}
-        <button onClick={() => nav(-1)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>Cancelar</button>
+        <button onClick={() => nav(`/app/${appId}/${aeId}`)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>Cancelar</button>
         <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--text-3)' }}>
           A fazer deploy como <span style={{ color: 'var(--text-2)' }}>{user?.name ?? '—'}</span>
         </span>

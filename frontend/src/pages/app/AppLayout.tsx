@@ -3,8 +3,10 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { useUser, userFromBackend } from '../../context/UserContext';
 import { OB_TEAM_ID } from '../Onboarding';
+import GithubIdentityPrompt from '../../components/GithubIdentityPrompt';
 
 interface TeamEntry { team_id: string; role: 'CLOUD_ENGINEER' | 'TECH_LEAD' | 'DEVELOPER'; }
+interface MeInfo { github_username: string | null; github_email: string | null; }
 
 export default function AppLayout() {
   const nav = useNavigate();
@@ -13,12 +15,20 @@ export default function AppLayout() {
   const [project, setProject] = useState<{ name: string; team_name: string } | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
   const [candidateCount, setCandidateCount] = useState(0);
+  const [showAccount, setShowAccount] = useState(false);
+  const [me, setMe] = useState<MeInfo | null>(null);
 
   useEffect(() => {
     const projectId = localStorage.getItem('ob_project_id');
     if (!projectId) return;
     apiFetch(`/projects/${projectId}`).then(setProject).catch(() => setProject(null));
   }, []);
+
+  function loadMe() {
+    apiFetch(`/auth/me`).then(setMe).catch(() => setMe(null));
+  }
+
+  useEffect(loadMe, []);
 
   // Role só é normalmente definido pelo Lobby ao escolher a team — se por alguma razão
   // chegámos aqui sem role (ex: sessão restaurada de um estado antigo), resolve-o aqui
@@ -61,10 +71,18 @@ export default function AppLayout() {
     if (!canManageTeam) return;
     const teamId = localStorage.getItem(OB_TEAM_ID);
     if (!teamId) return;
-    apiFetch(`/teams/${teamId}/members`)
-      .then(({ candidates }: { candidates: unknown[] }) => setCandidateCount(candidates.length))
-      .catch(() => setCandidateCount(0));
-  }, [canManageTeam]);
+    function refresh() {
+      apiFetch(`/teams/${teamId}/members`)
+        .then(({ candidates }: { candidates: unknown[] }) => setCandidateCount(candidates.length))
+        .catch(() => setCandidateCount(0));
+    }
+    // Mesmo raciocínio do badge de Aprovações: refaz a contagem a cada mudança de rota
+    // (cobre navegar para/de Equipa) e no evento disparado ao adicionar/remover um membro
+    // sem sair da página (Team.tsx / AddMember.tsx).
+    refresh();
+    window.addEventListener('devship:team-changed', refresh);
+    return () => window.removeEventListener('devship:team-changed', refresh);
+  }, [canManageTeam, loc.pathname]);
 
   const at = (path: string) => loc.pathname === `/app/${path}` || loc.pathname.startsWith(`/app/${path}/`);
   const active = (path: string): React.CSSProperties => ({
@@ -105,9 +123,10 @@ export default function AppLayout() {
         {isCloud && <NavBtn icon={IconSettings} label="Definições"  style={active('settings')}  onClick={() => nav('/app/settings')} />}
         <NavBtn icon={IconBook} label="Como funciona" style={active('how')} onClick={() => nav('/app/how')} />
 
-        {/* User */}
+        {/* User — abre o popover de conta; logout passou a viver lá dentro, separado
+            desta ação (que só mostra o perfil/identidade GitHub). */}
         <button
-          onClick={logout}
+          onClick={() => setShowAccount(true)}
           style={{ marginTop:'auto', display:'flex', alignItems:'center', gap:10, padding:'11px 12px', borderRadius:9, border:'none', borderTop:'1px solid var(--border-soft)', background:'transparent', cursor:'pointer', textAlign:'left', color:'var(--text)', width:'100%' }}
           className="hover-surface2"
         >
@@ -118,9 +137,57 @@ export default function AppLayout() {
             <div style={{ fontSize:12, fontWeight:500, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{user?.name ?? 'Utilizador'}</div>
             <div style={{ fontSize:10, color:'var(--text-3)' }}>{user?.roleLabel ?? ''}</div>
           </div>
-          <IconLogout style={{ marginLeft:'auto', flex:'none', color:'var(--text-3)', width:15, height:15 }} />
         </button>
       </aside>
+
+      {/* Account popover */}
+      {showAccount && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.65)', display:'flex', alignItems:'flex-end', justifyContent:'flex-start', zIndex:100 }} onClick={() => setShowAccount(false)}>
+          <div
+            style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:14, padding:'18px 20px', width:280, margin:'0 0 84px 12px' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16 }}>
+              <div style={{ width:36, height:36, borderRadius:'50%', background:'var(--surface-3)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, fontWeight:600, flex:'none' }}>
+                {user?.initials ?? '?'}
+              </div>
+              <div style={{ minWidth:0 }}>
+                <div style={{ fontSize:13.5, fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{user?.name ?? 'Utilizador'}</div>
+                <div style={{ fontSize:11, color:'var(--text-3)' }}>{user?.roleLabel ?? ''}</div>
+              </div>
+            </div>
+
+            <div style={{ borderTop:'1px solid var(--border-soft)', paddingTop:14, marginBottom:14 }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                <div>
+                  <div style={{ fontSize:12.5, fontWeight:500 }}>Identidade GitHub</div>
+                  <div style={{ fontSize:11, color:'var(--text-3)', marginTop:3 }}>
+                    {me?.github_username ? (
+                      <span className="mono">{me.github_username}</span>
+                    ) : (
+                      'Ainda não configurada'
+                    )}
+                  </div>
+                </div>
+                <GithubIdentityPrompt
+                  onConfigured={loadMe}
+                  configured={!!me?.github_username}
+                  currentUsername={me?.github_username}
+                  currentEmail={me?.github_email}
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={logout}
+              style={{ display:'flex', alignItems:'center', gap:9, borderTop:'1px solid var(--border-soft)', paddingTop:14, border:'none', background:'transparent', cursor:'pointer', color:'#ff8497', fontSize:12.5, width:'100%', textAlign:'left' }}
+            >
+              <IconLogout style={{ flex:'none', width:15, height:15 }} />
+              Terminar sessão
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main */}
       <main style={{ flex:1, minWidth:0 }}>

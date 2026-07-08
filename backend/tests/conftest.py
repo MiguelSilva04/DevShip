@@ -9,6 +9,10 @@ load_dotenv()
 
 TEST_DATABASE_URL = os.environ["TEST_DATABASE_URL"]
 
+from backend.api.rate_limit import limiter
+
+limiter.enabled = False
+
 
 @pytest.fixture(scope="session")
 def engine():

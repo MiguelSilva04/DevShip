@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
-
-type LifecycleStatus = 'Deploying' | 'Healthy' | 'Degraded' | 'Failed' | 'RolledBack' | 'Superseded';
+import { type LifecycleStatus, type UpToDateStatus, lifecycleColor, UP_TO_DATE_LABEL } from '../../lib/lifecycle';
 
 interface AEStatus {
   id: string;
@@ -26,15 +25,7 @@ interface HomepageData {
 }
 
 function statusPill(s: LifecycleStatus | null) {
-  const map: Record<string, { bg: string; col: string; bord: string; dot: string }> = {
-    Healthy:    { bg: 'rgba(52,199,89,.13)',  col: '#5dd57b', bord: 'rgba(52,199,89,.24)',   dot: '#34C759' },
-    Deploying:  { bg: 'rgba(224,169,59,.13)', col: '#ecc26b', bord: 'rgba(224,169,59,.26)',  dot: '#E0A93B' },
-    Degraded:   { bg: 'rgba(241,85,108,.13)', col: '#ff8497', bord: 'rgba(241,85,108,.26)',  dot: '#F1556C' },
-    Failed:     { bg: 'rgba(241,85,108,.13)', col: '#ff8497', bord: 'rgba(241,85,108,.26)',  dot: '#F1556C' },
-    RolledBack: { bg: 'rgba(120,120,180,.13)',col: '#aab4ff', bord: 'rgba(120,120,180,.26)', dot: '#7880cc' },
-    Superseded: { bg: 'rgba(150,150,150,.13)',col: 'var(--text-3)', bord: 'rgba(150,150,150,.26)', dot: '#888' },
-  };
-  return map[s ?? ''] ?? { bg: 'var(--surface-2)', col: 'var(--text-3)', bord: 'var(--border)', dot: 'var(--text-3)' };
+  return lifecycleColor(s, { bg: 'var(--surface-2)', col: 'var(--text-3)', bord: 'var(--border)', dot: 'var(--text-3)' });
 }
 
 function isActive(s: LifecycleStatus | null) {
@@ -44,8 +35,6 @@ function isActive(s: LifecycleStatus | null) {
 function effectiveStatus(ae: AEStatus): LifecycleStatus | null {
   return ae.lifecycle_status ?? ae.discovered_status;
 }
-
-type UpToDateStatus = 'UpToDate' | 'Outdated' | 'Unknown';
 
 export default function Home() {
   const nav = useNavigate();
@@ -70,14 +59,25 @@ export default function Home() {
       .catch(e => setError(e.message));
   }, []);
 
-  function checkUpToDate(environments: AEStatus[]) {
+  function checkUpToDate(environments: AEStatus[], force = false) {
     environments.forEach(ae => {
-      if (upToDate[ae.id]) return;
+      if (!force && upToDate[ae.id]) return;
       apiFetch(`/application-environments/${ae.id}/up-to-date`)
         .then((r: { status: UpToDateStatus }) => setUpToDate(prev => ({ ...prev, [ae.id]: r.status })))
         .catch(() => {});
     });
   }
+
+  // Reconsulta "up to date" sempre que o lifecycle_status de algum AE muda (ex: um deploy
+  // terminou), para as apps já expandidas/com o picker aberto — sem isto, o cache acima
+  // ficava preso ao primeiro valor lido e nunca refletia o novo estado depois de um deploy.
+  const statusesKey = data?.applications.flatMap(app => app.environments.map(ae => `${ae.id}:${effectiveStatus(ae)}`)).join(',') ?? '';
+  useEffect(() => {
+    if (!data) return;
+    const visible = data.applications.filter(app => open[app.id] || picker[app.id]);
+    visible.forEach(app => checkUpToDate(app.environments, true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusesKey]);
 
   if (error) return <div style={{ color: '#ff8497', fontSize: 13, padding: '40px 0' }}>{error}</div>;
   if (!data) return <Spinner />;
@@ -192,7 +192,7 @@ export default function Home() {
                       className="mono"
                       style={{ fontSize: 11.5, border: '1px solid rgba(52,199,89,.24)', background: 'rgba(52,199,89,.08)', color: '#5dd57b', padding: '6px 12px', borderRadius: 7, cursor: 'default' }}
                     >
-                      {ae.environment_name} · Up to date
+                      {ae.environment_name} · {UP_TO_DATE_LABEL.UpToDate}
                     </button>
                   ) : (
                     <button

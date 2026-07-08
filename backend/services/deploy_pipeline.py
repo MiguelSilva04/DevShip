@@ -5,12 +5,15 @@ trigger_deploy()  — called in the request thread; dispatches GitHub workflow, 
 observe_deployment() — called as a BackgroundTask; opens its own DB session (the request
                        session is already closed by the time this runs).
 """
+import logging
 import os
 import time
 import uuid
 from datetime import datetime, timezone
 
 import requests as http
+
+logger = logging.getLogger(__name__)
 
 from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
@@ -217,9 +220,11 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                                     message=f"Workflow run {run_id} terminou com: {run['conclusion']}")
                         _fail_request(db, req, f"GitHub Actions falhou: {run['conclusion']}", version=version)
                         return
-            except Exception as e:
-                _emit_event(db, version, DeploymentEventType.IMAGE_BUILD_FAILED, EventSource.GITHUB, message=str(e))
-                _fail_request(db, req, str(e), version=version)
+            except Exception:
+                logger.exception("observe_deployment: GitHub Actions polling failed (run_id=%s)", run_id)
+                _emit_event(db, version, DeploymentEventType.IMAGE_BUILD_FAILED, EventSource.GITHUB,
+                            message="Erro ao consultar o estado do workflow no GitHub Actions.")
+                _fail_request(db, req, "Erro ao consultar o estado do workflow no GitHub Actions.", version=version)
                 return
         else:
             _timeout(db, req, version=version)
@@ -239,10 +244,11 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                 external_id=cluster_ctx.external_id,
                 cluster_arn=cluster_ctx.cluster_arn,
             )
-        except Exception as e:
+        except Exception:
+            logger.exception("observe_deployment: cluster auth failed (cluster_arn=%s)", cluster_ctx.cluster_arn)
             _emit_event(db, version, DeploymentEventType.SYNC_FAILED, EventSource.KUBERNETES,
-                        message=f"Erro ao obter token do cluster: {e}")
-            _fail_request(db, req, f"Falha de autenticação no cluster: {e}", version=version)
+                        message="Falha de autenticação no cluster.")
+            _fail_request(db, req, "Falha de autenticação no cluster.", version=version)
             return
 
         # ── 2. ArgoCD sync (opcional) ─────────────────────────────────────────
@@ -327,11 +333,12 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                             db.commit()
                 if rollout_done:
                     break
-            except Exception as e:
+            except Exception:
                 k8s_misses += 1
                 if k8s_misses == 5:
+                    logger.exception("observe_deployment: failed to observe Deployment/%s", deployment_name)
                     _emit_event(db, version, DeploymentEventType.SYNC_FAILED, EventSource.KUBERNETES,
-                                message=f"Erro ao observar Deployment/{deployment_name}: {e}")
+                                message=f"Erro ao observar Deployment/{deployment_name}.")
         else:
             _timeout(db, req, version=version)
             return
@@ -392,9 +399,10 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
 
                 if ready_seen:
                     break
-            except Exception as e:
+            except Exception:
+                logger.exception("observe_deployment: failed to observe pods in namespace %s", namespace)
                 _emit_event(db, version, DeploymentEventType.READINESS_FAILED, EventSource.KUBERNETES,
-                            message=f"Erro ao observar pods: {e}")
+                            message="Erro ao observar pods.")
         else:
             _timeout(db, req, version=version, post_rollout=True)
             return
@@ -404,7 +412,8 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
         req.completed_at = datetime.now(timezone.utc)
         db.commit()
 
-    except Exception as e:
+    except Exception:
+        logger.exception("observe_deployment: unexpected error (deployment_request_id=%s)", deployment_request_id)
         try:
             db.rollback()
             req = db.get(DeploymentRequest, deployment_request_id)
@@ -412,7 +421,7 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                 v = db.query(DeploymentVersion).filter(
                     DeploymentVersion.deployment_request_id == deployment_request_id
                 ).first()
-                _fail_request(db, req, f"Erro inesperado no observer: {e}", version=v)
+                _fail_request(db, req, "Erro inesperado no pipeline de deploy.", version=v)
         except Exception:
             pass
     finally:

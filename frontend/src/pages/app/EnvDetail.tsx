@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
-
-type LifecycleStatus = 'Deploying' | 'Healthy' | 'Degraded' | 'Failed' | 'RolledBack' | 'Superseded';
-type UpToDateStatus = 'UpToDate' | 'Outdated' | 'Unknown';
+import { type LifecycleStatus, type UpToDateStatus, lifecycleColor, UP_TO_DATE_LABEL } from '../../lib/lifecycle';
 
 interface UpToDateResult {
   status: UpToDateStatus;
@@ -14,9 +12,9 @@ interface UpToDateResult {
 
 function upToDatePill(s: UpToDateStatus) {
   const map: Record<UpToDateStatus, { bg: string; col: string; bord: string; label: string }> = {
-    UpToDate: { bg: 'rgba(52,199,89,.13)',  col: '#5dd57b', bord: 'rgba(52,199,89,.24)',  label: 'Up to date' },
-    Outdated: { bg: 'rgba(224,169,59,.13)', col: '#ecc26b', bord: 'rgba(224,169,59,.26)', label: 'Outdated' },
-    Unknown:  { bg: 'var(--surface)',       col: 'var(--text-3)', bord: 'var(--border)',  label: 'Unknown' },
+    UpToDate: { bg: 'rgba(52,199,89,.13)',  col: '#5dd57b', bord: 'rgba(52,199,89,.24)',  label: UP_TO_DATE_LABEL.UpToDate },
+    Outdated: { bg: 'rgba(224,169,59,.13)', col: '#ecc26b', bord: 'rgba(224,169,59,.26)', label: UP_TO_DATE_LABEL.Outdated },
+    Unknown:  { bg: 'var(--surface)',       col: 'var(--text-3)', bord: 'var(--border)',  label: UP_TO_DATE_LABEL.Unknown },
   };
   return map[s];
 }
@@ -43,15 +41,7 @@ interface AEDetail {
 }
 
 function statusPill(s: LifecycleStatus | null) {
-  const map: Record<string, { bg: string; col: string; bord: string; dot: string }> = {
-    Healthy:    { bg: 'rgba(52,199,89,.13)',  col: '#5dd57b', bord: 'rgba(52,199,89,.24)',   dot: '#34C759' },
-    Deploying:  { bg: 'rgba(224,169,59,.13)', col: '#ecc26b', bord: 'rgba(224,169,59,.26)',  dot: '#E0A93B' },
-    Degraded:   { bg: 'rgba(241,85,108,.13)', col: '#ff8497', bord: 'rgba(241,85,108,.26)',  dot: '#F1556C' },
-    Failed:     { bg: 'rgba(241,85,108,.13)', col: '#ff8497', bord: 'rgba(241,85,108,.26)',  dot: '#F1556C' },
-    RolledBack: { bg: 'rgba(120,120,180,.13)',col: '#aab4ff', bord: 'rgba(120,120,180,.26)', dot: '#7880cc' },
-    Superseded: { bg: 'rgba(150,150,150,.13)',col: 'var(--text-3)', bord: 'rgba(150,150,150,.26)', dot: '#888' },
-  };
-  return map[s ?? ''] ?? { bg: 'var(--surface)', col: 'var(--text-3)', bord: 'var(--border)', dot: '#888' };
+  return lifecycleColor(s, { bg: 'var(--surface)', col: 'var(--text-3)', bord: 'var(--border)', dot: '#888' });
 }
 
 export default function EnvDetail() {
@@ -76,7 +66,10 @@ export default function EnvDetail() {
       .finally(() => setUtdLoading(false));
   }, [aeId]);
 
-  useEffect(() => { loadUpToDate(); }, [loadUpToDate]);
+  // Recomputa sempre que a versão atual muda (novo deploy concluído) — sem depender de
+  // data?.current_version?.id, esta chamada só corria uma vez no mount e o badge ficava
+  // preso no valor do primeiro load mesmo depois de um deploy terminar nesta página.
+  useEffect(() => { loadUpToDate(); }, [loadUpToDate, data?.current_version?.id]);
 
   useEffect(() => {
     if (!aeId) return;
@@ -266,7 +259,7 @@ function ProbeRow({ label, state }: { label: string; state: 'passing' | 'checkin
     : <span style={{ width: 18, height: 18, borderRadius: '50%', border: '1.5px dashed var(--border)', flex: 'none' }} />;
 
   const statusCol = state === 'passing' ? '#5dd57b' : state === 'checking' ? '#ecc26b' : 'var(--text-3)';
-  const statusLabel = state === 'passing' ? 'Passing' : state === 'checking' ? 'Checking…' : state === 'waiting' ? 'Waiting' : '–';
+  const statusLabel = state === 'passing' ? 'A passar' : state === 'checking' ? 'A verificar…' : state === 'waiting' ? 'À espera' : '–';
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

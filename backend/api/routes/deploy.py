@@ -1,12 +1,14 @@
+import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.api.authorization import _require_application_access
 from backend.api.deps import get_current_user, get_db
+from backend.api.rate_limit import limiter
 from backend.api.schemas.deploy import (
     DeploymentEventResponse,
     DeploymentRequestResponse,
@@ -18,6 +20,7 @@ from backend.api.schemas.deploy import (
 from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
 from backend.bd.models.application_team_member import ApplicationTeamMember
+from backend.bd.models.cluster_context import ClusterContext
 from backend.bd.models.deployment_event import DeploymentEvent
 from backend.bd.models.deployment_request import DeploymentRequest, DeploymentType, RequestStatus
 from backend.bd.models.deployment_version import DeploymentVersion, LifecycleStatus
@@ -26,9 +29,17 @@ from backend.bd.models.project import Project
 from backend.bd.models.team_member import TeamMember, TeamMemberRole
 from backend.bd.models.user import User
 from backend.services import deploy_pipeline as dp
+from backend.services.cluster_validation import validate_cluster
 from backend.services.gitops_scanner import get_branch_head_commit, is_repo_collaborator
 
 router = APIRouter(tags=["deploy"])
+logger = logging.getLogger(__name__)
+
+# trigger_deploy talks straight to the GitHub API — a raw str(e) from that (requests
+# HTTPError, connection errors, ...) can carry the full GitHub API URL, owner/repo names,
+# rate-limit details. Same class of leak already fixed for AWS/boto3 in cluster_validation.py;
+# this is the GitHub-specific equivalent. Full exception goes to the log only.
+_DISPATCH_FAILED_MESSAGE = "Não foi possível disparar o deploy. Verifica a configuração do workflow e tenta novamente."
 
 
 def _get_app_env_or_404(db: Session, app_env_id: uuid.UUID) -> ApplicationEnvironment:
@@ -97,6 +108,26 @@ def _require_team_member(db: Session, app_env_id: uuid.UUID, user: User) -> tupl
     return ae, env, app
 
 
+def _require_cluster_reachable(db: Session, env: Environment) -> None:
+    """Checked before dispatching anything to GitHub Actions — without this, a deploy with
+    an unreachable cluster still burns a real CI build (and its minutes/cost) only to fail
+    later at the K8s phase in observe_deployment(), when the outcome was already knowable
+    upfront. If there's no ClusterContext at all, that's a valid setup (CI-only pipeline,
+    same case observe_deployment() already treats as success-after-CI) — only an existing,
+    unreachable cluster blocks here."""
+    cluster_ctx = db.query(ClusterContext).filter(ClusterContext.project_id == env.project_id).first()
+    if cluster_ctx is None:
+        return
+    try:
+        validate_cluster(
+            cluster_arn=cluster_ctx.cluster_arn,
+            iam_role_arn=cluster_ctx.iam_role_arn,
+            external_id=cluster_ctx.external_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
+
+
 def _check_github_gate(app: Application, environment: Environment, user: User, check_authorship: bool) -> str | None:
     """Devolve None (passa), uma mensagem de aviso (não bloqueia), ou levanta HTTPException 403 (bloqueia)."""
     if not user.github_username:
@@ -150,7 +181,9 @@ def _require_approver(db: Session, req: DeploymentRequest, user: User) -> None:
     response_model=DeploymentRequestResponse,
     status_code=status.HTTP_201_CREATED,
 )
+@limiter.limit("10/minute")
 def create_deploy(
+    request: Request,
     app_env_id: uuid.UUID,
     body: DeployRequest,
     background_tasks: BackgroundTasks,
@@ -159,6 +192,7 @@ def create_deploy(
 ):
     _, env, app = _require_team_member(db, app_env_id, current_user)
     warning = _check_github_gate(app, env, current_user, check_authorship=not body.confirmed)
+    _require_cluster_reachable(db, env)
 
     req = DeploymentRequest(
         application_environment_id=app_env_id,
@@ -173,18 +207,19 @@ def create_deploy(
     except IntegrityError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="A deploy is already in progress for this ApplicationEnvironment",
+            detail="Já existe um deploy em curso para este ambiente.",
         )
 
     if not env.requires_approval:
         try:
             dp.trigger_deploy(db, req, env, app)
-        except Exception as e:
+        except Exception:
+            logger.exception("trigger_deploy failed for request %s", req.id)
             req.status = RequestStatus.FAILED
-            req.failure_reason = str(e)
+            req.failure_reason = _DISPATCH_FAILED_MESSAGE
             req.completed_at = datetime.now(timezone.utc)
             db.commit()
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=_DISPATCH_FAILED_MESSAGE)
         background_tasks.add_task(dp.observe_deployment, req.id)
     else:
         db.commit()
@@ -204,7 +239,9 @@ def create_deploy(
     response_model=DeploymentRequestResponse,
     status_code=status.HTTP_201_CREATED,
 )
+@limiter.limit("10/minute")
 def create_rollback(
+    request: Request,
     app_env_id: uuid.UUID,
     body: RollbackRequest,
     background_tasks: BackgroundTasks,
@@ -213,6 +250,7 @@ def create_rollback(
 ):
     _, env, app = _require_team_member(db, app_env_id, current_user)
     _check_github_gate(app, env, current_user, check_authorship=False)
+    _require_cluster_reachable(db, env)
 
     current = (
         db.query(DeploymentVersion)
@@ -272,7 +310,7 @@ def create_rollback(
     except IntegrityError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="A deploy is already in progress for this ApplicationEnvironment",
+            detail="Já existe um deploy em curso para este ambiente.",
         )
 
     # Targeting a RolledBack version always forces approval, even for environments that
@@ -280,12 +318,13 @@ def create_rollback(
     if not env.requires_approval and not targeting_rolled_back:
         try:
             dp.trigger_deploy(db, req, env, app)
-        except Exception as e:
+        except Exception:
+            logger.exception("trigger_deploy failed for request %s", req.id)
             req.status = RequestStatus.FAILED
-            req.failure_reason = str(e)
+            req.failure_reason = _DISPATCH_FAILED_MESSAGE
             req.completed_at = datetime.now(timezone.utc)
             db.commit()
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=_DISPATCH_FAILED_MESSAGE)
         background_tasks.add_task(dp.observe_deployment, req.id)
     else:
         db.commit()
@@ -355,21 +394,24 @@ def get_deploy_request(
 # ---------------------------------------------------------------------------
 
 @router.post("/deployment-requests/{request_id}/approve", response_model=DeploymentRequestResponse)
+@limiter.limit("10/minute")
 def approve_deploy(
+    request: Request,
     request_id: uuid.UUID,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     req = _get_request_or_404(db, request_id)
+    _require_approver(db, req, current_user)
+
     if req.status != RequestStatus.PENDING:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_already_decided_message(req.status))
-
-    _require_approver(db, req, current_user)
 
     ae = db.get(ApplicationEnvironment, req.application_environment_id)
     env = db.get(Environment, ae.environment_id)
     app = db.get(Application, ae.application_id)
+    _require_cluster_reachable(db, env)
 
     req.approved_by = current_user.id
     req.approved_at = datetime.now(timezone.utc)
@@ -378,12 +420,13 @@ def approve_deploy(
 
     try:
         dp.trigger_deploy(db, req, env, app)
-    except Exception as e:
+    except Exception:
+        logger.exception("trigger_deploy failed for request %s", req.id)
         req.status = RequestStatus.FAILED
-        req.failure_reason = str(e)
+        req.failure_reason = _DISPATCH_FAILED_MESSAGE
         req.completed_at = datetime.now(timezone.utc)
         db.commit()
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=_DISPATCH_FAILED_MESSAGE)
 
     background_tasks.add_task(dp.observe_deployment, req.id)
     db.refresh(req)
@@ -395,17 +438,19 @@ def approve_deploy(
 # ---------------------------------------------------------------------------
 
 @router.post("/deployment-requests/{request_id}/reject", response_model=DeploymentRequestResponse)
+@limiter.limit("10/minute")
 def reject_deploy(
+    request: Request,
     request_id: uuid.UUID,
     body: RejectRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     req = _get_request_or_404(db, request_id)
+    _require_approver(db, req, current_user)
+
     if req.status != RequestStatus.PENDING:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_already_decided_message(req.status))
-
-    _require_approver(db, req, current_user)
 
     req.status = RequestStatus.REJECTED
     req.justification = body.justification
