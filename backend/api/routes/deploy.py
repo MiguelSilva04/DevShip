@@ -91,6 +91,13 @@ _STATUS_LABEL_PT = {
     RequestStatus.CANCELLED: "cancelado",
 }
 
+# Job titles, not translated — matches ROLE_LABEL in frontend/src/pages/app/Environments.tsx
+_ROLE_LABEL_PT = {
+    TeamMemberRole.DEVELOPER: "Developer",
+    TeamMemberRole.TECH_LEAD: "Tech Lead",
+    TeamMemberRole.CLOUD_ENGINEER: "Cloud Engineer",
+}
+
 
 def _already_decided_message(current_status: RequestStatus) -> str:
     """approve/reject only act on PENDING — a second click after someone else (or the same
@@ -166,9 +173,10 @@ def _require_approver(db: Session, req: DeploymentRequest, user: User) -> None:
 
     if env.requires_approval and env.approval_required_role is not None:
         if member.role != env.approval_required_role:
+            role_label = _ROLE_LABEL_PT.get(env.approval_required_role, env.approval_required_role.value)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Approval requires role {env.approval_required_role.value}",
+                detail=f"Este pedido só pode ser aprovado por um {role_label}.",
             )
 
 

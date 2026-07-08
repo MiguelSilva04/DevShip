@@ -51,6 +51,27 @@ function statusLabel(s: RequestStatus) {
   return map[s] ?? s;
 }
 
+const EVENT_TYPE_LABEL: Record<string, string> = {
+  WORKFLOW_STARTED: 'Workflow iniciado',
+  BUILD_COMPLETED: 'Build concluído',
+  IMAGE_BUILD_FAILED: 'Falha ao construir a imagem',
+  IMAGE_PUSHED: 'Imagem publicada',
+  GITOPS_UPDATED: 'Repositório GitOps atualizado',
+  SYNC_STARTED: 'Sincronização iniciada',
+  SYNC_COMPLETED: 'Sincronização concluída',
+  SYNC_FAILED: 'Falha na sincronização',
+  ROLLOUT_STARTED: 'Rollout iniciado',
+  ROLLOUT_COMPLETED: 'Rollout concluído',
+  POD_CREATED: 'Pod criado',
+  READINESS_PASSED: 'Pod pronto',
+  READINESS_FAILED: 'Pod não ficou pronto',
+  CRASH_LOOP_BACKOFF: 'Pod em crash loop',
+};
+
+function eventTypeLabel(t: string): string {
+  return EVENT_TYPE_LABEL[t] ?? t;
+}
+
 // ─── Pipeline stages ─────────────────────────────────────────────────────────
 // Every DeploymentEventType maps onto one of these 5 conceptual stages, in a
 // fixed, known order — this lets the whole pipeline be shown as a stepper with
@@ -159,7 +180,7 @@ function StageRow({ stage, state, events, isLast }: { stage: Stage; state: Stage
               <div key={ev.id}>
                 <span style={{ color: 'var(--text-3)', marginRight: 10 }}>{new Date(ev.event_timestamp).toLocaleTimeString()}</span>
                 <span style={{ color: ev.severity !== 'INFO' ? severityColor(ev.severity) : 'var(--text-2)' }}>
-                  {ev.event_type}{ev.message ? ` — ${ev.message}` : ''}
+                  {eventTypeLabel(ev.event_type)}{ev.message ? ` — ${ev.message}` : ''}
                 </span>
               </div>
             ))}
