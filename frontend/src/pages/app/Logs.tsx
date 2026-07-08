@@ -25,7 +25,7 @@ const levelColor: Record<string,string> = {
 export default function Logs() {
   const { appId, aeId } = useParams<{ appId: string; aeId: string }>();
   const { appLabel, envLabel } = useAppEnvBreadcrumb(appId, aeId);
-  const [pods, setPods] = useState<string[]>([]);
+  const [pods, setPods] = useState<string[] | null>(null);
   const [pod, setPod] = useState('');
   const [lines, setLines] = useState<LogLine[]>([]);
   const [filter, setFilter] = useState<Level>('ALL');
@@ -56,6 +56,9 @@ export default function Logs() {
 
   useEffect(() => { load(); }, [load]);
 
+  const podsLoading = pods === null;
+  const initialLoading = podsLoading || (loading && lines.length === 0);
+
   const visible = lines.filter(l =>
     (filter === 'ALL' || (l.level ?? 'RAW') === filter) &&
     (!search || l.message.toLowerCase().includes(search.toLowerCase()))
@@ -66,46 +69,60 @@ export default function Logs() {
       <div className="mono" style={{ fontSize:11, color:'var(--text-3)', marginBottom:6 }}>{appLabel} / {envLabel} / logs</div>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18 }}>
         <h1 style={{ fontSize:22, fontWeight:600, margin:0 }}>Logs</h1>
-        <button onClick={load} disabled={loading || !pod} className="btn-ghost" style={{ fontSize:12, padding:'7px 14px', borderRadius:8, border:'1px solid var(--border)', cursor: loading ? 'not-allowed' : 'pointer' }}>
-          {loading ? 'A atualizar…' : 'Atualizar ↻'}
-        </button>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          {loading && lines.length > 0 && (
+            <div style={{ width:14, height:14, borderRadius:'50%', border:'2px solid var(--border)', borderTopColor:'var(--teal)', animation:'ds-spin .7s linear infinite' }} />
+          )}
+          <button onClick={load} disabled={loading || podsLoading || !pod} className="btn-ghost" style={{ fontSize:12, padding:'7px 14px', borderRadius:8, border:'1px solid var(--border)', cursor: (loading || podsLoading) ? 'not-allowed' : 'pointer' }}>
+            Atualizar ↻
+          </button>
+        </div>
       </div>
 
       {error && (
         <div style={{ marginBottom:14, padding:'10px 14px', borderRadius:9, background:'rgba(241,85,108,.08)', border:'1px solid rgba(241,85,108,.3)', fontSize:12.5, color:'#ff8497' }}>{error}</div>
       )}
 
-      {/* Controls */}
-      <div style={{ display:'flex', gap:10, alignItems:'center', marginBottom:14, flexWrap:'wrap' }}>
-        <select value={pod} onChange={e => setPod(e.target.value)} className="mono" style={{ fontSize:12, padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', background:'var(--bg-2)', color:'var(--text)' }}>
-          {pods.map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
-        <div style={{ display:'flex', gap:6 }}>
-          {(['ALL','INFO','WARN','ERROR','RAW'] as Level[]).map(l => (
-            <button key={l} onClick={() => setFilter(l)} className="mono" style={{ fontSize:11.5, padding:'6px 12px', borderRadius:8, cursor:'pointer', border: filter===l ? '1px solid var(--teal)' : '1px solid var(--border)', background: filter===l ? 'rgba(43,199,180,.1)' : 'var(--bg-2)', color: filter===l ? 'var(--teal)' : 'var(--text-2)' }}>{l}</button>
-          ))}
+      {initialLoading ? (
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12, padding:'60px 0', color:'var(--text-3)', fontSize:13 }}>
+          <div style={{ width:22, height:22, borderRadius:'50%', border:'2.5px solid var(--border)', borderTopColor:'var(--teal)', animation:'ds-spin .7s linear infinite' }} />
+          {podsLoading ? 'A carregar pods' : 'A carregar logs…'}
         </div>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filtrar mensagens…" style={{ flex:1, minWidth:180, background:'var(--bg-2)', border:'1px solid var(--border)', borderRadius:9, padding:'7px 13px', color:'var(--text)', fontSize:12.5, fontFamily:'inherit' }} />
-        <span style={{ fontSize:11.5, color:'var(--text-3)', marginLeft:'auto' }}>{visible.length} linhas</span>
-      </div>
+      ) : (
+        <>
+          {/* Controls */}
+          <div style={{ display:'flex', gap:10, alignItems:'center', marginBottom:14, flexWrap:'wrap' }}>
+            <select value={pod} onChange={e => setPod(e.target.value)} className="mono" style={{ fontSize:12, padding:'7px 10px', borderRadius:8, border:'1px solid var(--border)', background:'var(--bg-2)', color:'var(--text)' }}>
+              {(pods ?? []).map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <div style={{ display:'flex', gap:6 }}>
+              {(['ALL','INFO','WARN','ERROR','RAW'] as Level[]).map(l => (
+                <button key={l} onClick={() => setFilter(l)} className="mono" style={{ fontSize:11.5, padding:'6px 12px', borderRadius:8, cursor:'pointer', border: filter===l ? '1px solid var(--teal)' : '1px solid var(--border)', background: filter===l ? 'rgba(43,199,180,.1)' : 'var(--bg-2)', color: filter===l ? 'var(--teal)' : 'var(--text-2)' }}>{l}</button>
+              ))}
+            </div>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filtrar mensagens…" style={{ flex:1, minWidth:180, background:'var(--bg-2)', border:'1px solid var(--border)', borderRadius:9, padding:'7px 13px', color:'var(--text)', fontSize:12.5, fontFamily:'inherit' }} />
+            <span style={{ fontSize:11.5, color:'var(--text-3)', marginLeft:'auto' }}>{visible.length} linhas</span>
+          </div>
 
-      {/* Log output */}
-      <div style={{ border:'1px solid var(--border)', borderRadius:14, overflow:'hidden' }}>
-        <div className="mono" style={{ background:'var(--bg-2)', maxHeight:520, overflowY:'auto' }}>
-          {visible.map((line, i) => (
-            <div key={i} style={{ display:'flex', gap:14, padding:'5px 18px', background: i%2===0 ? 'transparent' : 'rgba(255,255,255,.013)', fontSize:12, lineHeight:1.6, borderBottom:'1px solid rgba(255,255,255,.03)' }}>
-              <span style={{ color:'var(--text-3)', flex:'none', width:74 }}>{line.timestamp ?? ''}</span>
-              <span style={{ flex:'none', width:38, fontWeight:600, color:levelColor[line.level ?? 'RAW']??'var(--text-2)' }}>{line.level ?? ''}</span>
-              <span style={{ color:levelColor[line.level ?? 'RAW']??'var(--text-2)', flex:1 }}>{line.message}</span>
+          {/* Log output */}
+          <div style={{ border:'1px solid var(--border)', borderRadius:14, overflow:'hidden' }}>
+            <div className="mono" style={{ background:'var(--bg-2)', maxHeight:520, overflowY:'auto' }}>
+              {visible.map((line, i) => (
+                <div key={i} style={{ display:'flex', gap:14, padding:'5px 18px', background: i%2===0 ? 'transparent' : 'rgba(255,255,255,.013)', fontSize:12, lineHeight:1.6, borderBottom:'1px solid rgba(255,255,255,.03)' }}>
+                  <span style={{ color:'var(--text-3)', flex:'none', width:74 }}>{line.timestamp ?? ''}</span>
+                  <span style={{ flex:'none', width:38, fontWeight:600, color:levelColor[line.level ?? 'RAW']??'var(--text-2)' }}>{line.level ?? ''}</span>
+                  <span style={{ color:levelColor[line.level ?? 'RAW']??'var(--text-2)', flex:1 }}>{line.message}</span>
+                </div>
+              ))}
+              {visible.length === 0 && (
+                <div style={{ padding:'28px 18px', textAlign:'center', color:'var(--text-3)', fontSize:12.5 }}>
+                  {pod ? 'Nenhuma linha encontrada com os filtros actuais.' : 'Sem pods disponíveis para consultar logs.'}
+                </div>
+              )}
             </div>
-          ))}
-          {visible.length === 0 && (
-            <div style={{ padding:'28px 18px', textAlign:'center', color:'var(--text-3)', fontSize:12.5 }}>
-              {pod ? 'Nenhuma linha encontrada com os filtros actuais.' : 'Sem pods disponíveis para consultar logs.'}
-            </div>
-          )}
-        </div>
-      </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

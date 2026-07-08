@@ -1,3 +1,5 @@
+import time
+
 import requests
 
 from backend.services.eks_discovery import EKSClusterInfo
@@ -178,14 +180,29 @@ def pod_metrics(cluster: EKSClusterInfo, namespace: str) -> dict[str, dict[str, 
     CPU/mem per pod from the Metrics API (requires metrics-server in-cluster).
     Raises on failure — callers show "—" rather than swallow the error here.
     Values are returned as raw Kubernetes quantities (e.g. "42m", "128Mi").
+
+    One retry after a short delay: right after metrics-server (re)starts, the API
+    aggregation layer can 404/timeout for a few seconds before scraping catches up —
+    without this, that moment falsely reads as "metrics unavailable" for every pod,
+    including ones that are perfectly healthy.
     """
-    data = api_request(
-        endpoint=cluster.endpoint,
-        path=f"/apis/metrics.k8s.io/v1beta1/namespaces/{namespace}/pods",
-        token=cluster.bearer_token,
-        cluster_name=cluster.name,
-        ca_file=cluster.ca_file_path,
-    )
+    try:
+        data = api_request(
+            endpoint=cluster.endpoint,
+            path=f"/apis/metrics.k8s.io/v1beta1/namespaces/{namespace}/pods",
+            token=cluster.bearer_token,
+            cluster_name=cluster.name,
+            ca_file=cluster.ca_file_path,
+        )
+    except Exception:
+        time.sleep(1)
+        data = api_request(
+            endpoint=cluster.endpoint,
+            path=f"/apis/metrics.k8s.io/v1beta1/namespaces/{namespace}/pods",
+            token=cluster.bearer_token,
+            cluster_name=cluster.name,
+            ca_file=cluster.ca_file_path,
+        )
     result = {}
     for item in data.get("items", []):
         pod_name = item["metadata"]["name"]

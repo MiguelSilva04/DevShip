@@ -45,32 +45,44 @@ export default function Events() {
       <div className="mono" style={{ fontSize:11, color:'var(--text-3)', marginBottom:6 }}>{appLabel} / {envLabel} / events</div>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
         <h1 style={{ fontSize:22, fontWeight:600, margin:0 }}>Kubernetes Events</h1>
-        <button onClick={load} disabled={loading} className="btn-ghost" style={{ fontSize:12, padding:'7px 14px', borderRadius:8, border:'1px solid var(--border)', cursor: loading ? 'not-allowed' : 'pointer' }}>
-          {loading ? 'A atualizar…' : 'Atualizar ↻'}
-        </button>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          {loading && events.length > 0 && (
+            <div style={{ width:14, height:14, borderRadius:'50%', border:'2px solid var(--border)', borderTopColor:'var(--teal)', animation:'ds-spin .7s linear infinite' }} />
+          )}
+          <button onClick={load} disabled={loading} className="btn-ghost" style={{ fontSize:12, padding:'7px 14px', borderRadius:8, border:'1px solid var(--border)', cursor: loading ? 'not-allowed' : 'pointer' }}>
+            Atualizar ↻
+          </button>
+        </div>
       </div>
 
       {error && (
         <div style={{ marginBottom:14, padding:'10px 14px', borderRadius:9, background:'rgba(241,85,108,.08)', border:'1px solid rgba(241,85,108,.3)', fontSize:12.5, color:'#ff8497' }}>{error}</div>
       )}
 
-      <div style={{ border:'1px solid var(--border)', borderRadius:14, background:'var(--surface)', overflow:'hidden' }}>
-        <div style={{ display:'grid', gridTemplateColumns:'70px 110px 220px 1fr 50px', gap:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:10.5, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-3)' }}>
-          <span>Tipo</span><span>Motivo</span><span>Objeto</span><span>Mensagem</span><span style={{ textAlign:'right' }}>Idade</span>
+      {loading && events.length === 0 ? (
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12, padding:'60px 0', color:'var(--text-3)', fontSize:13 }}>
+          <div style={{ width:22, height:22, borderRadius:'50%', border:'2.5px solid var(--border)', borderTopColor:'var(--teal)', animation:'ds-spin .7s linear infinite' }} />
+          A carregar eventos…
         </div>
-        {events.map((e, i) => (
-          <div key={i} style={{ display:'grid', gridTemplateColumns:'70px 110px 220px 1fr 50px', gap:12, padding:'11px 18px', borderBottom: i < events.length-1 ? '1px solid var(--border-soft)' : 'none', alignItems:'start', fontSize:12 }}>
-            <span style={{ color: e.type==='Warning' ? '#ecc26b' : '#5dd57b', fontSize:11, fontWeight:600 }}>{e.type}</span>
-            <span className="mono" style={{ fontSize:11.5 }}>{e.reason}</span>
-            <span className="mono" style={{ fontSize:11, color:'var(--text-2)', wordBreak:'break-all' }}>{e.object_ref}</span>
-            <span style={{ fontSize:12, color: e.type==='Warning' ? '#ecc26b' : 'var(--text-2)', lineHeight:1.5 }}>{e.message}</span>
-            <span className="mono" style={{ fontSize:11, color:'var(--text-3)', textAlign:'right' }}>{age(e.last_timestamp)}</span>
+      ) : (
+        <div style={{ border:'1px solid var(--border)', borderRadius:14, background:'var(--surface)', overflow:'hidden' }}>
+          <div style={{ display:'grid', gridTemplateColumns:'70px 110px 220px 1fr 50px', gap:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:10.5, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-3)' }}>
+            <span>Tipo</span><span>Motivo</span><span>Objeto</span><span>Mensagem</span><span style={{ textAlign:'right' }}>Idade</span>
           </div>
-        ))}
-        {events.length === 0 && !loading && (
-          <div style={{ padding:'28px 18px', textAlign:'center', color:'var(--text-3)', fontSize:12.5 }}>Sem eventos recentes.</div>
-        )}
-      </div>
+          {events.map((e, i) => (
+            <div key={i} style={{ display:'grid', gridTemplateColumns:'70px 110px 220px 1fr 50px', gap:12, padding:'11px 18px', borderBottom: i < events.length-1 ? '1px solid var(--border-soft)' : 'none', alignItems:'start', fontSize:12 }}>
+              <span style={{ color: e.type==='Warning' ? '#ecc26b' : '#5dd57b', fontSize:11, fontWeight:600 }}>{e.type}</span>
+              <span className="mono" style={{ fontSize:11.5 }}>{e.reason}</span>
+              <span className="mono" style={{ fontSize:11, color:'var(--text-2)', wordBreak:'break-all' }}>{e.object_ref}</span>
+              <span style={{ fontSize:12, color: e.type==='Warning' ? '#ecc26b' : 'var(--text-2)', lineHeight:1.5 }}>{e.message}</span>
+              <span className="mono" style={{ fontSize:11, color:'var(--text-3)', textAlign:'right' }}>{age(e.last_timestamp)}</span>
+            </div>
+          ))}
+          {events.length === 0 && !loading && (
+            <div style={{ padding:'28px 18px', textAlign:'center', color:'var(--text-3)', fontSize:12.5 }}>Sem eventos recentes.</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

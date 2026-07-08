@@ -112,19 +112,24 @@ function ProbeCard({ title, spec, passing, errorInfo, onViewLog }: {
     ? `${errorInfo.message ?? errorInfo.reason}${errorInfo.at ? ` (${relativeTime(errorInfo.at)})` : ''}`
     : null;
 
+  // Sem spec, o container não tem este probe configurado — não é "a passar" nem "a
+  // falhar", os dois pressupõem que o probe existe. Estado neutro, não usar o `passing`
+  // vindo de fora (que é calculado a partir do estado geral do pod, não deste probe).
+  const configured = spec !== null;
+
   return (
     <div style={{
-      border: `1px solid ${passing ? 'var(--border)' : 'rgba(241,85,108,.4)'}`,
+      border: `1px solid ${!configured ? 'var(--border)' : passing ? 'var(--border)' : 'rgba(241,85,108,.4)'}`,
       borderRadius:14, background:'var(--surface)', padding:'18px 20px',
     }}>
       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:10 }}>
         <span style={{ fontSize:14, fontWeight:600 }}>{title}</span>
         <span style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'3px 10px', borderRadius:999, fontSize:11.5,
-          background: passing ? 'rgba(52,199,89,.13)' : 'rgba(241,85,108,.13)',
-          color: passing ? '#5dd57b' : '#ff8497',
-          border: passing ? '1px solid rgba(52,199,89,.24)' : '1px solid rgba(241,85,108,.26)' }}>
-          <span style={{ width:6, height:6, borderRadius:'50%', background: passing ? '#34C759' : '#F1556C' }}></span>
-          {passing ? 'A passar' : 'A falhar'}
+          background: !configured ? 'var(--surface-3)' : passing ? 'rgba(52,199,89,.13)' : 'rgba(241,85,108,.13)',
+          color: !configured ? 'var(--text-3)' : passing ? '#5dd57b' : '#ff8497',
+          border: !configured ? '1px solid var(--border)' : passing ? '1px solid rgba(52,199,89,.24)' : '1px solid rgba(241,85,108,.26)' }}>
+          <span style={{ width:6, height:6, borderRadius:'50%', background: !configured ? 'var(--text-3)' : passing ? '#34C759' : '#F1556C' }}></span>
+          {!configured ? 'Não configurada' : passing ? 'A passar' : 'A falhar'}
         </span>
         <span onClick={onViewLog} style={{ marginLeft:'auto', fontSize:11.5, color:'var(--teal)', cursor:'pointer' }}>Ver log →</span>
       </div>

@@ -1,3 +1,4 @@
+import logging
 import re
 import uuid
 from datetime import datetime, timezone
@@ -56,6 +57,7 @@ from backend.services.kubernetes_reader import (
 )
 
 router = APIRouter(tags=["visibility"])
+logger = logging.getLogger(__name__)
 
 _TERMINAL_STATUSES = {LifecycleStatus.FAILED, LifecycleStatus.ROLLED_BACK, LifecycleStatus.SUPERSEDED}
 
@@ -402,6 +404,7 @@ def get_pods(
     try:
         metrics = pod_metrics(eks_info, namespace)
     except Exception:
+        logger.exception("get_pods: pod_metrics failed for namespace %s", namespace)
         metrics_available = False
         metrics = {}
 
