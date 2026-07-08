@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { apiFetch } from '../../api/client';
+import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
 
 type RequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
 
@@ -12,6 +13,7 @@ interface DeploymentRequest {
   source_commit_sha: string | null;
   justification: string | null;
   requested_at: string;
+  requested_by_email: string | null;
   approved_at: string | null;
   completed_at: string | null;
 }
@@ -45,33 +47,43 @@ export default function Approvals() {
         <div style={{ fontSize: 13, color: 'var(--text-3)', padding: '20px 0' }}>Sem pedidos pendentes.</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {pending.map(req => (
-            <div key={req.id} style={{ border: '1px solid rgba(224,169,59,.25)', borderRadius: 13, background: 'var(--surface)', padding: '17px 20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-                <span className="mono" style={{ fontSize: 12, color: 'var(--text-3)' }}>env:</span>
-                <span className="mono" style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{req.application_environment_id}</span>
-                {req.source_commit_sha && (
-                  <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 'auto' }}>{req.source_commit_sha.slice(0, 7)}</span>
-                )}
-              </div>
-              {req.justification && (
-                <p style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.5, margin: '0 0 12px', fontStyle: 'italic' }}>"{req.justification}"</p>
-              )}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
-                  {new Date(req.requested_at).toLocaleString()}
-                </span>
-                <button
-                  onClick={() => nav(`/app/approvals/${req.id}`)}
-                  style={{ marginLeft: 'auto', fontSize: 12, padding: '7px 14px', borderRadius: 8, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)', cursor: 'pointer' }}
-                >
-                  Ver detalhes →
-                </button>
-              </div>
-            </div>
-          ))}
+          {pending.map(req => <RequestCard key={req.id} req={req} onOpen={() => nav(`/app/approvals/${req.id}`)} />)}
         </div>
       )}
+    </div>
+  );
+}
+
+function RequestCard({ req, onOpen }: { req: DeploymentRequest; onOpen: () => void }) {
+  const { appLabel, envLabel } = useAppEnvBreadcrumb(undefined, req.application_environment_id);
+  return (
+    <div style={{ border: '1px solid rgba(224,169,59,.25)', borderRadius: 13, background: 'var(--surface)', padding: '17px 20px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>{appLabel}</span>
+        <span className="mono" style={{ fontSize: 12, color: 'var(--text-3)' }}>{envLabel}</span>
+        {req.source_commit_sha && (
+          <span className="mono" style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 'auto' }}>{req.source_commit_sha.slice(0, 7)}</span>
+        )}
+      </div>
+      {req.requested_by_email && (
+        <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 8 }}>
+          Pedido por <span style={{ color: 'var(--text-2)' }}>{req.requested_by_email}</span>
+        </div>
+      )}
+      {req.justification && (
+        <p style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.5, margin: '0 0 12px', fontStyle: 'italic' }}>"{req.justification}"</p>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
+          {new Date(req.requested_at).toLocaleString()}
+        </span>
+        <button
+          onClick={onOpen}
+          style={{ marginLeft: 'auto', fontSize: 12, padding: '7px 14px', borderRadius: 8, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)', cursor: 'pointer' }}
+        >
+          Ver detalhes →
+        </button>
+      </div>
     </div>
   );
 }

@@ -307,6 +307,25 @@ class TestGetApplicationEnvironment:
         assert r.status_code == 200
         assert r.json()["current_version"] is None
 
+    def test_current_version_exposes_deployment_request_id(self, client, db_session):
+        """The frontend needs this to link back to the Execution screen for an in-progress
+        deploy (status Deploying) — without it there's no way to find the reqId again after
+        navigating away from the Execution page."""
+        from backend.bd.models.deployment_request import DeploymentRequest, DeploymentType
+
+        user, _, _, _, _, ae = _setup_chain(db_session)
+        req = DeploymentRequest(application_environment_id=ae.id, deployment_type=DeploymentType.STANDARD)
+        db_session.add(req)
+        db_session.flush()
+        v = _make_version(db_session, ae, LifecycleStatus.DEPLOYING)
+        v.deployment_request_id = req.id
+        db_session.flush()
+        token = _token_for(user)
+
+        r = client.get(f"/application-environments/{ae.id}", headers=_auth(token))
+        assert r.status_code == 200
+        assert r.json()["current_version"]["deployment_request_id"] == str(req.id)
+
     def test_404_on_unknown_ae(self, client, db_session):
         token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
         r = client.get(f"/application-environments/{uuid.uuid4()}", headers=_auth(token))

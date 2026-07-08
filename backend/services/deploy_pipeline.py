@@ -71,16 +71,20 @@ def trigger_deploy(db, request: DeploymentRequest, environment: Environment, app
     action=deploy — the workflow skips build/push and reuses the target version's image."""
     owner, repo = _parse_github_repo(application.source_repository)
 
-    request.source_commit_sha = _resolve_branch_head(application.source_repository, environment.source_branch or "main")
-
     if request.deployment_type == DeploymentType.ROLLBACK:
         target = db.get(DeploymentVersion, request.rollback_target_version_id)
+        # A ROLLBACK doesn't build from the branch's current HEAD — it reuses the target's
+        # image, so source_commit_sha must reflect the target's commit, not the current HEAD.
+        # Recording the branch HEAD here made the Execution screen show the commit being
+        # rolled back FROM instead of the one rolled back TO.
+        request.source_commit_sha = target.source_commit_sha
         inputs = {
             "environment": environment.name.lower(),
             "action": "rollback",
             "rollback_tag": target.image_tag,
         }
     else:
+        request.source_commit_sha = _resolve_branch_head(application.source_repository, environment.source_branch or "main")
         inputs = {"environment": environment.name.lower(), "action": "deploy"}
 
     workflow_file = application.ci_workflow_file.removeprefix(".github/workflows/")
@@ -188,10 +192,22 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                 run = r.json()
                 if run["status"] == "completed":
                     if run["conclusion"] == "success":
-                        head_sha = run.get("head_sha", "")
-                        run_number = run.get("run_number")
-                        version.image_tag = f"{head_sha[:7]}-{run_number}" if head_sha and run_number else None
-                        version.source_commit_sha = head_sha
+                        if req.deployment_type == DeploymentType.ROLLBACK:
+                            # A ROLLBACK reusa a imagem do target — o run do GitHub Actions
+                            # não fez build nenhum novo (o workflow salta build/push quando
+                            # action=rollback), e o seu head_sha é sempre o HEAD atual do
+                            # branch no momento do dispatch, não o commit do target. Usar
+                            # esse head_sha aqui gravaria a versão errada: pareceria que o
+                            # rollback "voltou" ao commit atual, quando na prática reverteu
+                            # a imagem para o target.
+                            target = db.get(DeploymentVersion, req.rollback_target_version_id)
+                            version.image_tag = target.image_tag
+                            version.source_commit_sha = target.source_commit_sha
+                        else:
+                            head_sha = run.get("head_sha", "")
+                            run_number = run.get("run_number")
+                            version.image_tag = f"{head_sha[:7]}-{run_number}" if head_sha and run_number else None
+                            version.source_commit_sha = head_sha
                         db.commit()
                         _emit_event(db, version, DeploymentEventType.BUILD_COMPLETED, EventSource.GITHUB)
                         _emit_event(db, version, DeploymentEventType.IMAGE_PUSHED, EventSource.GITHUB)

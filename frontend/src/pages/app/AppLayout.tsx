@@ -43,10 +43,19 @@ export default function AppLayout() {
 
   useEffect(() => {
     if (!canApprove) return;
-    apiFetch('/deployment-requests?request_status=PENDING')
-      .then((rows: unknown[]) => setPendingCount(rows.length))
-      .catch(() => setPendingCount(0));
-  }, [canApprove]);
+    function refresh() {
+      apiFetch('/deployment-requests?request_status=PENDING')
+        .then((rows: unknown[]) => setPendingCount(rows.length))
+        .catch(() => setPendingCount(0));
+    }
+    // O AppLayout persiste durante toda a navegação, por isso sem isto o badge ficava
+    // preso no valor do primeiro mount: refaz a contagem a cada mudança de rota (cobre
+    // navegar para/de Aprovações) e também no evento disparado após aprovar/rejeitar sem
+    // sair da página (Approval.tsx).
+    refresh();
+    window.addEventListener('devship:approvals-changed', refresh);
+    return () => window.removeEventListener('devship:approvals-changed', refresh);
+  }, [canApprove, loc.pathname]);
 
   useEffect(() => {
     if (!canManageTeam) return;
@@ -69,10 +78,13 @@ export default function AppLayout() {
     <div style={{ display:'flex', alignItems:'flex-start', minHeight:'100vh' }}>
       {/* Sidebar */}
       <aside style={{ position:'sticky', top:0, height:'100vh', width:226, flex:'none', background:'var(--surface)', borderRight:'1px solid var(--border)', display:'flex', flexDirection:'column', padding:'16px 12px', overflowY:'auto' }}>
-        <div style={{ display:'flex', alignItems:'center', gap:9, padding:'4px 10px 16px' }}>
+        <button
+          onClick={() => nav('/app/home')}
+          style={{ display:'flex', alignItems:'center', gap:9, padding:'4px 10px 16px', background:'transparent', border:'none', cursor:'pointer', textAlign:'left' }}
+        >
           <img src="/devship-logo.png" alt="DevShip" style={{ width:26, height:26 }} />
-          <span style={{ fontSize:15, fontWeight:600 }}>DevShip</span>
-        </div>
+          <span style={{ fontSize:15, fontWeight:600, color:'var(--text)' }}>DevShip</span>
+        </button>
 
         <NavBtn icon={IconGrid}   label="Aplicações" style={active('home')}         onClick={() => nav('/app/home')} />
         {isCloud && <NavBtn icon={IconLayers} label="Ambientes" style={active('environments')} onClick={() => nav('/app/environments')} />}

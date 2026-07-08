@@ -9,11 +9,13 @@ import { apiFetch } from '../api/client';
 export function useAppEnvBreadcrumb(appId: string | undefined, aeId: string | undefined) {
   const [appName, setAppName] = useState('');
   const [envName, setEnvName] = useState('');
+  const [resolvedAppId, setResolvedAppId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!aeId) return;
     apiFetch(`/application-environments/${aeId}`)
       .then((ae: { application_id: string; environment_id: string; deployment_name: string }) => {
+        setResolvedAppId(ae.application_id);
         const projectId = localStorage.getItem('ob_project_id');
         Promise.all([
           apiFetch(`/applications/${ae.application_id}`).catch(() => null),
@@ -34,5 +36,6 @@ export function useAppEnvBreadcrumb(appId: string | undefined, aeId: string | un
   return {
     appLabel: appName || appId || '',
     envLabel: envName || aeId || '',
+    appId: appId ?? resolvedAppId,
   };
 }

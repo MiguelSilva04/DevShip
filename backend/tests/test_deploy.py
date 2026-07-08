@@ -224,6 +224,71 @@ class TestApproveReject:
         db.flush()
         return req
 
+    def test_get_deploy_request_exposes_requester_and_approver_email(self, client, db_session):
+        """The approver needs to see who's asking for approval, and — once decided —
+        who approved/rejected it, without a separate user lookup."""
+        user, team, project, env, app, app_env = _setup_chain(db_session)
+        req = self._pending_request(db_session, app_env, user)
+
+        approver_email = f"approver@{team.domain}"
+        _register(client, approver_email)
+        token = _login(client, approver_email)
+        approver = db_session.query(User).filter(User.email == approver_email).first()
+        db_session.add(TeamMember(team_id=team.id, user_id=approver.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        db_session.flush()
+
+        r = client.get(f"/deployment-requests/{req.id}", headers=_auth(token))
+        assert r.status_code == 200
+        assert r.json()["requested_by_email"] == user.email
+        assert r.json()["approved_by_email"] is None
+
+        req.status = RequestStatus.APPROVED
+        req.approved_by = approver.id
+        req.approved_at = datetime.now(timezone.utc)
+        db_session.commit()
+
+        r = client.get(f"/deployment-requests/{req.id}", headers=_auth(token))
+        assert r.status_code == 200
+        assert r.json()["approved_by_email"] == approver_email
+
+    def test_approve_twice_gives_user_friendly_message_with_current_status(self, client, db_session):
+        """Regression: approve_deploy transitions PENDING → APPROVED → RUNNING in the same
+        call (trigger_deploy runs right after approving) — the response already comes back
+        RUNNING, not APPROVED. A second approve/reject attempt (double-click, stale tab,
+        or a race between two approvers) must not leak the raw enum value ("Request is
+        RUNNING, not PENDING") — it must say plainly that this was already decided."""
+        user, team, project, env, app, app_env = _setup_chain(db_session)
+        req = self._pending_request(db_session, app_env, user)
+
+        approver_email = f"approver@{team.domain}"
+        _register(client, approver_email)
+        token = _login(client, approver_email)
+        approver = db_session.query(User).filter(User.email == approver_email).first()
+        db_session.add(TeamMember(team_id=team.id, user_id=approver.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        db_session.flush()
+
+        with (
+            patch("backend.services.deploy_pipeline._resolve_branch_head", return_value="abc"),
+            patch("backend.services.deploy_pipeline.http.post") as mock_post,
+            patch("backend.services.deploy_pipeline._resolve_run_id", return_value=99),
+        ):
+            mock_resp = MagicMock()
+            mock_resp.raise_for_status.return_value = None
+            mock_post.return_value = mock_resp
+            r = client.post(f"/deployment-requests/{req.id}/approve", headers=_auth(token))
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "RUNNING"
+
+        r2 = client.post(f"/deployment-requests/{req.id}/approve", headers=_auth(token))
+        assert r2.status_code == 409
+        detail = r2.json()["detail"]
+        assert "Request is" not in detail
+        assert "em execução" in detail
+
+        r3 = client.post(f"/deployment-requests/{req.id}/reject", json={"justification": "x"}, headers=_auth(token))
+        assert r3.status_code == 409
+        assert "em execução" in r3.json()["detail"]
+
     def test_reject_requires_justification_pydantic(self, client, db_session):
         """Empty justification → 422 from Pydantic before hitting DB."""
         user, team, project, env, app, app_env = _setup_chain(db_session)
@@ -549,6 +614,122 @@ class TestDeployPipeline:
         assert DeploymentEventType.ROLLOUT_COMPLETED in event_types
         assert DeploymentEventType.READINESS_PASSED in event_types
 
+    def test_observe_deployment_rollback_records_target_version_not_head_sha(self, db_session, monkeypatch):
+        """Regression: for a ROLLBACK, the GitHub Actions run's head_sha is always the
+        branch's current HEAD at dispatch time (the workflow builds nothing new — it skips
+        build/push and reuses the target's image), never the target's commit. Writing
+        version.image_tag/source_commit_sha from head_sha made every rollback's resulting
+        version look like it re-deployed the CURRENT commit instead of reverting to the
+        target — exactly the bug reported (rollback to an older version, history shows the
+        current commit again). The new version must copy image_tag/source_commit_sha from
+        rollback_target_version_id instead."""
+        import backend.services.deploy_pipeline as dp
+        from backend.services.deploy_pipeline import observe_deployment
+
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+
+        target = DeploymentVersion(
+            application_environment_id=app_env.id,
+            lifecycle_status=LifecycleStatus.SUPERSEDED,
+            image_tag="0ldc0mm1t-12",
+            source_commit_sha="0ldc0mm1t34567890",
+        )
+        db_session.add(target)
+        db_session.flush()
+
+        req = DeploymentRequest(
+            application_environment_id=app_env.id,
+            deployment_type=DeploymentType.ROLLBACK,
+            status=RequestStatus.RUNNING,
+            github_workflow_run_id=42,
+            rollback_target_version_id=target.id,
+        )
+        db_session.add(req)
+        db_session.flush()
+
+        class _NoClose:
+            def __init__(self, s): self._s = s
+            def __getattr__(self, n): return getattr(self._s, n)
+            def close(self): pass
+
+        monkeypatch.setattr(dp, "SessionLocal", lambda: _NoClose(db_session))
+
+        # head_sha here is the branch's CURRENT HEAD at dispatch time — deliberately
+        # different from the target's commit, to prove the version doesn't pick this up.
+        github_run_resp = MagicMock()
+        github_run_resp.json.return_value = {
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "current1234567890",
+            "run_number": 99,
+        }
+        github_run_resp.raise_for_status = MagicMock()
+
+        argocd_running = MagicMock()
+        argocd_running.status.operation_phase = "Running"
+        argocd_running.status.sync_revision = "0ldc0mm1t"
+
+        argocd_succeeded = MagicMock()
+        argocd_succeeded.status.operation_phase = "Succeeded"
+        argocd_succeeded.status.sync_revision = "0ldc0mm1t"
+
+        cond_updating = MagicMock()
+        cond_updating.type = "Progressing"
+        cond_updating.reason = "ReplicaSetUpdated"
+
+        cond_done = MagicMock()
+        cond_done.type = "Progressing"
+        cond_done.reason = "NewReplicaSetAvailable"
+
+        dep_updating = MagicMock()
+        dep_updating.status.conditions = [cond_updating]
+
+        dep_done = MagicMock()
+        dep_done.status.conditions = [cond_done]
+
+        pod = MagicMock()
+        pod.metadata.name = "api-deploy-abc"
+        pod_list = MagicMock()
+        pod_list.items = [pod]
+
+        raw_pods_resp = MagicMock()
+        raw_pods_resp.json.return_value = {
+            "items": [{
+                "metadata": {"name": "api-deploy-abc"},
+                "status": {
+                    "containerStatuses": [],
+                    "conditions": [{"type": "Ready", "status": "True"}],
+                },
+            }]
+        }
+
+        http_get_calls = iter([github_run_resp, raw_pods_resp])
+        monkeypatch.setattr(dp.http, "get", lambda *a, **kw: next(http_get_calls))
+
+        argocd_calls = iter([argocd_running, argocd_succeeded])
+        monkeypatch.setattr(dp, "get_argocd_application", lambda *a, **kw: next(argocd_calls))
+
+        dep_calls = iter([dep_updating, dep_done])
+        monkeypatch.setattr(dp, "list_deployment", lambda *a, **kw: next(dep_calls))
+
+        monkeypatch.setattr(dp, "list_pods_in_namespace", lambda *a, **kw: pod_list)
+
+        fake_eks = MagicMock()
+        monkeypatch.setattr(dp, "get_cluster_token", lambda **kw: fake_eks)
+        monkeypatch.setattr(dp.time, "sleep", lambda _: None)
+
+        observe_deployment(req.id)
+
+        db_session.refresh(req)
+        assert req.status == RequestStatus.SUCCESS
+
+        version = db_session.query(DeploymentVersion).filter(
+            DeploymentVersion.deployment_request_id == req.id
+        ).first()
+        assert version is not None
+        assert version.image_tag == "0ldc0mm1t-12"
+        assert version.source_commit_sha == "0ldc0mm1t34567890"
+
     # -----------------------------------------------------------------------
     # DEV-10.4 — _supersede_previous_version
     # -----------------------------------------------------------------------
@@ -674,6 +855,7 @@ class TestRollback:
             application_environment_id=app_env.id,
             lifecycle_status=LifecycleStatus.SUPERSEDED,
             image_tag="abc1234-5",
+            source_commit_sha="abc1234567890",
         )
         db_session.add(target)
         db_session.flush()
@@ -686,8 +868,10 @@ class TestRollback:
         db_session.add(req)
         db_session.flush()
 
+        # _resolve_branch_head returns the CURRENT branch HEAD — deliberately different from
+        # the target's commit, to prove trigger_deploy doesn't use it for a rollback request.
         with (
-            patch("backend.services.deploy_pipeline._resolve_branch_head", return_value="abc123"),
+            patch("backend.services.deploy_pipeline._resolve_branch_head", return_value="currenthead123"),
             patch("backend.services.deploy_pipeline.http.post") as mock_post,
         ):
             mock_resp = MagicMock()
@@ -701,6 +885,11 @@ class TestRollback:
             sent_inputs = mock_post.call_args.kwargs["json"]["inputs"]
             assert sent_inputs["action"] == "rollback"
             assert sent_inputs["rollback_tag"] == "abc1234-5"
+
+        # Regression: the request's source_commit_sha must reflect the rollback TARGET,
+        # not the branch's current HEAD — otherwise the Execution screen shows the commit
+        # being rolled back FROM instead of the one rolled back TO.
+        assert req.source_commit_sha == "abc1234567890"
 
     def test_rollback_endpoint_rejects_when_no_healthy_version_exists(self, client, db_session):
         """No manual target selection anymore — a request with no prior HEALTHY version
@@ -852,6 +1041,130 @@ class TestRollback:
         data = r.json()
         assert data["rollback_target_version_id"] == str(target.id)
         mock_trigger.assert_called_once()
+
+    def test_rollback_endpoint_rejects_rolled_back_target_without_justification(self, client, db_session):
+        """Regression: a version abandoned via rollback (RolledBack) is now an accepted
+        target, but it doesn't carry Superseded's guarantee (every automated signal said
+        it was fine) — RolledBack can mean a person walked away for a reason Kubernetes
+        never reports as a failure. Justification is mandatory for this specific case."""
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        target = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.ROLLED_BACK, image_tag="v1", created_at=now)
+        db_session.add(target)
+        db_session.flush()
+        current = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY, image_tag="v2", created_at=now + timedelta(seconds=1))
+        db_session.add(current)
+        db_session.flush()
+
+        api_user_email = f"ce@{team.domain}"
+        _register(client, api_user_email)
+        token = _login(client, api_user_email)
+        api_user = db_session.query(User).filter(User.email == api_user_email).first()
+        api_user.github_username = "octocat"
+        db_session.add(TeamMember(team_id=team.id, user_id=api_user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        db_session.flush()
+
+        r = client.post(
+            f"/application-environments/{app_env.id}/rollback",
+            json={},
+            headers=_auth(token),
+        )
+        assert r.status_code == 422
+        assert "Justificação obrigatória" in r.json()["detail"]
+
+    def test_rollback_endpoint_rolled_back_target_forces_pending_even_without_env_approval(self, client, db_session):
+        """A RolledBack target always requires approval, even for an environment that
+        normally skips it entirely — the request must stay PENDING, not auto-trigger."""
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+        assert env.requires_approval is False
+
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        target = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.ROLLED_BACK, image_tag="v1", created_at=now)
+        db_session.add(target)
+        db_session.flush()
+        current = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY, image_tag="v2", created_at=now + timedelta(seconds=1))
+        db_session.add(current)
+        db_session.flush()
+
+        api_user_email = f"ce@{team.domain}"
+        _register(client, api_user_email)
+        token = _login(client, api_user_email)
+        api_user = db_session.query(User).filter(User.email == api_user_email).first()
+        api_user.github_username = "octocat"
+        db_session.add(TeamMember(team_id=team.id, user_id=api_user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        db_session.flush()
+
+        with patch("backend.services.deploy_pipeline.trigger_deploy") as mock_trigger:
+            r = client.post(
+                f"/application-environments/{app_env.id}/rollback",
+                json={"justification": "Reverting the revert — v3 had a worse bug"},
+                headers=_auth(token),
+            )
+        assert r.status_code == 201, r.text
+        assert r.json()["status"] == "PENDING"
+        mock_trigger.assert_not_called()
+
+    def test_rollback_approval_of_rolled_back_target_requires_tech_lead_or_cloud_engineer(self, client, db_session):
+        """A DEVELOPER with an ApplicationTeamMember grant can normally approve deploys in
+        environments with no approval_required_role configured — but not for a rollback
+        targeting a RolledBack version, which always needs TECH_LEAD or CLOUD_ENGINEER."""
+        from backend.bd.models.application_team_member import ApplicationTeamMember
+
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+        assert env.requires_approval is False and env.approval_required_role is None
+
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        target = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.ROLLED_BACK, image_tag="v1", created_at=now)
+        db_session.add(target)
+        db_session.flush()
+        current = DeploymentVersion(application_environment_id=app_env.id, lifecycle_status=LifecycleStatus.HEALTHY, image_tag="v2", created_at=now + timedelta(seconds=1))
+        db_session.add(current)
+        db_session.flush()
+
+        requester_email = f"ce@{team.domain}"
+        _register(client, requester_email)
+        requester_token = _login(client, requester_email)
+        requester = db_session.query(User).filter(User.email == requester_email).first()
+        requester.github_username = "octocat"
+        db_session.add(TeamMember(team_id=team.id, user_id=requester.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        db_session.flush()
+
+        req_resp = client.post(
+            f"/application-environments/{app_env.id}/rollback",
+            json={"justification": "Reverting the revert"},
+            headers=_auth(requester_token),
+        )
+        assert req_resp.status_code == 201, req_resp.text
+        request_id = req_resp.json()["id"]
+
+        dev_email = f"dev@{team.domain}"
+        _register(client, dev_email)
+        dev_token = _login(client, dev_email)
+        dev_user = db_session.query(User).filter(User.email == dev_email).first()
+        dev_member = TeamMember(team_id=team.id, user_id=dev_user.id, role=TeamMemberRole.DEVELOPER, added_by=None)
+        db_session.add(dev_member)
+        db_session.flush()
+        db_session.add(ApplicationTeamMember(team_member_id=dev_member.id, application_id=app.id))
+        db_session.flush()
+
+        r = client.post(f"/deployment-requests/{request_id}/approve", headers=_auth(dev_token))
+        assert r.status_code == 403
+
+        ce_email = f"ce2@{team.domain}"
+        _register(client, ce_email)
+        ce_token = _login(client, ce_email)
+        ce_user = db_session.query(User).filter(User.email == ce_email).first()
+        db_session.add(TeamMember(team_id=team.id, user_id=ce_user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        db_session.flush()
+
+        with patch("backend.services.deploy_pipeline.trigger_deploy"):
+            r = client.post(f"/deployment-requests/{request_id}/approve", headers=_auth(ce_token))
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "APPROVED"
 
     def test_rollback_requires_approval_stays_pending(self, client, db_session):
         _, team, project, env, app, app_env = _setup_chain(db_session)

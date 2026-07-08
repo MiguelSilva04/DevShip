@@ -23,6 +23,7 @@ function upToDatePill(s: UpToDateStatus) {
 
 interface DeploymentVersionDetail {
   id: string;
+  deployment_request_id: string | null;
   image_tag: string | null;
   source_commit_sha: string | null;
   lifecycle_status: LifecycleStatus;
@@ -64,6 +65,7 @@ export default function EnvDetail() {
   const [techOpen, setTechOpen] = useState(false);
   const [upToDate, setUpToDate] = useState<UpToDateResult | null>(null);
   const [utdLoading, setUtdLoading] = useState(false);
+  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
 
   const loadUpToDate = useCallback(() => {
     if (!aeId) return;
@@ -75,6 +77,20 @@ export default function EnvDetail() {
   }, [aeId]);
 
   useEffect(() => { loadUpToDate(); }, [loadUpToDate]);
+
+  useEffect(() => {
+    if (!aeId) return;
+    // Enquanto um pedido está PENDING (à espera de aprovação), ainda não existe
+    // DeploymentVersion nenhuma — é só criada quando trigger_deploy arranca o pipeline.
+    // Sem isto, sair desta página com um pedido pendente e voltar mais tarde não dava
+    // nenhuma forma de encontrar de novo esse pedido.
+    apiFetch(`/deployment-requests?request_status=PENDING`)
+      .then((rows: { id: string; application_environment_id: string }[]) => {
+        const pending = rows.find(r => r.application_environment_id === aeId);
+        setPendingRequestId(pending?.id ?? null);
+      })
+      .catch(() => setPendingRequestId(null));
+  }, [aeId]);
 
   useEffect(() => {
     if (!aeId) return;
@@ -132,7 +148,23 @@ export default function EnvDetail() {
       </div>
 
       <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap', alignItems: 'center', marginBottom: 22 }}>
-        {utdLoading && !upToDate ? (
+        {pendingRequestId ? (
+          <button
+            onClick={() => nav(`/app/approvals/${pendingRequestId}`)}
+            className="btn-primary hover-bright"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, padding: '9px 16px', borderRadius: 8 }}
+          >
+            Ver pedido pendente →
+          </button>
+        ) : status === 'Deploying' && cv?.deployment_request_id ? (
+          <button
+            onClick={() => nav(`/app/${appId}/${aeId}/exec/${cv.deployment_request_id}`)}
+            className="btn-primary hover-bright"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, padding: '9px 16px', borderRadius: 8 }}
+          >
+            Ver execução em curso →
+          </button>
+        ) : utdLoading && !upToDate ? (
           <button disabled className="btn-ghost" style={{ fontSize: 12.5, padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)', cursor: 'default', opacity: .7 }}>
             A verificar…
           </button>

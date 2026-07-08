@@ -48,13 +48,13 @@ export default function Rollback() {
 
       // Rollback always targets the last version that was healthy, excluding the current
       // one — no manual selection (design doc rule). Superseded means "was Healthy, later
-      // replaced" (backend/services/deploy_pipeline.py), so it counts here too — otherwise
-      // this preview would go blank the moment a second successful deploy lands, even
-      // though the backend still accepts the rollback. Mirrors the backend's target lookup.
-      const lastHealthy = (hist as DeploymentVersionDetail[]).find(
-        v => (v.lifecycle_status === 'Healthy' || v.lifecycle_status === 'Superseded') && v.id !== ae.current_version?.id
+      // replaced", and RolledBack means "was abandoned via a rollback" — both count here,
+      // mirroring the backend's target lookup (backend/api/routes/deploy.py create_rollback).
+      const lastValid = (hist as DeploymentVersionDetail[]).find(
+        v => (v.lifecycle_status === 'Healthy' || v.lifecycle_status === 'Superseded' || v.lifecycle_status === 'RolledBack')
+          && v.id !== ae.current_version?.id
       );
-      setTarget(lastHealthy ?? null);
+      setTarget(lastValid ?? null);
 
       const env = (envs as { id: string; name: string; requires_approval: boolean }[]).find(e => e.id === ae.environment_id);
       if (env) { setEnvName(env.name); setRequiresApproval(env.requires_approval); }
@@ -84,6 +84,8 @@ export default function Rollback() {
   }
 
   const envLabel = envName || aeId || '';
+  const targetingRolledBack = target?.lifecycle_status === 'RolledBack';
+  const approvalNeeded = requiresApproval || targetingRolledBack;
 
   return (
     <div style={{ maxWidth: 660 }}>
@@ -96,6 +98,12 @@ export default function Rollback() {
       {requiresApproval && (
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 13px', border: '1px solid rgba(224,169,59,.35)', borderRadius: 9, background: 'rgba(224,169,59,.07)', fontSize: 12, color: '#ecc26b', margin: '10px 0 18px' }}>
           <span>⚠</span> Este environment requer aprovação para rollback.
+        </div>
+      )}
+
+      {targetingRolledBack && (
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 13px', border: '1px solid rgba(241,85,108,.35)', borderRadius: 9, background: 'rgba(241,85,108,.07)', fontSize: 12, color: '#ff8497', margin: '10px 0 18px' }}>
+          <span>⚠</span> Esta versão foi anteriormente abandonada via rollback. Justificação obrigatória e aprovação de Tech Lead/Cloud Engineer.
         </div>
       )}
 
@@ -135,12 +143,12 @@ export default function Rollback() {
 
       <div style={{ marginBottom: 16 }}>
         <label style={{ fontSize: 12.5, color: 'var(--text-2)', display: 'block', marginBottom: 7 }}>
-          Justificação <span style={{ color: 'var(--text-3)' }}>(opcional)</span>
+          Justificação {!targetingRolledBack && <span style={{ color: 'var(--text-3)' }}>(opcional)</span>}
         </label>
         <textarea
           value={justification}
           onChange={e => setJustification(e.target.value)}
-          placeholder={requiresApproval ? 'Descreve o motivo deste pedido de rollback…' : 'Notas sobre este rollback…'}
+          placeholder={approvalNeeded ? 'Descreve o motivo deste pedido de rollback…' : 'Notas sobre este rollback…'}
           rows={3}
           style={{ width: '100%', background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '11px 14px', color: 'var(--text)', fontSize: 13, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
         />
@@ -157,10 +165,10 @@ export default function Rollback() {
         <button
           className="hover-bright"
           onClick={submit}
-          disabled={loading || !target}
-          style={{ fontSize: 13, padding: '10px 20px', borderRadius: 9, fontWeight: 600, background: 'rgba(241,85,108,.15)', color: '#ff8497', border: '1px solid rgba(241,85,108,.35)', cursor: loading || !target ? 'not-allowed' : 'pointer', opacity: loading || !target ? 0.7 : 1 }}
+          disabled={loading || !target || (targetingRolledBack && !justification.trim())}
+          style={{ fontSize: 13, padding: '10px 20px', borderRadius: 9, fontWeight: 600, background: 'rgba(241,85,108,.15)', color: '#ff8497', border: '1px solid rgba(241,85,108,.35)', cursor: (loading || !target || (targetingRolledBack && !justification.trim())) ? 'not-allowed' : 'pointer', opacity: (loading || !target || (targetingRolledBack && !justification.trim())) ? 0.7 : 1 }}
         >
-          {loading ? 'A enviar…' : requiresApproval ? 'Enviar pedido de rollback' : 'Confirmar rollback'}
+          {loading ? 'A enviar…' : approvalNeeded ? 'Enviar pedido de rollback' : 'Confirmar rollback'}
         </button>
         <button onClick={() => nav(-1)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>Cancelar</button>
         <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--text-3)' }}>

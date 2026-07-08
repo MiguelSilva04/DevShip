@@ -82,6 +82,7 @@ class HomepageResponse(BaseModel):
 
 class DeploymentVersionDetail(BaseModel):
     id: uuid.UUID
+    deployment_request_id: Optional[uuid.UUID] = None
     image_tag: Optional[str] = None
     image_digest: Optional[str] = None
     source_commit_sha: Optional[str] = None

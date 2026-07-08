@@ -185,6 +185,8 @@ export default function Team() {
   const cloudEngineers = members.filter(m => m.role === 'CLOUD_ENGINEER');
   const canAddMembers = user?.role === 'cloud' || user?.role === 'tech';
   const readOnly = !canAddMembers; // Developer: read-only access to the Team page
+  const anyManageable = members.some(m => canManage(m) && m.role !== 'CLOUD_ENGINEER');
+  const memberGridColumns = anyManageable ? '1fr 160px 120px 100px 80px' : '1fr 160px 120px 100px';
 
   return (
     <div>
@@ -291,15 +293,15 @@ export default function Team() {
       {/* Members table */}
       {members.length > 0 && (
         <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', overflow: 'hidden', marginBottom: 24 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 120px 100px 80px', gap: 12, padding: '12px 20px', borderBottom: '1px solid var(--border)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
-            <span>Membro</span><span>Role</span><span>Applications</span><span>Desde</span><span style={{ textAlign: 'right' }}>Ação</span>
+          <div style={{ display: 'grid', gridTemplateColumns: memberGridColumns, gap: 12, padding: '12px 20px', borderBottom: '1px solid var(--border)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
+            <span>Membros</span><span>Role</span><span>Aplicações</span><span>Desde</span>{anyManageable && <span style={{ textAlign: 'right' }}>Ação</span>}
           </div>
           {members.map((m, i) => {
             const isOwner = m.role === 'CLOUD_ENGINEER';
             const manageable = canManage(m) && !isOwner;
             const isBusy = busy === m.team_member_id;
             return (
-              <div key={m.team_member_id} style={{ display: 'grid', gridTemplateColumns: '1fr 160px 120px 100px 80px', gap: 12, padding: '14px 20px', borderBottom: i < members.length - 1 ? '1px solid var(--border-soft)' : 'none', alignItems: 'center' }}>
+              <div key={m.team_member_id} style={{ display: 'grid', gridTemplateColumns: memberGridColumns, gap: 12, padding: '14px 20px', borderBottom: i < members.length - 1 ? '1px solid var(--border-soft)' : 'none', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
                   <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--surface-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11.5, fontWeight: 600, flex: 'none' }}>{initials(m.name)}</div>
                   <div>
@@ -347,17 +349,19 @@ export default function Team() {
                   <span style={{ fontSize: 12, color: 'var(--text-3)' }}>—</span>
                 )}
                 <span className="mono" style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{formatDate(m.joined_at)}</span>
-                <div style={{ textAlign: 'right' }}>
-                  {manageable && (
-                    <button
-                      onClick={() => removeMember(m)}
-                      disabled={isBusy}
-                      style={{ fontSize: 11.5, padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-3)', cursor: isBusy ? 'default' : 'pointer', opacity: isBusy ? .6 : 1 }}
-                    >
-                      Remover
-                    </button>
-                  )}
-                </div>
+                {anyManageable && (
+                  <div style={{ textAlign: 'right' }}>
+                    {manageable && (
+                      <button
+                        onClick={() => removeMember(m)}
+                        disabled={isBusy}
+                        style={{ fontSize: 11.5, padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-3)', cursor: isBusy ? 'default' : 'pointer', opacity: isBusy ? .6 : 1 }}
+                      >
+                        Remover
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -368,13 +372,13 @@ export default function Team() {
       {accessMember && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setAccessMember(null)}>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: '28px 30px', maxWidth: 440, width: '100%', margin: '0 16px' }} onClick={e => e.stopPropagation()}>
-            <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 6px' }}>Applications de {accessMember.name}</h2>
+            <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 6px' }}>Aplicações de {accessMember.name}</h2>
             <p style={{ fontSize: 12.5, color: 'var(--text-2)', margin: '0 0 18px', lineHeight: 1.6 }}>
-              Um Developer só vê e faz deploy nas applications selecionadas.
+              Um Developer só vê e faz deploy nas aplicações selecionadas.
             </p>
             {accessErr && <div style={{ fontSize: 12, color: '#ff9aaa', marginBottom: 10 }}>{accessErr}</div>}
             {apps.length === 0 ? (
-              <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>Nenhuma application neste projeto ainda.</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>Nenhuma aplicação neste projeto ainda.</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
                 {apps.map(a => (

@@ -54,6 +54,40 @@ def _get_request_or_404_checked(db: Session, request_id: uuid.UUID, user: User) 
     return req
 
 
+def _to_response(db: Session, req: DeploymentRequest) -> DeploymentRequestResponse:
+    """requested_by_email/approved_by_email aren't columns on DeploymentRequest — the
+    approver needs to see who's asking (and who signed off) without a separate lookup,
+    same reasoning as DeploymentVersionDetail.requested_by_email in visibility.py."""
+    resp = DeploymentRequestResponse.model_validate(req)
+    if req.requested_by is not None:
+        requester = db.get(User, req.requested_by)
+        if requester is not None:
+            resp.requested_by_email = requester.email
+    if req.approved_by is not None:
+        approver = db.get(User, req.approved_by)
+        if approver is not None:
+            resp.approved_by_email = approver.email
+    return resp
+
+
+_STATUS_LABEL_PT = {
+    RequestStatus.PENDING: "pendente",
+    RequestStatus.APPROVED: "aprovado",
+    RequestStatus.REJECTED: "rejeitado",
+    RequestStatus.RUNNING: "em execução",
+    RequestStatus.SUCCESS: "concluído",
+    RequestStatus.FAILED: "falhado",
+    RequestStatus.CANCELLED: "cancelado",
+}
+
+
+def _already_decided_message(current_status: RequestStatus) -> str:
+    """approve/reject only act on PENDING — a second click after someone else (or the same
+    person, from a stale tab) already decided must read as "this was already resolved",
+    not leak the raw enum value to the user."""
+    return f"Este pedido já não está pendente — o estado atual é {_STATUS_LABEL_PT[current_status]}."
+
+
 def _require_team_member(db: Session, app_env_id: uuid.UUID, user: User) -> tuple[ApplicationEnvironment, Environment, Application]:
     ae = _get_app_env_or_404(db, app_env_id)
     env = db.get(Environment, ae.environment_id)
@@ -85,6 +119,20 @@ def _require_approver(db: Session, req: DeploymentRequest, user: User) -> None:
     ae = db.get(ApplicationEnvironment, req.application_environment_id)
     env = db.get(Environment, ae.environment_id)
     member = _require_application_access(db, ae.application_id, user)
+
+    # A rollback targeting a RolledBack version (create_rollback forces approval for these,
+    # regardless of the environment's own setting) always needs a TECH_LEAD or CLOUD_ENGINEER —
+    # this overrides env.approval_required_role, which may not even be configured.
+    if req.deployment_type == DeploymentType.ROLLBACK and req.rollback_target_version_id:
+        target = db.get(DeploymentVersion, req.rollback_target_version_id)
+        if target is not None and target.lifecycle_status == LifecycleStatus.ROLLED_BACK:
+            if member.role not in (TeamMemberRole.TECH_LEAD, TeamMemberRole.CLOUD_ENGINEER):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Rollback para uma versão previamente abandonada requer aprovação de Tech Lead ou Cloud Engineer",
+                )
+            return
+
     if env.requires_approval and env.approval_required_role is not None:
         if member.role != env.approval_required_role:
             raise HTTPException(
@@ -142,7 +190,7 @@ def create_deploy(
         db.commit()
 
     db.refresh(req)
-    response = DeploymentRequestResponse.model_validate(req)
+    response = _to_response(db, req)
     response.warning = warning
     return response
 
@@ -178,11 +226,16 @@ def create_rollback(
     # picker). Superseded means "was Healthy, later replaced" (see _supersede_previous_version
     # in deploy_pipeline.py) — it must count here too, or every AE loses its rollback target
     # the moment a second successful deploy lands, since only one version can be Healthy at a time.
+    # RolledBack also counts: a version abandoned via rollback was Healthy right before that —
+    # without this, navigating v3→v4→v3 permanently locks v4 out as a future target, and the
+    # only way back is through progressively older Superseded versions.
     target = (
         db.query(DeploymentVersion)
         .filter(
             DeploymentVersion.application_environment_id == app_env_id,
-            DeploymentVersion.lifecycle_status.in_([LifecycleStatus.HEALTHY, LifecycleStatus.SUPERSEDED]),
+            DeploymentVersion.lifecycle_status.in_([
+                LifecycleStatus.HEALTHY, LifecycleStatus.SUPERSEDED, LifecycleStatus.ROLLED_BACK,
+            ]),
             DeploymentVersion.id != (current.id if current else None),
         )
         .order_by(DeploymentVersion.created_at.desc())
@@ -192,6 +245,18 @@ def create_rollback(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No previous healthy version to roll back to")
     if not target.image_tag:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Target version has no image_tag — nothing to roll back to")
+
+    # A RolledBack target doesn't carry the same guarantee as Superseded — Superseded means
+    # every automated signal said it was fine; RolledBack can mean a person walked away from
+    # it for a reason Kubernetes never reports as a failure (a business bug, not a crash).
+    # So: justification becomes mandatory, and approval is always required regardless of the
+    # environment's own requires_approval setting.
+    targeting_rolled_back = target.lifecycle_status == LifecycleStatus.ROLLED_BACK
+    if targeting_rolled_back and not body.justification:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Justificação obrigatória — esta versão foi previamente abandonada via rollback.",
+        )
 
     req = DeploymentRequest(
         application_environment_id=app_env_id,
@@ -210,7 +275,9 @@ def create_rollback(
             detail="A deploy is already in progress for this ApplicationEnvironment",
         )
 
-    if not env.requires_approval:
+    # Targeting a RolledBack version always forces approval, even for environments that
+    # normally skip it — _require_approver enforces the TECH_LEAD/CLOUD_ENGINEER-only rule.
+    if not env.requires_approval and not targeting_rolled_back:
         try:
             dp.trigger_deploy(db, req, env, app)
         except Exception as e:
@@ -224,7 +291,7 @@ def create_rollback(
         db.commit()
 
     db.refresh(req)
-    return req
+    return _to_response(db, req)
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +333,7 @@ def list_deploy_requests(
     )
     if request_status is not None:
         q = q.filter(DeploymentRequest.status == request_status)
-    return q.order_by(DeploymentRequest.requested_at.desc()).all()
+    return [_to_response(db, req) for req in q.order_by(DeploymentRequest.requested_at.desc()).all()]
 
 
 # ---------------------------------------------------------------------------
@@ -279,7 +346,8 @@ def get_deploy_request(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return _get_request_or_404_checked(db, request_id, current_user)
+    req = _get_request_or_404_checked(db, request_id, current_user)
+    return _to_response(db, req)
 
 
 # ---------------------------------------------------------------------------
@@ -295,7 +363,7 @@ def approve_deploy(
 ):
     req = _get_request_or_404(db, request_id)
     if req.status != RequestStatus.PENDING:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Request is {req.status.value}, not PENDING")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_already_decided_message(req.status))
 
     _require_approver(db, req, current_user)
 
@@ -319,7 +387,7 @@ def approve_deploy(
 
     background_tasks.add_task(dp.observe_deployment, req.id)
     db.refresh(req)
-    return req
+    return _to_response(db, req)
 
 
 # ---------------------------------------------------------------------------
@@ -335,7 +403,7 @@ def reject_deploy(
 ):
     req = _get_request_or_404(db, request_id)
     if req.status != RequestStatus.PENDING:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Request is {req.status.value}, not PENDING")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_already_decided_message(req.status))
 
     _require_approver(db, req, current_user)
 
@@ -346,7 +414,7 @@ def reject_deploy(
     req.completed_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(req)
-    return req
+    return _to_response(db, req)
 
 
 # ---------------------------------------------------------------------------
@@ -378,6 +446,6 @@ def get_deploy_events(
         )
 
     return DeploymentRequestWithEvents(
-        request=DeploymentRequestResponse.model_validate(req),
+        request=_to_response(db, req),
         events=[DeploymentEventResponse.model_validate(e) for e in events],
     )

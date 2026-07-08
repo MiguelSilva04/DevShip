@@ -34,7 +34,9 @@ class DeploymentRequestResponse(BaseModel):
     justification: Optional[str] = None
     failure_reason: Optional[str] = None
     requested_at: datetime
+    requested_by_email: Optional[str] = None
     approved_at: Optional[datetime] = None
+    approved_by_email: Optional[str] = None
     completed_at: Optional[datetime] = None
     warning: Optional[str] = None  # non-blocking, e.g. "commit not authored by you"
 
