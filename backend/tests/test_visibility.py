@@ -675,3 +675,107 @@ class TestUpToDateEndpoint:
             r = client.get(f"/application-environments/{ae.id}/up-to-date", headers=_auth(token))
         assert r.status_code == 200
         assert r.json()["status"] == "Unknown"
+
+
+class TestGitopsDriftDetection:
+    """gitops_drift_status is an axis independent of status — it compares
+    argocd_sync_revision against the last commit that touched this AE's manifest_path,
+    never the repo's general HEAD (shared GitOps repos make that a guaranteed false
+    positive for every app but the last one deployed)."""
+
+    def _ready_chain(self, db_session, manifest_path="envs/dev/api.yaml"):
+        user, _, project, env, app, ae = _setup_chain(db_session)
+        project.git_ops_repository_url = "https://github.com/org/gitops"
+        env.source_branch = "main"
+        env.gitops_branch = "main"
+        ae.manifest_path = manifest_path
+        v = _make_version(db_session, ae, LifecycleStatus.HEALTHY)
+        v.source_commit_sha = "abc123"
+        v.argocd_sync_revision = "manifest-sha-1"
+        db_session.flush()
+        return user, project, env, app, ae
+
+    def test_missing_manifest_path_is_unknown(self, client, db_session):
+        user, project, env, app, ae = self._ready_chain(db_session)
+        ae.manifest_path = None
+        db_session.flush()
+        token = _token_for(user)
+
+        with patch("backend.api.routes.visibility.resolve_branch_head", return_value="abc123"):
+            r = client.get(f"/application-environments/{ae.id}/up-to-date", headers=_auth(token))
+        assert r.status_code == 200
+        data = r.json()
+        assert data["gitops_drift_status"] == "Unknown"
+        assert data["gitops_reason"]
+
+    def test_path_head_matches_sync_revision_is_up_to_date(self, client, db_session):
+        user, project, env, app, ae = self._ready_chain(db_session)
+        token = _token_for(user)
+
+        with (
+            patch("backend.api.routes.visibility.resolve_branch_head", return_value="abc123"),
+            patch("backend.api.routes.visibility.resolve_path_head", return_value="manifest-sha-1"),
+        ):
+            r = client.get(f"/application-environments/{ae.id}/up-to-date", headers=_auth(token))
+        assert r.status_code == 200
+        data = r.json()
+        assert data["gitops_drift_status"] == "UpToDate"
+        assert data["gitops_path_head_sha"] == "manifest-sha-1"
+
+    def test_manifest_edited_outside_devship_is_outdated(self, client, db_session):
+        """argocd_sync_revision lags behind the manifest's real path history —
+        someone edited the GitOps manifest directly, outside the DevShip pipeline."""
+        user, project, env, app, ae = self._ready_chain(db_session)
+        token = _token_for(user)
+
+        with (
+            patch("backend.api.routes.visibility.resolve_branch_head", return_value="abc123"),
+            patch("backend.api.routes.visibility.resolve_path_head", return_value="manifest-sha-2-manual-edit"),
+        ):
+            r = client.get(f"/application-environments/{ae.id}/up-to-date", headers=_auth(token))
+        assert r.status_code == 200
+        data = r.json()
+        assert data["gitops_drift_status"] == "Outdated"
+
+    def test_path_head_lookup_failure_is_unknown(self, client, db_session):
+        user, project, env, app, ae = self._ready_chain(db_session)
+        token = _token_for(user)
+
+        with (
+            patch("backend.api.routes.visibility.resolve_branch_head", return_value="abc123"),
+            patch("backend.api.routes.visibility.resolve_path_head", return_value=None),
+        ):
+            r = client.get(f"/application-environments/{ae.id}/up-to-date", headers=_auth(token))
+        assert r.status_code == 200
+        data = r.json()
+        assert data["gitops_drift_status"] == "Unknown"
+        assert data["gitops_reason"]
+
+    def test_other_app_same_repo_different_path_unaffected(self, client, db_session):
+        """Two Applications sharing one GitOps repo, different manifest_path each — a
+        commit touching one's path must not be conflated with the other's drift result.
+        Modeled here by resolve_path_head keying its return on the requested path."""
+        user, project, env, app, ae1 = self._ready_chain(db_session, manifest_path="envs/dev/api.yaml")
+        app2 = _make_app(db_session, project, name="worker")
+        ae2 = _make_ae(db_session, app2, env)
+        ae2.manifest_path = "envs/dev/worker.yaml"
+        v2 = _make_version(db_session, ae2, LifecycleStatus.HEALTHY)
+        v2.source_commit_sha = "abc123"
+        v2.argocd_sync_revision = "worker-sha-1"
+        db_session.flush()
+        token = _token_for(user)
+
+        def fake_resolve_path_head(repo_url, branch, path):
+            return {"envs/dev/api.yaml": "manifest-sha-1", "envs/dev/worker.yaml": "worker-sha-1"}[path]
+
+        with (
+            patch("backend.api.routes.visibility.resolve_branch_head", return_value="abc123"),
+            patch("backend.api.routes.visibility.resolve_path_head", side_effect=fake_resolve_path_head),
+        ):
+            r1 = client.get(f"/application-environments/{ae1.id}/up-to-date", headers=_auth(token))
+            r2 = client.get(f"/application-environments/{ae2.id}/up-to-date", headers=_auth(token))
+
+        assert r1.json()["gitops_drift_status"] == "UpToDate"
+        assert r2.json()["gitops_drift_status"] == "UpToDate"
+        assert r1.json()["gitops_path_head_sha"] == "manifest-sha-1"
+        assert r2.json()["gitops_path_head_sha"] == "worker-sha-1"

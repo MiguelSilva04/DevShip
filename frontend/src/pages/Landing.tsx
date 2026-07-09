@@ -24,6 +24,7 @@ export default function Landing() {
         <div style={{ display:'flex', gap:24, marginLeft:26, fontSize:13, color:'var(--text-2)' }}>
           <a href="#problema" className="hover-teal">O Problema</a>
           <a href="#pipeline" className="hover-teal">Pipeline</a>
+          <a href="#prerequisitos" className="hover-teal">Pré-requisitos</a>
           <a href="#traducao" className="hover-teal">Tradução</a>
           <a href="#estados"  className="hover-teal">Estados</a>
           <a href="#roles"    className="hover-teal">Roles</a>
@@ -58,14 +59,12 @@ export default function Landing() {
               <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 13px', borderBottom:'1px solid var(--line)' }}>
                 <span style={{ width:7, height:7, borderRadius:'50%', background:'var(--green)' }}></span>
                 <span className="mono" style={{ fontSize:11, color:'var(--text-2)' }}>backend</span>
-                <span className="mono" style={{ marginLeft:'auto', fontSize:11, color:'var(--teal)' }}>v1.2.3</span>
               </div>
               <div className="mono" style={{ fontSize:11, color:'var(--text-2)', padding:'6px 0' }}>
-                {[['DEV','var(--green)','● Healthy','v1.2.3'],['STAGING','var(--amber)','◐ Deploying','v1.2.3'],['PROD','var(--green)','● Healthy','v1.2.1']].map(([env,c,s,v]) => (
+                {[['DEV','var(--green)','● Saudável'],['STAGING','var(--amber)','◐ Deploy em curso'],['PROD','var(--green)','● Saudável']].map(([env,c,s]) => (
                   <div key={env} style={{ display:'flex', alignItems:'center', gap:10, padding:'7px 13px' }}>
                     <span style={{ width:54, color:'var(--text-3)' }}>{env}</span>
                     <span style={{ flex:1, color:c as string }}>{s}</span>
-                    <span style={{ color:'var(--text-3)' }}>{v}</span>
                   </div>
                 ))}
               </div>
@@ -134,10 +133,31 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* PRÉ-REQUISITOS */}
+      <section id="prerequisitos" style={{ maxWidth:1180, margin:'0 auto', padding:'0 26px' }}>
+        <div style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px', background:'var(--panel-2)' }}>
+          <SectionLabel n="03" label="Pré-requisitos" />
+          <h2 style={{ fontSize:30, fontWeight:700, letterSpacing:'-.02em', margin:0, maxWidth:640, lineHeight:1.18 }}>Antes do primeiro deploy, isto tem de estar montado</h2>
+          <p style={{ fontSize:15, color:'var(--text-2)', lineHeight:1.6, maxWidth:600, margin:'10px 0 0', fontWeight:500 }}>A DevShip não substitui a tua infraestrutura — assenta em cima dela. Aqui está tudo o que precisas de ter pronto.</p>
+          <p style={{ fontSize:14.5, color:'var(--text-2)', lineHeight:1.7, maxWidth:600, margin:'16px 0 0' }}>
+            A DevShip não é mágica: é uma camada de coordenação sobre ferramentas que já usas ou vais usar — Git, CI/CD, um registo de imagens, um cluster Kubernetes, GitOps. Se a tua equipa já segue estas boas práticas, o setup demora minutos. Se ainda não segue todas, o onboarding guiado leva-te passo a passo por cada uma.
+          </p>
+          <figure style={{ margin:'30px 0 0', border:'1px solid var(--line-2)', borderRadius:10, overflow:'hidden', background:'var(--panel)' }}>
+            <figcaption className="mono" style={{ display:'flex', alignItems:'center', gap:10, fontSize:10.5, color:'var(--text-3)', padding:'9px 14px', borderBottom:'1px solid var(--line)' }}>
+              <span style={{ color:'var(--teal)' }}>FIG.03</span><span>pre_requisitos.png</span><span style={{ marginLeft:'auto', color:'var(--text-2)' }}>o que é validado automaticamente vs. configuração manual</span>
+            </figcaption>
+            <img src="/landing_req.png" alt="Pré-requisitos DevShip" style={{ width:'100%', display:'block' }} />
+          </figure>
+          <p style={{ fontSize:12.5, color:'var(--text-3)', fontStyle:'italic', lineHeight:1.6, maxWidth:640, margin:'18px 0 0' }}>
+            Nem tudo isto é obrigatório para o primeiro deploy funcionar — mas sem o ArgoCD e o Metrics API configurados corretamente, perdes a sincronização GitOps visível e as métricas de CPU/memória, silenciosamente.
+          </p>
+        </div>
+      </section>
+
       {/* TRADUÇÃO */}
       <section id="traducao" style={{ maxWidth:1180, margin:'0 auto', padding:'0 26px' }}>
         <div style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px' }}>
-          <SectionLabel n="03" label="Traduzir, não esconder" />
+          <SectionLabel n="04" label="Traduzir, não esconder" />
           <h2 style={{ fontSize:30, fontWeight:700, letterSpacing:'-.02em', margin:0, maxWidth:640, lineHeight:1.18 }}>A mesma verdade, com menos fricção</h2>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 64px 1fr', alignItems:'center', gap:0, marginTop:30 }}>
             <div style={{ border:'1px solid var(--line-2)', borderRadius:10, background:'var(--panel-2)', overflow:'hidden' }}>
@@ -167,7 +187,7 @@ spec:
             <div style={{ border:'1px solid var(--teal)', borderRadius:10, background:'rgba(43,199,180,.05)', overflow:'hidden' }}>
               <div className="mono" style={{ fontSize:10.5, color:'var(--teal)', padding:'9px 14px', borderBottom:'1px solid rgba(43,199,180,.25)' }}>backend / PROD · o que a DevShip te mostra</div>
               <div style={{ padding:'15px 16px', display:'flex', flexDirection:'column', gap:11, fontSize:12.5 }}>
-                {[['Versão','v1.2.3','var(--teal)'],['Réplicas','3 / 3 prontas',''],['Estratégia','RollingUpdate',''],['Readiness','passing','var(--green)']].map(([k,v,c]) => (
+                {[['Commit desta versão','a1b2c3d','var(--teal)'],['HEAD do repositório','a1b2c3d',''],['Deployed em','09/07/2026 14:32',''],['Autor','dev@empresa.com','']].map(([k,v,c]) => (
                   <div key={k} style={{ display:'flex', justifyContent:'space-between' }}>
                     <span style={{ color:'var(--text-3)' }}>{k}</span>
                     <span className="mono" style={{ color: c || 'inherit' }}>{v}</span>
@@ -176,7 +196,7 @@ spec:
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                   <span style={{ color:'var(--text-3)' }}>Estado</span>
                   <span style={{ display:'inline-flex', alignItems:'center', gap:6, color:'var(--green)' }}>
-                    <span style={{ width:6, height:6, borderRadius:'50%', background:'var(--green)' }}></span>Healthy
+                    <span style={{ width:6, height:6, borderRadius:'50%', background:'var(--green)' }}></span>Saudável
                   </span>
                 </div>
               </div>
@@ -203,33 +223,33 @@ spec:
       {/* ESTADOS */}
       <section id="estados" style={{ maxWidth:1180, margin:'0 auto', padding:'0 26px' }}>
         <div style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px', background:'var(--panel-2)' }}>
-          <SectionLabel n="04" label="LifecycleStatus" />
+          <SectionLabel n="05" label="LifecycleStatus" />
           <h2 style={{ fontSize:30, fontWeight:700, letterSpacing:'-.02em', margin:0, maxWidth:640, lineHeight:1.18 }}>O estado real de um deployment, como máquina de estados</h2>
           <p style={{ fontSize:14.5, color:'var(--text-2)', lineHeight:1.7, maxWidth:600, margin:'16px 0 32px' }}>
-            Cada ApplicationEnvironment percorre estados explícitos. As health probes determinam a transição de <span className="mono" style={{ color:'var(--amber)' }}>Deploying</span> para <span className="mono" style={{ color:'var(--green)' }}>Healthy</span> — ou despoletam um rollback.
+            Cada ApplicationEnvironment percorre estados explícitos. As health probes determinam a transição de <span className="mono" style={{ color:'var(--amber)' }}>Deploy em curso</span> para <span className="mono" style={{ color:'var(--green)' }}>Saudável</span> — ou despoletam um rollback.
           </p>
           <div style={{ overflowX:'auto' }}>
             <div style={{ minWidth:820, display:'flex', alignItems:'center' }}>
-              <StateBox label="Pending" sub="estado inicial" color="var(--text-3)" border="var(--border)" bg="var(--panel)" />
-              <Arrow label="apply" color="var(--text-3)" />
-              <StateBox label="Deploying" sub="a aplicar"  color="var(--amber)" border="rgba(217,154,48,.4)" bg="rgba(217,154,48,.06)" />
+              <StateBox label="Pendente" sub="estado inicial" color="var(--text-3)" border="var(--border)" bg="var(--panel)" />
+              <Arrow label="aplicar" color="var(--text-3)" />
+              <StateBox label="Deploy em curso" sub="a aplicar"  color="var(--amber)" border="rgba(217,154,48,.4)" bg="rgba(217,154,48,.06)" />
               <div style={{ display:'flex', flexDirection:'column', alignItems:'center', width:84 }}>
                 <span className="mono" style={{ fontSize:9, color:'var(--green)', marginBottom:4 }}>probes ✓</span>
                 <div style={{ display:'flex', alignItems:'center', width:'100%' }}><span style={{ flex:1, height:1, background:'var(--green)', opacity:.5 }}></span><span style={{ color:'var(--green)', fontSize:10 }}>▶</span></div>
                 <span className="mono" style={{ fontSize:9, color:'var(--red)', marginTop:6 }}>probes ✗</span>
               </div>
               <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-                <StateBox label="Healthy"     sub="estável"     color="var(--green)" border="rgba(63,191,99,.45)"  bg="rgba(63,191,99,.06)" />
-                <StateBox label="Degraded"    sub="a falhar"    color="var(--red)"   border="rgba(229,85,107,.45)" bg="rgba(229,85,107,.06)" />
+                <StateBox label="Saudável"    sub="estável"     color="var(--green)" border="rgba(63,191,99,.45)"  bg="rgba(63,191,99,.06)" />
+                <StateBox label="Degradado"   sub="a falhar"    color="var(--red)"   border="rgba(229,85,107,.45)" bg="rgba(229,85,107,.06)" />
               </div>
               <Arrow label="rollback" color="var(--blue)" />
-              <StateBox label="Rolled Back" sub="versão anterior" color="#8fbcf7" border="rgba(91,157,240,.4)" bg="rgba(91,157,240,.06)" />
+              <StateBox label="Revertida" sub="versão anterior" color="#8fbcf7" border="rgba(91,157,240,.4)" bg="rgba(91,157,240,.06)" />
             </div>
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:0, marginTop:30, border:'1px solid var(--line-2)', borderRadius:10, overflow:'hidden' }}>
             {[
               ['startup probe','Confirma que o container arrancou antes de qualquer tráfego.'],
-              ['readiness probe','Decide se o pod recebe pedidos. Falha aqui → Degraded.'],
+              ['readiness probe','Decide se o pod recebe pedidos. Falha aqui → Degradado.'],
               ['liveness probe','Reinicia o pod se deixar de responder em runtime.'],
             ].map(([t,d],i) => (
               <div key={t} style={{ padding:'18px 20px', borderRight: i<2 ? '1px solid var(--line)' : 'none' }}>
@@ -244,7 +264,7 @@ spec:
       {/* ROLES */}
       <section id="roles" style={{ maxWidth:1180, margin:'0 auto', padding:'0 26px' }}>
         <div style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px' }}>
-          <SectionLabel n="05" label="Uma plataforma, duas perspetivas" />
+          <SectionLabel n="06" label="Uma plataforma, duas perspetivas" />
           <h2 style={{ fontSize:30, fontWeight:700, letterSpacing:'-.02em', margin:'0 0 30px', maxWidth:640, lineHeight:1.18 }}>Cada role vê exatamente o que precisa</h2>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:0, border:'1px solid var(--line-2)', borderRadius:10, overflow:'hidden' }}>
             <div style={{ padding:'26px 26px', borderRight:'1px solid var(--line-2)' }}>
@@ -277,7 +297,7 @@ spec:
       {/* ARQUITETURA */}
       <section style={{ maxWidth:1180, margin:'0 auto', padding:'0 26px' }}>
         <div style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px', background:'var(--panel-2)' }}>
-          <SectionLabel n="06" label="Arquitetura completa" />
+          <SectionLabel n="07" label="Arquitetura completa" />
           <h2 style={{ fontSize:30, fontWeight:700, letterSpacing:'-.02em', margin:0, maxWidth:640, lineHeight:1.18 }}>A ponte entre quem escreve código e o cluster que o corre</h2>
           <figure style={{ margin:'30px 0 0', border:'1px solid var(--line-2)', borderRadius:10, overflow:'hidden', background:'var(--panel)' }}>
             <figcaption className="mono" style={{ display:'flex', alignItems:'center', gap:10, fontSize:10.5, color:'var(--text-3)', padding:'9px 14px', borderBottom:'1px solid var(--line)' }}>

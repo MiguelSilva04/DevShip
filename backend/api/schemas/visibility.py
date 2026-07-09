@@ -147,6 +147,9 @@ class UpToDateResponse(BaseModel):
     source_head_sha: Optional[str] = None
     argocd_sync_revision: Optional[str] = None
     reason: Optional[str] = None
+    gitops_drift_status: UpToDateStatus = UpToDateStatus.UNKNOWN
+    gitops_path_head_sha: Optional[str] = None
+    gitops_reason: Optional[str] = None
 
 
 class PendingCommit(BaseModel):

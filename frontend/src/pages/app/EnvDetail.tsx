@@ -8,6 +8,9 @@ interface UpToDateResult {
   source_head_sha: string | null;
   argocd_sync_revision: string | null;
   reason: string | null;
+  gitops_drift_status: UpToDateStatus;
+  gitops_path_head_sha: string | null;
+  gitops_reason: string | null;
 }
 
 function upToDatePill(s: UpToDateStatus) {
@@ -187,6 +190,12 @@ export default function EnvDetail() {
           <span style={{ color: 'var(--text-3)', fontSize: 10 }}>{techOpen ? '▼' : '▶'}</span> Ver detalhes técnicos
         </button>
       </div>
+
+      {upToDate?.gitops_drift_status === 'Outdated' && (
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 13px', border: '1px solid rgba(224,169,59,.35)', borderRadius: 9, background: 'rgba(224,169,59,.07)', fontSize: 12, color: '#ecc26b', marginBottom: 22 }}>
+          <span>⚠</span> O manifesto no GitOps foi alterado fora da DevShip desde o último deploy desta app.
+        </div>
+      )}
 
       {techOpen && (
         <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap', margin: '-8px 0 22px', padding: '14px 16px', border: '1px solid var(--border-soft)', borderRadius: 12, background: 'var(--bg-2)' }}>

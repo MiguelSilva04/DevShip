@@ -194,6 +194,26 @@ def resolve_branch_head(repo_url: str, branch: str) -> str | None:
         return None
 
 
+def resolve_path_head(repo_url: str, branch: str, path: str) -> str | None:
+    """Last commit SHA that touched specifically `path` on this branch — not the repo's
+    general HEAD. This is what distinguishes "someone changed this app's manifest" from
+    "someone made an unrelated commit in this shared GitOps repo" (a chore, another app's
+    deploy). None on any failure, or if the path never had a commit."""
+    owner, repo = _parse_owner_repo(repo_url)
+    try:
+        resp = requests.get(
+            f"https://api.github.com/repos/{owner}/{repo}/commits",
+            headers=_github_headers(),
+            params={"sha": branch, "path": path, "per_page": 1},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        commits = resp.json()
+        return commits[0]["sha"] if commits else None
+    except Exception:
+        return None
+
+
 def is_repo_collaborator(repo_url: str, username: str) -> bool:
     """GET /repos/{owner}/{repo}/collaborators/{username} — 204 = sim, 404 = não."""
     owner, repo = _parse_owner_repo(repo_url)

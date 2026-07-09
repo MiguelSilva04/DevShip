@@ -124,6 +124,66 @@ export default function HowItWorks() {
         ))}
       </div>
 
+      {/* Prerequisites */}
+      <h2 style={{ fontSize:14, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-3)', fontWeight:600, margin:'0 0 16px' }}>Pré-requisitos de infraestrutura</h2>
+      <p style={{ fontSize:13, color:'var(--text-2)', margin:'0 0 20px', lineHeight:1.6 }}>
+        A DevShip valida automaticamente o essencial no onboarding — mas há peças que continuam a ser tua responsabilidade configurar. Aqui está a lista completa, para que o primeiro deploy corra sem surpresas.
+      </p>
+      <div style={{ display:'flex', flexDirection:'column', gap:14, marginBottom:20 }}>
+        <div style={{ border:'1px solid var(--border)', borderRadius:13, background:'var(--surface)', padding:'18px 20px' }}>
+          <div style={{ fontSize:13.5, fontWeight:600, marginBottom:4 }}>Código e build</div>
+          <div style={{ fontSize:12, color:'var(--text-3)', marginBottom:12 }}>Responsabilidade tua, fora da DevShip</div>
+          <ul style={{ margin:0, padding:0, listStyle:'none', display:'flex', flexDirection:'column', gap:7 }}>
+            {['Repositório Git com o código da aplicação', 'Workflow GitHub Actions que faz build e push da imagem', 'Registo de imagens acessível a esse workflow (ECR ou equivalente)'].map(t => (
+              <li key={t} style={{ display:'flex', alignItems:'baseline', gap:8, fontSize:12.5, color:'var(--text-2)', lineHeight:1.45 }}>
+                <span style={{ color:'var(--text-3)', flex:'none', fontSize:11 }}>·</span>{t}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div style={{ border:'1px solid var(--border)', borderRadius:13, background:'var(--surface)', padding:'18px 20px' }}>
+          <div style={{ fontSize:13.5, fontWeight:600, marginBottom:4 }}>Acesso ao cluster</div>
+          <div style={{ fontSize:12, color:'var(--text-3)', marginBottom:12 }}>Validado automaticamente no onboarding, passos 3-4</div>
+          <ul style={{ margin:'0 0 12px', padding:0, listStyle:'none', display:'flex', flexDirection:'column', gap:7 }}>
+            {['Cluster EKS alcançável', 'IAM Role com Access Entry e permissão de leitura (AmazonEKSViewPolicy)'].map(t => (
+              <li key={t} style={{ display:'flex', alignItems:'baseline', gap:8, fontSize:12.5, color:'var(--text-2)', lineHeight:1.45 }}>
+                <span style={{ color:'var(--text-3)', flex:'none', fontSize:11 }}>·</span>{t}
+              </li>
+            ))}
+          </ul>
+          <p style={{ fontSize:12, color:'var(--text-3)', lineHeight:1.55, margin:0 }}>
+            O onboarding guia-te por isto com os comandos AWS CLI exatos a correr — não precisas de adivinhar nem de usar Terraform se não quiseres.
+          </p>
+        </div>
+
+        <div style={{ border:'1px solid var(--border)', borderRadius:13, background:'var(--surface)', padding:'18px 20px' }}>
+          <div style={{ fontSize:13.5, fontWeight:600, marginBottom:4 }}>ArgoCD e Metrics API</div>
+          <div style={{ fontSize:12, color:'var(--text-3)', marginBottom:12 }}>Configuração manual, passo 5 do onboarding</div>
+          <p style={{ fontSize:12.5, color:'var(--text-2)', lineHeight:1.55, margin:'0 0 12px' }}>
+            Isto não bloqueia o deploy — mas sem ele, o pipeline degrada silenciosamente: perdes o estado de sincronização do ArgoCD e as métricas de CPU/memória deixam de aparecer no ecrã Pods.
+          </p>
+          <ul style={{ margin:0, padding:0, listStyle:'none', display:'flex', flexDirection:'column', gap:7 }}>
+            {['ArgoCD instalado no cluster, com as Applications já criadas', 'ClusterRole/ClusterRoleBinding a dar leitura sobre applications.argoproj.io', 'metrics-server instalado no cluster', 'ClusterRole/ClusterRoleBinding a dar leitura sobre metrics.k8s.io'].map(t => (
+              <li key={t} style={{ display:'flex', alignItems:'baseline', gap:8, fontSize:12.5, color:'var(--text-2)', lineHeight:1.45 }}>
+                <span style={{ color:'var(--text-3)', flex:'none', fontSize:11 }}>·</span>{t}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div style={{ display:'flex', gap:12, alignItems:'flex-start', border:'1px solid rgba(224,169,59,.35)', background:'rgba(224,169,59,.07)', borderRadius:13, padding:'16px 18px' }}>
+          <span style={{ color:'#ecc26b', fontSize:15, flex:'none' }}>⚠</span>
+          <p style={{ fontSize:12.5, color:'var(--text-2)', lineHeight:1.6, margin:0 }}>
+            O <span style={{ color:'#ecc26b', fontWeight:600 }}>ClusterRoleBinding</span> não aponta para o ARN da tua IAM Role — aponta para a identidade da sessão assumida por essa role. O passo 5 do onboarding calcula isto automaticamente e dá-te o YAML já pronto a aplicar com <code className="mono">kubectl</code>.
+          </p>
+        </div>
+
+        <p style={{ fontSize:12, color:'var(--text-3)', lineHeight:1.6, margin:0 }}>
+          Nenhuma destas duas últimas peças (ArgoCD, Metrics) tem equivalente no painel da AWS — são objetos Kubernetes, sempre aplicados via <code className="mono">kubectl</code>, seja qual for a forma como configuraste o resto (Terraform, AWS CLI, ou à mão na consola).
+        </p>
+      </div>
+
       {/* Roles */}
       <h2 style={{ fontSize:14, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-3)', fontWeight:600, margin:'0 0 16px' }}>Permissões por role</h2>
       <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:13, marginBottom:28 }}>

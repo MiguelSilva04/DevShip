@@ -46,7 +46,7 @@ from backend.bd.models.user import User
 from backend.services.cluster_validation import get_cluster_token
 from backend.services.deploy_pipeline import compute_lifecycle_status
 from backend.services.eks_discovery import EKSClusterInfo
-from backend.services.gitops_scanner import compare_commits, resolve_branch_head
+from backend.services.gitops_scanner import compare_commits, resolve_branch_head, resolve_path_head
 from backend.services.kubernetes_reader import (
     container_probe_statuses,
     get_pod_logs,
@@ -649,6 +649,7 @@ def get_up_to_date(
     # fonte para os dois lados nunca contarem histórias diferentes.
     env = db.get(Environment, ae.environment_id)
     app = db.get(Application, ae.application_id)
+    project = db.get(Project, app.project_id)
     branch = env.source_branch or "main"
 
     head_sha = resolve_branch_head(app.source_repository, branch)
@@ -658,11 +659,27 @@ def get_up_to_date(
             reason="Não foi possível resolver o HEAD da branch via GitHub",
         )
 
-    return UpToDateResponse(
+    response = UpToDateResponse(
         status=compute_up_to_date(latest.source_commit_sha, head_sha),
         source_head_sha=head_sha,
         argocd_sync_revision=latest.argocd_sync_revision,
     )
+
+    # Drift do GitOps — eixo independente do "up to date" de código. Só é calculável com
+    # manifest_path (do onboarding) e gitops_branch (da configuração do Environment); sem
+    # qualquer um dos dois, fica Unknown — nunca um alarme falso por falta de dados.
+    if not ae.manifest_path or not env.gitops_branch or not project.git_ops_repository_url:
+        response.gitops_reason = "manifest_path, gitops_branch ou git_ops_repository_url em falta"
+        return response
+
+    path_head = resolve_path_head(project.git_ops_repository_url, env.gitops_branch, ae.manifest_path)
+    if path_head is None:
+        response.gitops_reason = "Não foi possível resolver o histórico do manifesto via GitHub"
+        return response
+
+    response.gitops_drift_status = compute_up_to_date(latest.argocd_sync_revision, path_head)
+    response.gitops_path_head_sha = path_head
+    return response
 
 
 # ---------------------------------------------------------------------------
