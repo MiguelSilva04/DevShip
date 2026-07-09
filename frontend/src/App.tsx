@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { UserProvider } from './context/UserContext';
 import ProtectedRoute from './routes/ProtectedRoute';
 import PublicRoute    from './routes/PublicRoute';
+import RoleRoute      from './routes/RoleRoute';
 
 import Landing  from './pages/Landing';
 import Login    from './pages/Login';
@@ -44,9 +45,8 @@ export default function App() {
     <BrowserRouter>
       <UserProvider>
         <Routes>
-          <Route path="/" element={<Landing />} />
-
           <Route element={<PublicRoute />}>
+            <Route path="/"          element={<Landing />} />
             <Route path="/login"    element={<Login />} />
             <Route path="/register" element={<Register />} />
           </Route>
@@ -69,12 +69,22 @@ export default function App() {
             <Route path="/app" element={<AppLayout />}>
               <Route index element={<Navigate to="home" replace />} />
               <Route path="home"          element={<Home />} />
-              <Route path="environments"  element={<Environments />} />
-              <Route path="approvals"     element={<Approvals />} />
-              <Route path="approvals/:reqId" element={<Approval />} />
-              <Route path="team"          element={<Team />} />
-              <Route path="team/add"      element={<AddMember />} />
-              <Route path="settings"      element={<Settings />} />
+
+              <Route element={<RoleRoute allow={['cloud']} />}>
+                <Route path="environments"  element={<Environments />} />
+                <Route path="settings"      element={<Settings />} />
+              </Route>
+
+              <Route element={<RoleRoute allow={['cloud', 'tech']} />}>
+                <Route path="approvals"        element={<Approvals />} />
+                <Route path="approvals/:reqId" element={<Approval />} />
+                <Route path="team/add"         element={<AddMember />} />
+              </Route>
+
+              <Route element={<RoleRoute allow={['cloud', 'tech', 'dev']} />}>
+                <Route path="team" element={<Team />} />
+              </Route>
+
               <Route path="how"           element={<HowItWorks />} />
               <Route path=":appId"                         element={<AppDetail />} />
               <Route path=":appId/:aeId"                   element={<EnvDetail />} />
