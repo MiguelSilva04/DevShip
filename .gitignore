@@ -1,5 +1,7 @@
 # Secrets / environment
 .env
+.env.local
+.env.*.local
 
 # Python
 __pycache__/
@@ -15,9 +17,26 @@ env/
 
 # Frontend
 node_modules/
+dist/
+dist-ssr/
 
 # Claude.md
 Claude.md
 
 # Claude
 .claude
+.skills
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db
