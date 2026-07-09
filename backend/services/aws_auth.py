@@ -1,8 +1,25 @@
 import logging
+import re
 import boto3
 import os
 
 logger = logging.getLogger(__name__)
+
+_ROLE_SESSION_NAME = "SessionValidDevShip"
+_ROLE_ARN_RE = re.compile(r"^arn:aws:iam::(\d+):role/(.+)$")
+
+
+def compute_rbac_subject(iam_role_arn: str) -> str | None:
+    """The subject a ClusterRoleBinding must use for this role, once the EKS Access Entry
+    authenticates the assumed session — not the IAM Role ARN itself. Must match the fixed
+    RoleSessionName used in assume_user_role() below, or any binding built from this never
+    matches (RBAC doesn't validate the subject at creation, only at request time — always
+    a silent failure until then). Returns None if iam_role_arn isn't in the expected format."""
+    m = _ROLE_ARN_RE.match(iam_role_arn)
+    if not m:
+        return None
+    account_id, role_name = m.groups()
+    return f"arn:aws:sts::{account_id}:assumed-role/{role_name}/{_ROLE_SESSION_NAME}"
 
 
 def assume_user_role(role_arn: str, external_id: str, region: str) -> boto3.Session:
@@ -16,7 +33,7 @@ def assume_user_role(role_arn: str, external_id: str, region: str) -> boto3.Sess
 
         response = sts_client.assume_role(
             RoleArn=role_arn,
-            RoleSessionName="SessionValidDevShip",
+            RoleSessionName=_ROLE_SESSION_NAME,
             ExternalId=external_id,
         )
 

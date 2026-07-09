@@ -104,6 +104,14 @@ class ClusterConfigRequest(BaseModel):
     argocd_namespace: Optional[str] = None
 
 
+class RbacCheckResponse(BaseModel):
+    rbac_subject: Optional[str] = None
+    argocd_ok: bool
+    argocd_error: Optional[str] = None
+    metrics_ok: bool
+    metrics_error: Optional[str] = None
+
+
 class ClusterContextResponse(BaseModel):
     id: uuid.UUID
     cluster_arn: str

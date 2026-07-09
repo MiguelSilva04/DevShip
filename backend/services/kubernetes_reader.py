@@ -151,6 +151,33 @@ def list_namespaces(cluster: EKSClusterInfo):
     return _list_items(cluster, "/api/v1/namespaces", parse_namespaces)
 
 
+def check_argocd_access(cluster: EKSClusterInfo, namespace: str) -> None:
+    """Raises on any failure (typically 403 — missing RBAC). Success means the binding for
+    applications.argoproj.io is mounted, regardless of whether any Application already
+    exists in that namespace — this is a LIST, not a GET on a specific Application, so it
+    works even before Environments exist."""
+    api_request(
+        endpoint=cluster.endpoint,
+        path=f"/apis/argoproj.io/v1alpha1/namespaces/{namespace}/applications",
+        token=cluster.bearer_token,
+        cluster_name=cluster.name,
+        ca_file=cluster.ca_file_path,
+    )
+
+
+def check_metrics_access(cluster: EKSClusterInfo) -> None:
+    """Raises on any failure — 403 means missing RBAC, other errors may mean metrics-server
+    isn't installed at all (the aggregated API isn't registered). Cluster-wide LIST, no
+    namespace — doesn't depend on any pods existing yet."""
+    api_request(
+        endpoint=cluster.endpoint,
+        path="/apis/metrics.k8s.io/v1beta1/pods",
+        token=cluster.bearer_token,
+        cluster_name=cluster.name,
+        ca_file=cluster.ca_file_path,
+    )
+
+
 def list_nodes(cluster: EKSClusterInfo):
     return _list_items(cluster, "/api/v1/nodes", parse_nodes)
 

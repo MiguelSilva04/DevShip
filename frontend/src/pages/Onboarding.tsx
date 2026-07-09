@@ -286,7 +286,7 @@ function CodeBlock({ title, desc, filename, code, copyKey, copied, onCopy, why }
 // ═══════════════════════════════════════════════════════════════════════════════
 // INTRO
 // ═══════════════════════════════════════════════════════════════════════════════
-const STEP_LABELS = ['Criar Team', 'Criar Project', 'Preparar AWS / EKS', 'Configurar Cluster', 'Configurar Environments', 'Importar Applications'];
+const STEP_LABELS = ['Criar Team', 'Criar Project', 'Preparar AWS / EKS', 'Configurar Cluster', 'Configurar ArgoCD e Metrics', 'Configurar Environments', 'Importar Applications'];
 
 export function OnboardingIntro() {
   const nav = useNavigate();
@@ -655,13 +655,177 @@ export function OnboardingCluster() {
           </div>
         )}
       </FormCard>
-      <NavRow onBack={() => nav('/onboarding/aws-setup')} onNext={() => nav('/onboarding/environments')} nextDisabled={!success} />
+      <NavRow onBack={() => nav('/onboarding/aws-setup')} onNext={() => nav('/onboarding/argocd-metrics')} nextDisabled={!success} />
     </>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PASSO 5 — Environments
+// PASSO 5 — ArgoCD e Metrics RBAC
+// ═══════════════════════════════════════════════════════════════════════════════
+interface RbacCheckResult {
+  rbac_subject: string | null;
+  argocd_ok: boolean;
+  argocd_error: string | null;
+  metrics_ok: boolean;
+  metrics_error: string | null;
+}
+
+export function OnboardingArgocdMetrics() {
+  const nav = useNavigate();
+  const [result, setResult] = useState<RbacCheckResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
+  const [copied, setCopied] = useState<string | null>(null);
+  const projectId = localStorage.getItem(OB_PROJECT_ID);
+
+  function copy(key: string, text: string) {
+    navigator.clipboard.writeText(text).catch(() => {});
+    setCopied(key);
+    setTimeout(() => setCopied(null), 1500);
+  }
+
+  async function test() {
+    if (!projectId) return;
+    setLoading(true); setErr('');
+    try {
+      const r = await apiFetch(`/projects/${projectId}/cluster/rbac-check`);
+      setResult(r);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Erro ao testar RBAC.');
+    } finally { setLoading(false); }
+  }
+
+  const subject = result?.rbac_subject ?? '<sujeito calculado ao testar — precisa do IAM Role ARN do passo anterior>';
+
+  const argocdYaml = `apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: devship-argocd-reader
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: devship-argocd-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: devship-argocd-reader
+subjects:
+  - kind: User
+    name: "${subject}"
+    apiGroup: rbac.authorization.k8s.io`;
+
+  const metricsYaml = `apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: devship-metrics-reader
+rules:
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: devship-metrics-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: devship-metrics-reader
+subjects:
+  - kind: User
+    name: "${subject}"
+    apiGroup: rbac.authorization.k8s.io`;
+
+  const applyCmd = `kubectl apply -f - <<'EOF'\n${argocdYaml}\n---\n${metricsYaml}\nEOF`;
+
+  return (
+    <>
+      <StepLabel n={5} label="Configurar ArgoCD e Metrics" sub="Sem isto o deploy continua a funcionar, mas perde sync do ArgoCD e CPU/memória dos pods." />
+
+      <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '20px 22px', marginBottom: 14 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 10 }}>Porque é que o ARN da role não chega</div>
+        <p style={{ fontSize: 12.5, color: 'var(--text-2)', margin: 0, lineHeight: 1.6 }}>
+          O Access Entry do passo anterior autentica a role, mas o Kubernetes RBAC autoriza por uma identidade diferente —
+          a sessão assumida, não o ARN da role. Os manifestos abaixo já vêm com o subject certo, calculado a partir do
+          Role ARN que deste no passo 4. Isto não existe no painel da AWS: é sempre um objeto Kubernetes, aplicado via
+          <code className="mono" style={{ margin: '0 4px' }}>kubectl</code> — quer o tenhas configurado com Terraform, AWS CLI, ou à mão na consola.
+        </p>
+      </div>
+
+      <CodeBlock
+        title="1 · ClusterRole + ClusterRoleBinding — ArgoCD"
+        desc="Permite à DevShip ler o estado de sync das Applications do ArgoCD."
+        filename="devship-argocd-rbac.yaml"
+        code={argocdYaml}
+        copyKey="argocd-yaml" copied={copied} onCopy={copy}
+        why={{ title: 'RBAC do ArgoCD — o quê e porquê', body: 'Applications do ArgoCD são uma Custom Resource (argoproj.io), não um recurso nativo do Kubernetes — o AmazonEKSViewPolicy do passo 3 não cobre isto. Sem esta permissão, o pipeline de deploy não mostra o sync do GitOps e degrada silenciosamente para observação direta do K8s ao fim de ~60s.' }}
+      />
+
+      <div style={{ height: 14 }} />
+
+      <CodeBlock
+        title="2 · ClusterRole + ClusterRoleBinding — Metrics"
+        desc="Permite à DevShip ler CPU/memória dos pods (ecrã Pods/Health)."
+        filename="devship-metrics-rbac.yaml"
+        code={metricsYaml}
+        copyKey="metrics-yaml" copied={copied} onCopy={copy}
+        why={{ title: 'RBAC do Metrics API — o quê e porquê', body: 'metrics.k8s.io é outra aggregated API, servida pelo metrics-server — precisa do metrics-server instalado no cluster e desta permissão dedicada. Sem isto, o ecrã Pods mostra sempre "Metrics API indisponível", mesmo com o pod saudável.' }}
+      />
+
+      <div style={{ height: 14 }} />
+
+      <CodeBlock
+        title="3 · Aplicar com kubectl"
+        desc="Precisa de kubectl já configurado contra o cluster (aws eks update-kubeconfig, CloudShell, ou o teu terminal habitual)."
+        filename="apply.sh"
+        code={applyCmd}
+        copyKey="apply-cmd" copied={copied} onCopy={copy}
+      />
+
+      <div style={{ marginTop: 18, display: 'flex', alignItems: 'center', gap: 13 }}>
+        <button onClick={test} disabled={loading} className="btn-secondary" style={{ fontSize: 13, padding: '10px 18px', borderRadius: 9 }}>
+          {loading ? 'A testar…' : 'Testar ligação'}
+        </button>
+      </div>
+      <ErrBanner msg={err} />
+
+      {result && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
+          <RbacResultRow ok={result.argocd_ok} label="ArgoCD" error={result.argocd_error} />
+          <RbacResultRow ok={result.metrics_ok} label="Metrics API" error={result.metrics_error} />
+        </div>
+      )}
+
+      <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 14 }}>
+        Isto não bloqueia o onboarding — o deploy funciona sem isto, só perde sync do ArgoCD e métricas de CPU/memória.
+        Podes avançar e voltar aqui mais tarde.
+      </div>
+
+      <NavRow onBack={() => nav('/onboarding/cluster')} onNext={() => nav('/onboarding/environments')} nextLabel="Continuar →" />
+    </>
+  );
+}
+
+function RbacResultRow({ ok, label, error }: { ok: boolean; label: string; error: string | null }) {
+  return (
+    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', border: `1px solid ${ok ? 'rgba(52,199,89,.3)' : 'rgba(241,85,108,.3)'}`, background: ok ? 'rgba(52,199,89,.08)' : 'rgba(241,85,108,.08)', borderRadius: 12, padding: '13px 16px' }}>
+      <span style={{ color: ok ? '#5dd57b' : '#ff8497', fontSize: 14 }}>{ok ? '✓' : '✕'}</span>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: ok ? '#7ee094' : '#ff8497' }}>{label}{ok ? ' — acesso confirmado' : ' — sem acesso'}</div>
+        {!ok && error && <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 3 }}>{error}</div>}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PASSO 6 — Environments
 // ═══════════════════════════════════════════════════════════════════════════════
 interface EnvFormState {
   key: string;
@@ -793,7 +957,7 @@ export function OnboardingEnvironments() {
 
   return (
     <>
-      <StepLabel n={5} label="Configurar Environments" sub="Adiciona os ambientes do projeto: DEV, STAGING, PROD." />
+      <StepLabel n={6} label="Configurar Environments" sub="Adiciona os ambientes do projeto: DEV, STAGING, PROD." />
 
       {/* Result view after POST */}
       {results && (
@@ -909,7 +1073,7 @@ export function OnboardingEnvironments() {
             ))}
           </div>
           <ErrBanner msg={err} />
-          <NavRow onBack={() => nav('/onboarding/cluster')} onNext={submit} loading={loading} nextDisabled={envs.length === 0} nextLabel="Criar environments →" />
+          <NavRow onBack={() => nav('/onboarding/argocd-metrics')} onNext={submit} loading={loading} nextDisabled={envs.length === 0} nextLabel="Criar environments →" />
         </>
       )}
     </>
@@ -1052,7 +1216,7 @@ export function OnboardingApplications() {
 
   return (
     <>
-      <StepLabel n={6} label="Importar Applications" sub="A DevShip percorreu o repositório GitOps em busca de Deployments." />
+      <StepLabel n={7} label="Importar Applications" sub="A DevShip percorreu o repositório GitOps em busca de Deployments." />
 
       {scanning && <div style={{ color: 'var(--text-3)', fontSize: 13 }}>A fazer scan ao repositório…</div>}
       <ErrBanner msg={scanErr} />

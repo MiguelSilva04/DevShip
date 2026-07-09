@@ -28,6 +28,7 @@ from backend.api.schemas.onboarding import (
     ProjectCreate,
     ProjectResponse,
     ProjectUpdate,
+    RbacCheckResponse,
     TeamCreate,
     TeamMembersResponse,
     TeamResponse,
@@ -46,8 +47,15 @@ from backend.bd.models.team_member import TeamMember, TeamMemberRole
 from backend.bd.models.user import User
 from backend.services import cluster_validation as cv
 from backend.services import gitops_scanner as gs
+from backend.services.aws_auth import compute_rbac_subject
 from backend.services.gitops_scanner import is_repo_collaborator, path_exists, repo_exists, validate_branch
-from backend.services.kubernetes_reader import KubernetesNotFoundError, get_argocd_application, list_namespaces
+from backend.services.kubernetes_reader import (
+    KubernetesNotFoundError,
+    check_argocd_access,
+    check_metrics_access,
+    get_argocd_application,
+    list_namespaces,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -600,6 +608,43 @@ def revalidate_cluster(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
     return cluster
+
+
+@router.get("/projects/{project_id}/cluster/rbac-check", response_model=RbacCheckResponse)
+def check_cluster_rbac(
+    project_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Tests, without blocking onboarding, whether ArgoCD and Metrics API RBAC is already
+    mounted — distinct from validate_cluster (core API only). Called on demand, never
+    automatically, since Cloud Engineers typically leave this page, configure via AWS/kubectl,
+    and come back to test."""
+    _require_cloud_engineer(db, project_id, current_user)
+    cluster = _get_cluster_or_404(db, project_id)
+    rbac_subject = compute_rbac_subject(cluster.iam_role_arn)
+
+    try:
+        eks_info = _get_cluster_token(cluster)
+    except ValueError as e:
+        msg = str(e)
+        return RbacCheckResponse(rbac_subject=rbac_subject, argocd_ok=False, argocd_error=msg, metrics_ok=False, metrics_error=msg)
+
+    argocd_ok, argocd_error = True, None
+    try:
+        check_argocd_access(eks_info, cluster.argocd_namespace)
+    except Exception:
+        argocd_ok = False
+        argocd_error = "Sem acesso às Applications do ArgoCD — falta o ClusterRoleBinding para applications.argoproj.io."
+
+    metrics_ok, metrics_error = True, None
+    try:
+        check_metrics_access(eks_info)
+    except Exception:
+        metrics_ok = False
+        metrics_error = "Sem acesso ao Metrics API — falta o ClusterRoleBinding para metrics.k8s.io, ou o metrics-server não está instalado."
+
+    return RbacCheckResponse(rbac_subject=rbac_subject, argocd_ok=argocd_ok, argocd_error=argocd_error, metrics_ok=metrics_ok, metrics_error=metrics_error)
 
 
 @router.patch("/projects/{project_id}/cluster", response_model=ClusterContextResponse)

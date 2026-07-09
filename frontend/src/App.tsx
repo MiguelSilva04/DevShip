@@ -14,6 +14,7 @@ import OnboardingLayout, {
   OnboardingProject,
   OnboardingAwsSetup,
   OnboardingCluster,
+  OnboardingArgocdMetrics,
   OnboardingEnvironments,
   OnboardingApplications,
 } from './pages/Onboarding';
@@ -59,8 +60,9 @@ export default function App() {
               <Route path="team"        element={<OnboardingTeam />} />
               <Route path="project"     element={<OnboardingProject />} />
               <Route path="aws-setup"   element={<OnboardingAwsSetup />} />
-              <Route path="cluster"     element={<OnboardingCluster />} />
-              <Route path="environments" element={<OnboardingEnvironments />} />
+              <Route path="cluster"         element={<OnboardingCluster />} />
+              <Route path="argocd-metrics"  element={<OnboardingArgocdMetrics />} />
+              <Route path="environments"    element={<OnboardingEnvironments />} />
               <Route path="applications" element={<OnboardingApplications />} />
             </Route>
 

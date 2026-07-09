@@ -366,6 +366,83 @@ class TestClusterConfigure:
 
 
 # ---------------------------------------------------------------------------
+# ArgoCD / Metrics RBAC check
+# ---------------------------------------------------------------------------
+
+class TestClusterRbacCheck:
+    def test_no_cluster_configured_returns_404(self, client):
+        token, team_id = _setup(client, "rbacnocluster.io")
+        project_id = _project(client, token, team_id)
+
+        r = client.get(f"/projects/{project_id}/cluster/rbac-check", headers=_auth(token))
+        assert r.status_code == 404
+
+    @mock_aws
+    def _configure_cluster(self, client, domain: str) -> tuple[str, str]:
+        import boto3
+        boto3.client("eks", region_name="eu-west-1").create_cluster(
+            name="my-cluster", version="1.29", roleArn=FAKE_ROLE_ARN,
+            resourcesVpcConfig={"subnetIds": ["subnet-abc"], "securityGroupIds": []},
+        )
+        token, team_id = _setup(client, domain)
+        project_id = _project(client, token, team_id)
+        with patch("backend.services.cluster_validation.list_namespaces", return_value=MagicMock(items=[])):
+            r = client.post(f"/projects/{project_id}/cluster", json={"cluster_arn": FAKE_ARN, "iam_role_arn": FAKE_ROLE_ARN}, headers=_auth(token))
+        assert r.status_code == 201, r.text
+        return token, project_id
+
+    @mock_aws
+    def test_auth_failure_marks_both_checks_failed_with_same_message(self, client):
+        token, project_id = self._configure_cluster(client, "rbacautherr.io")
+
+        with patch("backend.api.routes.onboarding._get_cluster_token", side_effect=ValueError("Não foi possível autenticar com o cluster.")):
+            r = client.get(f"/projects/{project_id}/cluster/rbac-check", headers=_auth(token))
+
+        assert r.status_code == 200
+        data = r.json()
+        assert data["argocd_ok"] is False
+        assert data["metrics_ok"] is False
+        assert data["argocd_error"] == data["metrics_error"] == "Não foi possível autenticar com o cluster."
+
+    @mock_aws
+    def test_argocd_ok_metrics_missing(self, client):
+        token, project_id = self._configure_cluster(client, "rbacpartial.io")
+
+        with (
+            patch("backend.api.routes.onboarding._get_cluster_token", return_value=MagicMock()),
+            patch("backend.api.routes.onboarding.check_argocd_access", return_value=None),
+            patch("backend.api.routes.onboarding.check_metrics_access", side_effect=Exception("403")),
+        ):
+            r = client.get(f"/projects/{project_id}/cluster/rbac-check", headers=_auth(token))
+
+        assert r.status_code == 200
+        data = r.json()
+        assert data["argocd_ok"] is True
+        assert data["argocd_error"] is None
+        assert data["metrics_ok"] is False
+        assert "metrics.k8s.io" in data["metrics_error"]
+        assert data["rbac_subject"] == f"arn:aws:sts::123456789012:assumed-role/DevShipRole/SessionValidDevShip"
+
+    @mock_aws
+    def test_both_ok(self, client):
+        token, project_id = self._configure_cluster(client, "rbacok.io")
+
+        with (
+            patch("backend.api.routes.onboarding._get_cluster_token", return_value=MagicMock()),
+            patch("backend.api.routes.onboarding.check_argocd_access", return_value=None),
+            patch("backend.api.routes.onboarding.check_metrics_access", return_value=None),
+        ):
+            r = client.get(f"/projects/{project_id}/cluster/rbac-check", headers=_auth(token))
+
+        assert r.status_code == 200
+        data = r.json()
+        assert data["argocd_ok"] is True
+        assert data["metrics_ok"] is True
+        assert data["argocd_error"] is None
+        assert data["metrics_error"] is None
+
+
+# ---------------------------------------------------------------------------
 # Environments
 # ---------------------------------------------------------------------------
 
