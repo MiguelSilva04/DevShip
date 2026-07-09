@@ -37,3 +37,6 @@ class ClusterContext(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    # Set on every successful validate_cluster call (initial configure_cluster and every
+    # revalidate_cluster) — distinct from created_at, which only ever reflects row creation.
+    last_validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -1,5 +1,6 @@
 import logging
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import IntegrityError
@@ -576,6 +577,7 @@ def configure_cluster(
         iam_role_arn=body.iam_role_arn,
         external_id=external_id,
         argocd_namespace=body.argocd_namespace or "argocd",
+        last_validated_at=datetime.now(timezone.utc),
     )
     db.add(cluster)
     project.setup_status = SetupStatus.PENDING_ENVIRONMENTS
@@ -602,11 +604,19 @@ def revalidate_cluster(
     _require_cloud_engineer(db, project_id, current_user)
     cluster = _get_cluster_or_404(db, project_id)
 
+    # last_validated_at tracks the last validation attempt, not the last success — a
+    # failed attempt is still an attempt, and leaving the timestamp stuck at the last
+    # success would make a cluster that's been unreachable for days look freshly checked.
     try:
         cv.validate_cluster(cluster.cluster_arn, cluster.iam_role_arn, cluster.external_id)
     except ValueError as e:
+        cluster.last_validated_at = datetime.now(timezone.utc)
+        db.commit()
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
+    cluster.last_validated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(cluster)
     return cluster
 
 
@@ -673,6 +683,7 @@ def update_cluster_credentials(
     cluster.ca_file_path = info.ca_file_path
     if body.argocd_namespace:
         cluster.argocd_namespace = body.argocd_namespace
+    cluster.last_validated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(cluster)
     return cluster
@@ -690,7 +701,6 @@ def archive_project(
 ):
     project = _require_cloud_engineer(db, project_id, current_user)
     if not project.is_archived:
-        from datetime import datetime, timezone
         project.is_archived = True
         project.archived_at = datetime.now(timezone.utc)
         db.commit()
@@ -828,8 +838,6 @@ def _run_environment_validations(
         for s in (v.namespace_status, v.branch_status, v.git_ops_path_status, v.argocd_status)
     )
     v.overall_status = ValidationStatus.VALID if all_valid else ValidationStatus.INVALID
-
-    from datetime import datetime, timezone
     v.validated_at = datetime.now(timezone.utc)
 
 

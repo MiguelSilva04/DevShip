@@ -121,6 +121,7 @@ class ClusterContextResponse(BaseModel):
     external_id: str
     argocd_namespace: str
     created_at: datetime
+    last_validated_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 

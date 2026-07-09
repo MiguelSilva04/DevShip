@@ -318,6 +318,31 @@ class TestClusterConfigure:
 
         assert r.status_code == 201
         assert r.json()["cluster_name"] == "my-cluster"
+        assert r.json()["last_validated_at"] is not None
+
+    @mock_aws
+    def test_revalidate_bumps_last_validated_at(self, client):
+        """Regression: the Settings screen showed created_at as "Última validação" —
+        never changed between validate calls. revalidate_cluster must move it forward."""
+        import boto3
+        boto3.client("eks", region_name="eu-west-1").create_cluster(
+            name="my-cluster", version="1.29", roleArn=FAKE_ROLE_ARN,
+            resourcesVpcConfig={"subnetIds": ["subnet-abc"], "securityGroupIds": []},
+        )
+
+        token, team_id = _setup(client, "revalbump.io")
+        project_id = _project(client, token, team_id)
+
+        with patch("backend.services.cluster_validation.list_namespaces", return_value=MagicMock(items=[])):
+            created = client.post(f"/projects/{project_id}/cluster", json={"cluster_arn": FAKE_ARN, "iam_role_arn": FAKE_ROLE_ARN}, headers=_auth(token))
+            first_validated_at = created.json()["last_validated_at"]
+
+            r = client.post(f"/projects/{project_id}/cluster/revalidate", headers=_auth(token))
+
+        assert r.status_code == 200
+        second_validated_at = r.json()["last_validated_at"]
+        assert second_validated_at is not None
+        assert second_validated_at >= first_validated_at
 
     @mock_aws
     def test_duplicate_cluster_returns_409(self, client):

@@ -9,6 +9,7 @@ interface Cluster {
   eks_endpoint: string;
   argocd_namespace: string;
   created_at: string;
+  last_validated_at: string | null;
 }
 
 interface ProjectInfo {
@@ -59,7 +60,7 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('pt-PT', { year: 'numeric', month: '2-digit', day: '2-digit' });
+  return new Date(iso).toLocaleString('pt-PT', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 export default function Settings() {
@@ -116,7 +117,13 @@ export default function Settings() {
         setCluster(c); setClusterArn(c.cluster_arn); setArgocdNamespace(c.argocd_namespace);
         apiFetch(`/projects/${projectId}/cluster/revalidate`, { method: 'POST' })
           .then((rc: Cluster) => { setCluster(rc); setClusterConnected(true); })
-          .catch(() => setClusterConnected(false));
+          .catch(() => {
+            // revalidate ainda atualiza last_validated_at no lado do servidor mesmo a
+            // falhar (é uma tentativa, não só um sucesso) — o erro em si não devolve o
+            // cluster atualizado, por isso vai-se buscar de novo para refletir isso na UI.
+            setClusterConnected(false);
+            apiFetch(`/projects/${projectId}/cluster`).then(setCluster).catch(() => {});
+          });
       })
       .catch((e: unknown) => setClusterErr(e instanceof Error ? e.message : 'Erro ao carregar cluster.'));
     apiFetch(`/projects/${projectId}/environments`)
@@ -227,6 +234,9 @@ export default function Settings() {
     } catch (e: unknown) {
       setClusterConnected(false);
       setRevalidateMsg(e instanceof Error ? e.message : 'Falha ao revalidar ligação.');
+      // A tentativa falhada ainda atualiza last_validated_at no servidor — recarrega o
+      // cluster para essa data aparecer, em vez de ficar presa à última tentativa com sucesso.
+      apiFetch(`/projects/${projectId}/cluster`).then(setCluster).catch(() => {});
     } finally { setRevalidating(false); }
   }
 
@@ -350,7 +360,7 @@ export default function Settings() {
               </div>
               <div>
                 <div style={{ color: 'var(--text-3)' }}>Última validação</div>
-                <div className="mono" style={{ marginTop: 3 }}>{formatDate(cluster.created_at)}</div>
+                <div className="mono" style={{ marginTop: 3 }}>{cluster.last_validated_at ? formatDate(cluster.last_validated_at) : '—'}</div>
               </div>
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
