@@ -51,13 +51,10 @@ class DeploymentVersion(Base):
         ForeignKey("deployment_requests.id", ondelete="SET NULL"),
     )
     image_tag: Mapped[str | None] = mapped_column(String(255))
-    image_digest: Mapped[str | None] = mapped_column(String(128))
-    git_ops_commit_sha: Mapped[str | None] = mapped_column(String(40))
     # The commit that was actually versioned — may differ from source_commit_sha
     # in the originating deployment_request if the build resolved a different ref.
     source_commit_sha: Mapped[str | None] = mapped_column(String(40))
     argocd_sync_revision: Mapped[str | None] = mapped_column(String(64))
-    kubernetes_deployment_revision: Mapped[str | None] = mapped_column(String(64))
     lifecycle_status: Mapped[LifecycleStatus] = mapped_column(
         _lifecycle_status_enum, server_default=text("'Deploying'")
     )

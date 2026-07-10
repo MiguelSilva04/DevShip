@@ -286,11 +286,8 @@ def test_version_with_all_fields(db_session):
         application_environment_id=app_env.id,
         deployment_request_id=req.id,
         image_tag="v1.2.3",
-        image_digest="sha256:abc123" + "a" * 58,
-        git_ops_commit_sha="a" * 40,
         source_commit_sha="b" * 40,
         argocd_sync_revision="rev-123",
-        kubernetes_deployment_revision="rev-1",
         lifecycle_status=LifecycleStatus.HEALTHY,
         trigger_source=TriggerSource.DEVSHIP,
     )

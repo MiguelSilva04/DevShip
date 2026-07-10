@@ -84,10 +84,8 @@ class DeploymentVersionDetail(BaseModel):
     id: uuid.UUID
     deployment_request_id: Optional[uuid.UUID] = None
     image_tag: Optional[str] = None
-    image_digest: Optional[str] = None
     source_commit_sha: Optional[str] = None
     argocd_sync_revision: Optional[str] = None
-    kubernetes_deployment_revision: Optional[str] = None
     lifecycle_status: LifecycleStatus
     trigger_source: TriggerSource
     deployed_at: Optional[datetime] = None
