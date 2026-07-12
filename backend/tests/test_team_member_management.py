@@ -20,6 +20,7 @@ from backend.api.deps import get_db
 from backend.api.security import create_token
 from backend.bd.models.application import Application
 from backend.bd.models.application_team_member import ApplicationTeamMember
+from backend.bd.models.company import Company
 from backend.bd.models.team import Team
 from backend.bd.models.team_member import TeamMember, TeamMemberRole
 from backend.bd.models.project import Project, SetupStatus
@@ -68,7 +69,10 @@ def _make_app(db, project, name="api"):
 
 @pytest.fixture
 def scenario(db_session):
-    team = Team(name="T", domain=f"{uuid.uuid4()}.t")
+    company = Company(name=f"{uuid.uuid4()}.t", domain=f"{uuid.uuid4()}.t")
+    db_session.add(company)
+    db_session.flush()
+    team = Team(name="T", company_id=company.id)
     db_session.add(team)
     db_session.flush()
     project = Project(team_id=team.id, name="P", setup_status=SetupStatus.CONFIGURED)
@@ -82,7 +86,7 @@ def scenario(db_session):
     app_b = _make_app(db_session, project, "app-b")
 
     return {
-        "team": team, "project": project,
+        "team": team, "company": company, "project": project,
         "ce_user": ce_user, "ce_member": ce_member,
         "app_a": app_a, "app_b": app_b,
     }
@@ -236,7 +240,7 @@ class TestDeleteMember:
 
 class TestCandidates:
     def test_matching_domain_user_appears_as_candidate(self, client, db_session, scenario):
-        domain = scenario["team"].domain
+        domain = scenario["company"].domain
         _make_user(db_session, email=f"junior@{domain}")
         token = _token_for(scenario["ce_user"])
 
@@ -246,7 +250,7 @@ class TestCandidates:
         assert f"junior@{domain}" in candidate_emails
 
     def test_added_candidate_no_longer_listed(self, client, db_session, scenario):
-        domain = scenario["team"].domain
+        domain = scenario["company"].domain
         junior = _make_user(db_session, email=f"junior@{domain}")
         token = _token_for(scenario["ce_user"])
 
@@ -264,7 +268,7 @@ class TestCandidates:
         assert f"junior@{domain}" in member_emails
 
     def test_other_candidate_with_same_domain_still_listed(self, client, db_session, scenario):
-        domain = scenario["team"].domain
+        domain = scenario["company"].domain
         junior = _make_user(db_session, email=f"junior@{domain}")
         _make_user(db_session, email=f"senior@{domain}")
         token = _token_for(scenario["ce_user"])

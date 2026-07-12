@@ -23,6 +23,7 @@ from backend.api.deps import get_db
 from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
 from backend.bd.models.cluster_context import ClusterContext
+from backend.bd.models.company import Company
 from backend.bd.models.deployment_event import DeploymentEvent, DeploymentEventType, EventSource, Severity
 from backend.bd.models.deployment_request import DeploymentRequest, DeploymentType, RequestStatus
 from backend.bd.models.deployment_version import DeploymentVersion, LifecycleStatus, TriggerSource
@@ -62,8 +63,11 @@ def _auth(token):
 def _setup_chain(db: Session) -> tuple[User, Team, Project, Environment, Application, ApplicationEnvironment]:
     """Persist a minimal chain: user → team → project → environment → app → app_env."""
     user = User(name="CE", email=f"{uuid.uuid4()}@corp.io", password_hash="x")
-    team = Team(name="Corp", domain=f"{uuid.uuid4()}.corp")
-    db.add_all([user, team])
+    company = Company(name=f"{uuid.uuid4()}.corp", domain=f"{uuid.uuid4()}.corp")
+    db.add_all([user, company])
+    db.flush()
+    team = Team(name="Corp", company_id=company.id)
+    db.add(team)
     db.flush()
 
     db.add(TeamMember(team_id=team.id, user_id=user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
@@ -122,8 +126,8 @@ class TestCreateDeploy:
         user, team, project, env, app, app_env = _setup_chain(db_session)
 
         # Inject user into auth: register + get token via API
-        api_user = _register(client, f"ce@{team.domain}")
-        token = _login(client, f"ce@{team.domain}")
+        api_user = _register(client, f"ce@{user.email.split('@')[1]}")
+        token = _login(client, f"ce@{user.email.split('@')[1]}")
 
         # The auto-created team is different from _setup_chain's team.
         # Use the API-created team's app_env instead.
@@ -182,7 +186,7 @@ class TestCreateDeploy:
         db_session.add(cluster_ctx)
         db_session.flush()
 
-        api_user_email = f"ce@{team.domain}"
+        api_user_email = f"ce@{user.email.split('@')[1]}"
         _register(client, api_user_email)
         token = _login(client, api_user_email)
         api_user = db_session.query(User).filter(User.email == api_user_email).first()
@@ -273,7 +277,7 @@ class TestApproveReject:
         user, team, project, env, app, app_env = _setup_chain(db_session)
         req = self._pending_request(db_session, app_env, user)
 
-        approver_email = f"approver@{team.domain}"
+        approver_email = f"approver@{user.email.split('@')[1]}"
         _register(client, approver_email)
         token = _login(client, approver_email)
         approver = db_session.query(User).filter(User.email == approver_email).first()
@@ -303,7 +307,7 @@ class TestApproveReject:
         user, team, project, env, app, app_env = _setup_chain(db_session)
         req = self._pending_request(db_session, app_env, user)
 
-        approver_email = f"approver@{team.domain}"
+        approver_email = f"approver@{user.email.split('@')[1]}"
         _register(client, approver_email)
         token = _login(client, approver_email)
         approver = db_session.query(User).filter(User.email == approver_email).first()
@@ -338,8 +342,8 @@ class TestApproveReject:
         req = self._pending_request(db_session, app_env, user)
 
         # We need a real JWT — register + login via API
-        _register(client, f"approver@{team.domain}")
-        token = _login(client, f"approver@{team.domain}")
+        _register(client, f"approver@{user.email.split('@')[1]}")
+        token = _login(client, f"approver@{user.email.split('@')[1]}")
 
         r = client.post(f"/deployment-requests/{req.id}/reject", json={}, headers=_auth(token))
         assert r.status_code == 422
@@ -1099,7 +1103,7 @@ class TestRollback:
     def test_rollback_endpoint_rejects_when_no_healthy_version_exists(self, client, db_session):
         """No manual target selection anymore — a request with no prior HEALTHY version
         (only the current one, itself unhealthy) has nothing to roll back to."""
-        _, team, project, env, app, app_env = _setup_chain(db_session)
+        user, team, project, env, app, app_env = _setup_chain(db_session)
 
         current = DeploymentVersion(
             application_environment_id=app_env.id,
@@ -1109,7 +1113,7 @@ class TestRollback:
         db_session.add(current)
         db_session.flush()
 
-        api_user_email = f"ce@{team.domain}"
+        api_user_email = f"ce@{user.email.split('@')[1]}"
         _register(client, api_user_email)
         token = _login(client, api_user_email)
         api_user = db_session.query(User).filter(User.email == api_user_email).first()
@@ -1125,7 +1129,7 @@ class TestRollback:
         assert r.status_code == 422
 
     def test_rollback_endpoint_rejects_healthy_target_without_image_tag(self, client, db_session):
-        _, team, project, env, app, app_env = _setup_chain(db_session)
+        user, team, project, env, app, app_env = _setup_chain(db_session)
 
         from datetime import datetime, timedelta, timezone
         now = datetime.now(timezone.utc)
@@ -1136,7 +1140,7 @@ class TestRollback:
         db_session.add(current)
         db_session.flush()
 
-        api_user_email = f"ce@{team.domain}"
+        api_user_email = f"ce@{user.email.split('@')[1]}"
         _register(client, api_user_email)
         token = _login(client, api_user_email)
         api_user = db_session.query(User).filter(User.email == api_user_email).first()
@@ -1154,7 +1158,7 @@ class TestRollback:
     def test_rollback_endpoint_excludes_current_version_even_if_healthy(self, client, db_session):
         """The current version is never a valid rollback target, even when it's the only
         HEALTHY row — there must be a *previous* healthy version."""
-        _, team, project, env, app, app_env = _setup_chain(db_session)
+        user, team, project, env, app, app_env = _setup_chain(db_session)
 
         current = DeploymentVersion(
             application_environment_id=app_env.id,
@@ -1164,7 +1168,7 @@ class TestRollback:
         db_session.add(current)
         db_session.flush()
 
-        api_user_email = f"ce@{team.domain}"
+        api_user_email = f"ce@{user.email.split('@')[1]}"
         _register(client, api_user_email)
         token = _login(client, api_user_email)
         api_user = db_session.query(User).filter(User.email == api_user_email).first()
@@ -1180,7 +1184,7 @@ class TestRollback:
         assert r.status_code == 422
 
     def test_rollback_endpoint_creates_rollback_type_request(self, client, db_session):
-        _, team, project, env, app, app_env = _setup_chain(db_session)
+        user, team, project, env, app, app_env = _setup_chain(db_session)
 
         from datetime import datetime, timedelta, timezone
         now = datetime.now(timezone.utc)
@@ -1191,7 +1195,7 @@ class TestRollback:
         db_session.add(current)
         db_session.flush()
 
-        api_user_email = f"ce@{team.domain}"
+        api_user_email = f"ce@{user.email.split('@')[1]}"
         _register(client, api_user_email)
         token = _login(client, api_user_email)
         api_user = db_session.query(User).filter(User.email == api_user_email).first()
@@ -1217,7 +1221,7 @@ class TestRollback:
         create_rollback only looked for Healthy, every AE would permanently lose its
         rollback target after one more successful deploy. Superseded means 'was Healthy,
         later replaced', so it must be an accepted target."""
-        _, team, project, env, app, app_env = _setup_chain(db_session)
+        user, team, project, env, app, app_env = _setup_chain(db_session)
 
         from datetime import datetime, timedelta, timezone
         now = datetime.now(timezone.utc)
@@ -1228,7 +1232,7 @@ class TestRollback:
         db_session.add(current)
         db_session.flush()
 
-        api_user_email = f"ce@{team.domain}"
+        api_user_email = f"ce@{user.email.split('@')[1]}"
         _register(client, api_user_email)
         token = _login(client, api_user_email)
         api_user = db_session.query(User).filter(User.email == api_user_email).first()
@@ -1252,7 +1256,7 @@ class TestRollback:
         target, but it doesn't carry Superseded's guarantee (every automated signal said
         it was fine) — RolledBack can mean a person walked away for a reason Kubernetes
         never reports as a failure. Justification is mandatory for this specific case."""
-        _, team, project, env, app, app_env = _setup_chain(db_session)
+        user, team, project, env, app, app_env = _setup_chain(db_session)
 
         from datetime import datetime, timedelta, timezone
         now = datetime.now(timezone.utc)
@@ -1263,7 +1267,7 @@ class TestRollback:
         db_session.add(current)
         db_session.flush()
 
-        api_user_email = f"ce@{team.domain}"
+        api_user_email = f"ce@{user.email.split('@')[1]}"
         _register(client, api_user_email)
         token = _login(client, api_user_email)
         api_user = db_session.query(User).filter(User.email == api_user_email).first()
@@ -1282,7 +1286,7 @@ class TestRollback:
     def test_rollback_endpoint_rolled_back_target_forces_pending_even_without_env_approval(self, client, db_session):
         """A RolledBack target always requires approval, even for an environment that
         normally skips it entirely — the request must stay PENDING, not auto-trigger."""
-        _, team, project, env, app, app_env = _setup_chain(db_session)
+        user, team, project, env, app, app_env = _setup_chain(db_session)
         assert env.requires_approval is False
 
         from datetime import datetime, timedelta, timezone
@@ -1294,7 +1298,7 @@ class TestRollback:
         db_session.add(current)
         db_session.flush()
 
-        api_user_email = f"ce@{team.domain}"
+        api_user_email = f"ce@{user.email.split('@')[1]}"
         _register(client, api_user_email)
         token = _login(client, api_user_email)
         api_user = db_session.query(User).filter(User.email == api_user_email).first()
@@ -1318,7 +1322,7 @@ class TestRollback:
         targeting a RolledBack version, which always needs TECH_LEAD or CLOUD_ENGINEER."""
         from backend.bd.models.application_team_member import ApplicationTeamMember
 
-        _, team, project, env, app, app_env = _setup_chain(db_session)
+        user, team, project, env, app, app_env = _setup_chain(db_session)
         assert env.requires_approval is False and env.approval_required_role is None
 
         from datetime import datetime, timedelta, timezone
@@ -1330,7 +1334,7 @@ class TestRollback:
         db_session.add(current)
         db_session.flush()
 
-        requester_email = f"ce@{team.domain}"
+        requester_email = f"ce@{user.email.split('@')[1]}"
         _register(client, requester_email)
         requester_token = _login(client, requester_email)
         requester = db_session.query(User).filter(User.email == requester_email).first()
@@ -1346,7 +1350,7 @@ class TestRollback:
         assert req_resp.status_code == 201, req_resp.text
         request_id = req_resp.json()["id"]
 
-        dev_email = f"dev@{team.domain}"
+        dev_email = f"dev@{user.email.split('@')[1]}"
         _register(client, dev_email)
         dev_token = _login(client, dev_email)
         dev_user = db_session.query(User).filter(User.email == dev_email).first()
@@ -1359,7 +1363,7 @@ class TestRollback:
         r = client.post(f"/deployment-requests/{request_id}/approve", headers=_auth(dev_token))
         assert r.status_code == 403
 
-        ce_email = f"ce2@{team.domain}"
+        ce_email = f"ce2@{user.email.split('@')[1]}"
         _register(client, ce_email)
         ce_token = _login(client, ce_email)
         ce_user = db_session.query(User).filter(User.email == ce_email).first()
@@ -1372,7 +1376,7 @@ class TestRollback:
         assert r.json()["status"] == "APPROVED"
 
     def test_rollback_requires_approval_stays_pending(self, client, db_session):
-        _, team, project, env, app, app_env = _setup_chain(db_session)
+        user, team, project, env, app, app_env = _setup_chain(db_session)
         env.requires_approval = True
         db_session.flush()
 
@@ -1385,7 +1389,7 @@ class TestRollback:
         db_session.add(current)
         db_session.flush()
 
-        api_user_email = f"ce@{team.domain}"
+        api_user_email = f"ce@{user.email.split('@')[1]}"
         _register(client, api_user_email)
         token = _login(client, api_user_email)
         api_user = db_session.query(User).filter(User.email == api_user_email).first()
@@ -1404,7 +1408,7 @@ class TestRollback:
         mock_trigger.assert_not_called()
 
     def test_rollback_blocked_when_deploy_in_flight(self, client, db_session):
-        _, team, project, env, app, app_env = _setup_chain(db_session)
+        user, team, project, env, app, app_env = _setup_chain(db_session)
 
         db_session.add(DeploymentRequest(
             application_environment_id=app_env.id,
@@ -1420,7 +1424,7 @@ class TestRollback:
         db_session.add(current)
         db_session.flush()
 
-        api_user_email = f"ce@{team.domain}"
+        api_user_email = f"ce@{user.email.split('@')[1]}"
         _register(client, api_user_email)
         token = _login(client, api_user_email)
         api_user = db_session.query(User).filter(User.email == api_user_email).first()

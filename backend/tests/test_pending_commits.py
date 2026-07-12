@@ -18,6 +18,7 @@ from backend.api.deps import get_db
 from backend.api.security import create_token
 from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
+from backend.bd.models.company import Company
 from backend.bd.models.deployment_version import DeploymentVersion, LifecycleStatus, TriggerSource
 from backend.bd.models.environment import Environment
 from backend.bd.models.project import Project, SetupStatus
@@ -44,8 +45,11 @@ def _token_for(user):
 @pytest.fixture
 def scenario(db_session):
     user = User(name="U", email=f"{uuid.uuid4()}@t.io", password_hash="x")
-    team = Team(name="T", domain=f"{uuid.uuid4()}.t")
-    db_session.add_all([user, team])
+    company = Company(name=f"{uuid.uuid4()}.t", domain=f"{uuid.uuid4()}.t")
+    db_session.add_all([user, company])
+    db_session.flush()
+    team = Team(name="T", company_id=company.id)
+    db_session.add(team)
     db_session.flush()
     db_session.add(TeamMember(team_id=team.id, user_id=user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
     db_session.flush()
@@ -145,7 +149,10 @@ class TestGetPendingCommits:
         assert data["head_sha"] == data["current_sha"]
 
     def test_403_for_other_team(self, client, db_session, scenario):
-        other_team = Team(name="Other", domain=f"{uuid.uuid4()}.t")
+        other_company = Company(name=f"{uuid.uuid4()}.t", domain=f"{uuid.uuid4()}.t")
+        db_session.add(other_company)
+        db_session.flush()
+        other_team = Team(name="Other", company_id=other_company.id)
         db_session.add(other_team)
         db_session.flush()
         other_user = User(name="X", email=f"{uuid.uuid4()}@t.io", password_hash="x")

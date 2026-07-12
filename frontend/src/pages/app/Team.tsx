@@ -235,7 +235,6 @@ export default function Team() {
     } finally { setBusy(null); }
   }
 
-  const cloudEngineers = members.filter(m => m.role === 'CLOUD_ENGINEER');
   const canAddMembers = user?.role === 'cloud' || user?.role === 'tech';
   const readOnly = !canAddMembers; // Developer: read-only access to the Team page
   const anyManageable = members.some(m => canManage(m) && m.role !== 'CLOUD_ENGINEER');
@@ -512,15 +511,6 @@ export default function Team() {
         </div>
       )}
 
-      {/* MVP notice if Cloud Engineer already exists */}
-      {cloudEngineers.length >= 1 && (
-        <div style={{ display: 'flex', gap: 10, border: '1px solid rgba(77,156,246,.28)', background: 'rgba(77,156,246,.08)', borderRadius: 11, padding: '12px 15px', marginTop: 20 }}>
-          <span style={{ color: '#7fb6f9' }}>ⓘ</span>
-          <span style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6 }}>
-            Neste MVP cada team tem um único Cloud Engineer. Para transferir o controlo, contacta o suporte.
-          </span>
-        </div>
-      )}
     </div>
   );
 }

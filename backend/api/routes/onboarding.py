@@ -17,6 +17,7 @@ from backend.api.schemas.onboarding import (
     ClusterContextResponse,
     ClusterSetupInfo,
     ApplicationUpdate,
+    DomainStatusResponse,
     EnvironmentCreate,
     EnvironmentResponse,
     EnvironmentUpdate,
@@ -26,6 +27,7 @@ from backend.api.schemas.onboarding import (
     GitOpsScanResult,
     MemberEntry,
     PatchMemberRequest,
+    PendingTeamEntry,
     ProjectCreate,
     ProjectResponse,
     ProjectUpdate,
@@ -40,11 +42,12 @@ from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
 from backend.bd.models.application_team_member import ApplicationTeamMember
 from backend.bd.models.cluster_context import ClusterContext
+from backend.bd.models.company import Company
 from backend.bd.models.environment import Environment
 from backend.bd.models.environment_validation import EnvironmentValidation, ValidationStatus
 from backend.bd.models.project import Project, SetupStatus
 from backend.bd.models.team import Team
-from backend.bd.models.team_member import TeamMember, TeamMemberRole
+from backend.bd.models.team_member import TeamMember, TeamMemberRole, TeamMemberStatus
 from backend.bd.models.user import User
 from backend.services import cluster_validation as cv
 from backend.services import gitops_scanner as gs
@@ -77,7 +80,17 @@ def _require_cloud_engineer_of_team(db: Session, team_id: uuid.UUID, user: User)
     )
     if member is None or member.role != TeamMemberRole.CLOUD_ENGINEER:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="É necessário ter o papel de Cloud Engineer para executar esta ação.")
+    if member.status != TeamMemberStatus.CONFIRMED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="A tua qualidade de Cloud Engineer ainda não foi confirmada por outro Cloud Engineer da tua empresa.",
+        )
     return team
+
+
+def _team_response(db: Session, team: Team, member_status: "TeamMemberStatus | None" = None) -> TeamResponse:
+    company = db.get(Company, team.company_id)
+    return TeamResponse(id=team.id, name=team.name, description=team.description, domain=company.domain, member_status=member_status)
 
 
 def _require_cloud_engineer(db: Session, project_id: uuid.UUID, user: User) -> Project:
@@ -125,15 +138,17 @@ def _require_team_reader(db: Session, team_id: uuid.UUID, user: User) -> Team:
 # Current user's teams (Lobby)
 # ---------------------------------------------------------------------------
 
-@router.get("/users/me/domain-status")
+@router.get("/users/me/domain-status", response_model=DomainStatusResponse)
 def my_domain_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Returns whether the current user's email domain already has a Team."""
+    """Returns whether the current user's email domain already has a Company — a Company
+    may have several Teams, so this no longer answers "is there a Team", only whether the
+    domain is already claimed at all."""
     domain = current_user.email.rsplit("@", 1)[-1]
-    team = db.query(Team).filter(Team.domain == domain).first()
-    return {"domain": domain, "has_team": team is not None, "team_id": str(team.id) if team else None}
+    company = db.query(Company).filter(Company.domain == domain).first()
+    return DomainStatusResponse(domain=domain, has_company=company is not None, company_id=company.id if company else None)
 
 
 @router.patch("/users/me/github-identity", response_model=GithubIdentityResponse)
@@ -195,8 +210,9 @@ def list_my_teams(
     current_user: User = Depends(get_current_user),
 ):
     rows = (
-        db.query(TeamMember, Team, Project)
+        db.query(TeamMember, Team, Company, Project)
         .join(Team, TeamMember.team_id == Team.id)
+        .join(Company, Team.company_id == Company.id)
         .outerjoin(Project, Project.team_id == Team.id)
         .filter(TeamMember.user_id == current_user.id)
         .all()
@@ -208,11 +224,14 @@ def list_my_teams(
             team_id=team.id,
             team_name=team.name,
             role=member.role,
+            company_id=company.id,
+            company_name=company.name,
+            status=member.status,
             project_id=project.id if project else None,
             project_name=project.name if project else None,
             setup_status=project.setup_status if project else None,
         )
-        for member, team, project in rows
+        for member, team, company, project in rows
     ]
 
 
@@ -222,20 +241,31 @@ def list_my_teams(
 
 @router.post("/teams", response_model=TeamResponse, status_code=status.HTTP_201_CREATED)
 def create_team(body: TeamCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Cria sempre a Team (nunca 409 por domínio já ocupado — uma Company pode ter várias
+    Teams). O criador torna-se CLOUD_ENGINEER de imediato, mas só fica CONFIRMED sem
+    espera se for a primeira Team de uma Company nova (bootstrap, sem ninguém para
+    aprovar) — a 2ª+ Team da mesma Company fica PENDING_CONFIRMATION até um Cloud
+    Engineer já confirmado de outra Team da Company a aprovar/rejeitar."""
     domain = current_user.email.rsplit("@", 1)[-1]
-    if db.query(Team).filter(Team.domain == domain).first():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Já existe uma equipa para este domínio. Pede ao Cloud Engineer que te adicione.",
-        )
+    company = db.query(Company).filter(Company.domain == domain).first()
+    is_bootstrap = company is None
+    if is_bootstrap:
+        company = Company(id=uuid.uuid4(), name=domain, domain=domain)
+        db.add(company)
+        db.flush()  # precisa do id antes de criar a Team
+
     team_id = uuid.uuid4()
-    team = Team(id=team_id, name=body.name, description=body.description, domain=domain)
-    member = TeamMember(team_id=team_id, user_id=current_user.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None)
+    team = Team(id=team_id, name=body.name, description=body.description, company_id=company.id)
+    member_status = TeamMemberStatus.CONFIRMED if is_bootstrap else TeamMemberStatus.PENDING_CONFIRMATION
+    member = TeamMember(
+        team_id=team_id, user_id=current_user.id, role=TeamMemberRole.CLOUD_ENGINEER,
+        added_by=None, status=member_status,
+    )
     db.add(team)
     db.add(member)
     db.commit()
     db.refresh(team)
-    return team
+    return _team_response(db, team, member_status=member_status)
 
 
 @router.get("/teams/{team_id}", response_model=TeamResponse)
@@ -244,7 +274,8 @@ def get_team(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return _require_team_reader(db, team_id, current_user)
+    team = _require_team_reader(db, team_id, current_user)
+    return _team_response(db, team)
 
 
 @router.patch("/teams/{team_id}", response_model=TeamResponse)
@@ -261,7 +292,104 @@ def update_team(
         team.description = body.description
     db.commit()
     db.refresh(team)
-    return team
+    return _team_response(db, team)
+
+
+# ---------------------------------------------------------------------------
+# Company-wide Cloud Engineer confirmation — a 2nd+ Team of an existing Company
+# needs a CONFIRMED Cloud Engineer of ANY other Team in the same Company to approve
+# or reject it before its own founder gains real Cloud Engineer privileges.
+# ---------------------------------------------------------------------------
+
+def _require_confirmed_ce_of_company(db: Session, company_id: uuid.UUID, user: User) -> None:
+    member = (
+        db.query(TeamMember)
+        .join(Team, TeamMember.team_id == Team.id)
+        .filter(
+            Team.company_id == company_id,
+            TeamMember.user_id == user.id,
+            TeamMember.role == TeamMemberRole.CLOUD_ENGINEER,
+            TeamMember.status == TeamMemberStatus.CONFIRMED,
+        )
+        .first()
+    )
+    if member is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="É necessário ser Cloud Engineer confirmado de uma equipa desta empresa.",
+        )
+
+
+def _get_pending_member_or_404(db: Session, team_id: uuid.UUID) -> TeamMember:
+    pending = (
+        db.query(TeamMember)
+        .filter(TeamMember.team_id == team_id, TeamMember.status == TeamMemberStatus.PENDING_CONFIRMATION)
+        .first()
+    )
+    if pending is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Nada pendente para esta equipa.")
+    return pending
+
+
+@router.get("/companies/{company_id}/pending-teams", response_model=list[PendingTeamEntry])
+def list_pending_teams(
+    company_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_confirmed_ce_of_company(db, company_id, current_user)
+    rows = (
+        db.query(TeamMember, Team, User)
+        .join(Team, TeamMember.team_id == Team.id)
+        .join(User, TeamMember.user_id == User.id)
+        .filter(Team.company_id == company_id, TeamMember.status == TeamMemberStatus.PENDING_CONFIRMATION)
+        .all()
+    )
+    return [
+        PendingTeamEntry(
+            team_id=t.id, team_name=t.name, team_description=t.description, created_at=t.created_at,
+            pending_user_id=u.id, pending_user_name=u.name, pending_user_email=u.email,
+        )
+        for tm, t, u in rows
+    ]
+
+
+@router.post("/teams/{team_id}/confirm", response_model=TeamResponse)
+def confirm_team(
+    team_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    team = db.get(Team, team_id)
+    if team is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    _require_confirmed_ce_of_company(db, team.company_id, current_user)
+    pending = _get_pending_member_or_404(db, team_id)
+    pending.status = TeamMemberStatus.CONFIRMED
+    pending.confirmed_by = current_user.id
+    pending.confirmed_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(team)
+    return _team_response(db, team)
+
+
+@router.post("/teams/{team_id}/reject", response_model=TeamResponse)
+def reject_team(
+    team_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    team = db.get(Team, team_id)
+    if team is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+    _require_confirmed_ce_of_company(db, team.company_id, current_user)
+    pending = _get_pending_member_or_404(db, team_id)
+    pending.status = TeamMemberStatus.REJECTED
+    pending.rejected_by = current_user.id
+    pending.rejected_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(team)
+    return _team_response(db, team)
 
 
 # ---------------------------------------------------------------------------
@@ -288,16 +416,19 @@ def list_team_members(
     current_user: User = Depends(get_current_user),
 ):
     team = _require_team_reader(db, team_id, current_user)
+    company = db.get(Company, team.company_id)
 
     members = db.query(TeamMember).filter(TeamMember.team_id == team_id).all()
     member_entries = [_member_entry(db, m, db.get(User, m.user_id)) for m in members]
 
-    # Users sharing the domain with no TeamMember anywhere
+    # Users sharing the Company's domain with no TeamMember anywhere — "no TeamMember
+    # anywhere" already covers "not a member of any Team in this Company" since a user
+    # can only ever belong to Teams whose Company domain matches their own email domain.
     candidates_q = (
         db.query(User)
         .outerjoin(TeamMember, TeamMember.user_id == User.id)
         .filter(
-            User.email.ilike(f"%@{team.domain}"),
+            User.email.ilike(f"%@{company.domain}"),
             TeamMember.id.is_(None),
         )
         .all()
@@ -439,13 +570,7 @@ def create_project(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    member = (
-        db.query(TeamMember)
-        .filter(TeamMember.team_id == team_id, TeamMember.user_id == current_user.id)
-        .first()
-    )
-    if member is None or member.role != TeamMemberRole.CLOUD_ENGINEER:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="É necessário ter o papel de Cloud Engineer para executar esta ação.")
+    _require_cloud_engineer_of_team(db, team_id, current_user)
 
     existing = db.query(Project).filter(Project.team_id == team_id).first()
     if existing:

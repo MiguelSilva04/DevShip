@@ -7,6 +7,7 @@ from backend.bd.models import (
     Application,
     ApplicationEnvironment,
     ClusterContext,
+    Company,
     Environment,
     EnvironmentValidation,
     Project,
@@ -30,8 +31,11 @@ def make_user(email: str = None) -> User:
     )
 
 
-def make_team(name: str = "Test Team") -> Team:
-    return Team(name=name, domain=f"{uuid.uuid4()}.test")
+def make_team(db_session, name: str = "Test Team") -> Team:
+    company = Company(name=f"{uuid.uuid4()}.test", domain=f"{uuid.uuid4()}.test")
+    db_session.add(company)
+    db_session.flush()
+    return Team(name=name, company_id=company.id)
 
 
 def make_project(team: Team, created_by: User | None = None) -> Project:
@@ -91,7 +95,7 @@ def make_app_env(app: Application, env: Environment) -> ApplicationEnvironment:
 # ---------------------------------------------------------------------------
 
 def test_create_project_defaults(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 
@@ -107,7 +111,7 @@ def test_create_project_defaults(db_session):
 
 
 def test_project_all_setup_statuses(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 
@@ -119,7 +123,7 @@ def test_project_all_setup_statuses(db_session):
 
 def test_project_created_by_references_user(db_session):
     user = make_user()
-    team = make_team()
+    team = make_team(db_session)
     db_session.add_all([user, team])
     db_session.flush()
 
@@ -131,7 +135,7 @@ def test_project_created_by_references_user(db_session):
 
 
 def test_delete_team_cascades_projects(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 
@@ -149,7 +153,7 @@ def test_delete_team_cascades_projects(db_session):
 
 def test_delete_user_sets_project_created_by_null(db_session):
     user = make_user()
-    team = make_team()
+    team = make_team(db_session)
     db_session.add_all([user, team])
     db_session.flush()
 
@@ -170,7 +174,7 @@ def test_delete_user_sets_project_created_by_null(db_session):
 # ---------------------------------------------------------------------------
 
 def test_create_cluster_context(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 
@@ -187,7 +191,7 @@ def test_create_cluster_context(db_session):
 
 
 def test_cluster_context_unique_per_project(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 
@@ -207,7 +211,7 @@ def test_cluster_context_unique_per_project(db_session):
 
 
 def test_cluster_context_unique_external_id(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 
@@ -232,7 +236,7 @@ def test_cluster_context_unique_external_id(db_session):
 
 
 def test_delete_project_cascades_cluster_context(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 
@@ -257,7 +261,7 @@ def test_delete_project_cascades_cluster_context(db_session):
 # ---------------------------------------------------------------------------
 
 def test_create_environment_defaults(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 
@@ -276,7 +280,7 @@ def test_create_environment_defaults(db_session):
 
 
 def test_multiple_environments_per_project(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 
@@ -292,7 +296,7 @@ def test_multiple_environments_per_project(db_session):
 
 
 def test_environment_approval_role(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 
@@ -312,7 +316,7 @@ def test_environment_approval_role(db_session):
 
 
 def test_delete_project_cascades_environments(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 
@@ -337,7 +341,7 @@ def test_delete_project_cascades_environments(db_session):
 # ---------------------------------------------------------------------------
 
 def test_create_environment_validation_defaults(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 
@@ -363,7 +367,7 @@ def test_create_environment_validation_defaults(db_session):
 
 
 def test_environment_validation_unique_per_environment(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 
@@ -387,7 +391,7 @@ def test_environment_validation_unique_per_environment(db_session):
 
 
 def test_delete_environment_cascades_validation(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 
@@ -416,7 +420,7 @@ def test_delete_environment_cascades_validation(db_session):
 # ---------------------------------------------------------------------------
 
 def test_create_application(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 
@@ -434,7 +438,7 @@ def test_create_application(db_session):
 
 
 def test_delete_project_cascades_applications(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 
@@ -456,7 +460,7 @@ def test_delete_project_cascades_applications(db_session):
 
 def test_delete_user_sets_application_created_by_null(db_session):
     user = make_user()
-    team = make_team()
+    team = make_team(db_session)
     db_session.add_all([user, team])
     db_session.flush()
 
@@ -481,7 +485,7 @@ def test_delete_user_sets_application_created_by_null(db_session):
 # ---------------------------------------------------------------------------
 
 def test_create_application_environment(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 
@@ -504,7 +508,7 @@ def test_create_application_environment(db_session):
 
 
 def test_application_environment_unique_pair(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 
@@ -529,7 +533,7 @@ def test_application_environment_unique_pair(db_session):
 
 
 def test_same_app_different_envs_allowed(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 
@@ -552,7 +556,7 @@ def test_same_app_different_envs_allowed(db_session):
 
 
 def test_delete_application_cascades_app_environments(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 
@@ -578,7 +582,7 @@ def test_delete_application_cascades_app_environments(db_session):
 
 
 def test_delete_environment_cascades_app_environments(db_session):
-    team = make_team()
+    team = make_team(db_session)
     db_session.add(team)
     db_session.flush()
 

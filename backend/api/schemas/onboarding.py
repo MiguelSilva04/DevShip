@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from backend.bd.models.environment_validation import ValidationStatus
 from backend.bd.models.project import SetupStatus
-from backend.bd.models.team_member import TeamMemberRole
+from backend.bd.models.team_member import TeamMemberRole, TeamMemberStatus
 
 
 # --- Team ---
@@ -21,6 +21,9 @@ class TeamResponse(BaseModel):
     name: str
     description: Optional[str] = None
     domain: str
+    # Only populated by create_team, so the frontend knows whether the CE it just
+    # created needs to wait for cross-Team confirmation before continuing onboarding.
+    member_status: Optional[TeamMemberStatus] = None
 
     model_config = {"from_attributes": True}
 
@@ -193,9 +196,30 @@ class UserTeamEntry(BaseModel):
     team_id: uuid.UUID
     team_name: str
     role: TeamMemberRole
+    company_id: uuid.UUID
+    company_name: str
+    status: TeamMemberStatus
     project_id: Optional[uuid.UUID] = None
     project_name: Optional[str] = None
     setup_status: Optional[SetupStatus] = None
+
+
+# --- Domain / Company status (Lobby) ---
+
+class DomainStatusResponse(BaseModel):
+    domain: str
+    has_company: bool
+    company_id: Optional[uuid.UUID] = None
+
+
+class PendingTeamEntry(BaseModel):
+    team_id: uuid.UUID
+    team_name: str
+    team_description: Optional[str] = None
+    created_at: datetime
+    pending_user_id: uuid.UUID
+    pending_user_name: str
+    pending_user_email: str
 
 
 # --- Application import ---

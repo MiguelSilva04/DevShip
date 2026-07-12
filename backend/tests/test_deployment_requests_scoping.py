@@ -19,6 +19,7 @@ from backend.api.security import create_token
 from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
 from backend.bd.models.application_team_member import ApplicationTeamMember
+from backend.bd.models.company import Company
 from backend.bd.models.deployment_request import DeploymentRequest, DeploymentType
 from backend.bd.models.environment import Environment
 from backend.bd.models.project import Project, SetupStatus
@@ -49,11 +50,19 @@ def _make_user(db, email=None):
     return u
 
 
-def _make_team_chain(db, app_name="api"):
-    """team -> project -> env -> app -> ae, returns dict."""
-    team = Team(name="T", domain=f"{uuid.uuid4()}.t")
+def _make_team(db, name="T"):
+    company = Company(name=f"{uuid.uuid4()}.t", domain=f"{uuid.uuid4()}.t")
+    db.add(company)
+    db.flush()
+    team = Team(name=name, company_id=company.id)
     db.add(team)
     db.flush()
+    return team
+
+
+def _make_team_chain(db, app_name="api"):
+    """team -> project -> env -> app -> ae, returns dict."""
+    team = _make_team(db)
     project = Project(team_id=team.id, name="P", setup_status=SetupStatus.CONFIGURED)
     db.add(project)
     db.flush()
@@ -152,9 +161,7 @@ class TestGetDeployRequestScoping:
         chain = _make_team_chain(db_session)
         req = _make_request(db_session, chain["ae"])
 
-        other_team = Team(name="Other", domain=f"{uuid.uuid4()}.t")
-        db_session.add(other_team)
-        db_session.flush()
+        other_team = _make_team(db_session, name="Other")
         user = _make_user(db_session)
         _make_member(db_session, other_team, user, TeamMemberRole.CLOUD_ENGINEER)
         token = _token_for(user)
@@ -191,9 +198,7 @@ class TestGetDeployEventsScoping:
         chain = _make_team_chain(db_session)
         req = _make_request(db_session, chain["ae"])
 
-        other_team = Team(name="Other", domain=f"{uuid.uuid4()}.t")
-        db_session.add(other_team)
-        db_session.flush()
+        other_team = _make_team(db_session, name="Other")
         user = _make_user(db_session)
         _make_member(db_session, other_team, user, TeamMemberRole.CLOUD_ENGINEER)
         token = _token_for(user)

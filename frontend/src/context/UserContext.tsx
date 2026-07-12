@@ -8,6 +8,10 @@ export interface User {
   email: string;
   initials: string;
   roleLabel: string;
+  // A CE founding a 2nd+ Team of an existing Company maps to role: 'cloud' but has no
+  // real privileges until another Team's confirmed CE approves — kept as a sibling flag
+  // instead of a 4th Role value so RoleRoute/AppLayout don't need to know about it.
+  pendingConfirmation: boolean;
 }
 
 function roleFromBackend(r: string): Role {
@@ -26,9 +30,9 @@ function roleLabelFrom(role: Role) {
   return 'Developer';
 }
 
-export function userFromBackend(name: string, email: string, backendRole?: string | null): User {
+export function userFromBackend(name: string, email: string, backendRole?: string | null, pendingConfirmation = false): User {
   const role = backendRole ? roleFromBackend(backendRole) : null;
-  return { role, name, email, initials: initialsFrom(name), roleLabel: role ? roleLabelFrom(role) : '' };
+  return { role, name, email, initials: initialsFrom(name), roleLabel: role ? roleLabelFrom(role) : '', pendingConfirmation };
 }
 
 interface UserCtx {

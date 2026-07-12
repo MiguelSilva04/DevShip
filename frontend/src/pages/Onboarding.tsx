@@ -351,6 +351,11 @@ export function OnboardingTeam() {
       try {
         await apiFetch(`/teams/${existingId}`);
         setLoading(false);
+        // Um CE pendente de confirmação não avança para /project — o backend bloquearia
+        // create_project de qualquer forma, mas isto evita sequer tentar.
+        const myTeams: { team_id: string; status: string }[] = await apiFetch('/users/me/teams');
+        const mine = myTeams.find(t => t.team_id === existingId);
+        if (mine?.status === 'PENDING_CONFIRMATION') { nav('/lobby', { replace: true }); return; }
         nav('/onboarding/project');
         return;
       } catch {
@@ -364,6 +369,7 @@ export function OnboardingTeam() {
       const team = await apiFetch('/teams', { method: 'POST', body: JSON.stringify({ name: name.trim(), description: desc || undefined }) });
       localStorage.setItem(OB_TEAM_ID, team.id);
       localStorage.setItem(OB_TEAM_NAME, team.name);
+      if (team.member_status === 'PENDING_CONFIRMATION') { nav('/lobby', { replace: true }); return; }
       nav('/onboarding/project');
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Erro ao criar equipa.');

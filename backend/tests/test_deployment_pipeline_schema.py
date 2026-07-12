@@ -8,6 +8,7 @@ from sqlalchemy.exc import DataError, IntegrityError
 from backend.bd.models import (
     Application,
     ApplicationEnvironment,
+    Company,
     DeploymentEvent,
     DeploymentEventType,
     DeploymentRequest,
@@ -37,8 +38,12 @@ def make_user(email: str = None) -> User:
     )
 
 
-def make_team() -> Team:
-    return Team(name="Test Team", domain=f"{uuid.uuid4()}.test")
+def make_company() -> Company:
+    return Company(name=f"{uuid.uuid4()}.test", domain=f"{uuid.uuid4()}.test")
+
+
+def make_team(company: Company) -> Team:
+    return Team(name="Test Team", company_id=company.id)
 
 
 def make_project(team: Team) -> Project:
@@ -107,8 +112,11 @@ def make_event(version: DeploymentVersion) -> DeploymentEvent:
 def setup_chain(db_session):
     """Return (user, app_env) after flushing a minimal chain to the DB."""
     user = make_user()
-    team = make_team()
-    db_session.add_all([user, team])
+    company = make_company()
+    db_session.add_all([user, company])
+    db_session.flush()
+    team = make_team(company)
+    db_session.add(team)
     db_session.flush()
 
     project = make_project(team)

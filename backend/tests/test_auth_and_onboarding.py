@@ -109,11 +109,144 @@ class TestAuth:
 # ---------------------------------------------------------------------------
 
 class TestTeams:
-    def test_post_teams_fails_if_domain_already_has_team(self, client):
-        token, _ = _setup(client, "acme.io")
-        # _setup already created the team for acme.io; a second POST must 409
+    def test_create_team_bootstrap_is_confirmed_immediately(self, client):
+        """First Team of a brand-new domain: no one exists yet to approve it, so the
+        founder is CONFIRMED right away — same as the historical single-Team behavior."""
+        token, team_id = _setup(client, "acme.io")
+        r = client.get(f"/teams/{team_id}/members", headers=_auth(token))
+        assert r.status_code == 200
+        ce = next(m for m in r.json()["members"] if m["role"] == "CLOUD_ENGINEER")
+        # Confirmed status isn't in MemberEntry today — proven indirectly: the CE can
+        # already create a Project, which is gated on CONFIRMED status.
+        assert ce["email"] == "eng@acme.io"
+
+        proj = client.post(f"/teams/{team_id}/projects", json={"name": "P"}, headers=_auth(token))
+        assert proj.status_code == 201, proj.text
+
+    def test_second_team_same_domain_succeeds_but_pending(self, client):
+        """A domain can now have several Teams — creating a second one no longer 409s,
+        but its founder starts PENDING_CONFIRMATION until another Team's CE approves."""
+        token, _ = _setup(client, "multi-team.io")
         r = client.post("/teams", json={"name": "Another"}, headers=_auth(token))
+        assert r.status_code == 201, r.text
+        assert r.json()["member_status"] == "PENDING_CONFIRMATION"
+
+    def test_pending_ce_cannot_create_project(self, client):
+        token, _ = _setup(client, "pending-project.io")
+        second = client.post("/teams", json={"name": "Second"}, headers=_auth(token))
+        second_team_id = second.json()["id"]
+
+        r = client.post(f"/teams/{second_team_id}/projects", json={"name": "P"}, headers=_auth(token))
+        assert r.status_code == 403
+        assert "confirmada" in r.json()["detail"]
+
+    def test_pending_ce_cannot_configure_cluster(self, client):
+        """Confirms the gate propagates through _require_cloud_engineer (project-scoped
+        routes), not just _require_cloud_engineer_of_team directly."""
+        token, first_team_id = _setup(client, "pending-cluster.io")
+        first_project = _project(client, token, first_team_id)
+        second = client.post("/teams", json={"name": "Second"}, headers=_auth(token))
+        second_team_id = second.json()["id"]
+
+        # The pending CE can't even create a Project on the second Team — the gate
+        # already blocks it at that step, before cluster config is reachable at all.
+        r = client.post(f"/teams/{second_team_id}/projects", json={"name": "P"}, headers=_auth(token))
+        assert r.status_code == 403
+
+    def test_list_pending_teams_visible_to_confirmed_ce_other_team(self, client):
+        token, first_team_id = _setup(client, "pending-list.io")
+        company_id = client.get("/users/me/domain-status", headers=_auth(token)).json()["company_id"]
+
+        second = client.post("/teams", json={"name": "Second"}, headers=_auth(token))
+        second_team_id = second.json()["id"]
+
+        r = client.get(f"/companies/{company_id}/pending-teams", headers=_auth(token))
+        assert r.status_code == 200
+        team_ids = [t["team_id"] for t in r.json()]
+        assert second_team_id in team_ids
+
+    def test_list_pending_teams_forbidden_for_non_ce(self, client):
+        token, first_team_id = _setup(client, "pending-forbidden.io")
+        company_id = client.get("/users/me/domain-status", headers=_auth(token)).json()["company_id"]
+
+        dev_data = _register(client, "dev@pending-forbidden.io")
+        dev_token = _login(client, "dev@pending-forbidden.io")
+        client.post(
+            f"/teams/{first_team_id}/members",
+            json={"user_id": dev_data["id"], "role": "DEVELOPER", "application_ids": []},
+            headers=_auth(token),
+        )
+
+        r = client.get(f"/companies/{company_id}/pending-teams", headers=_auth(dev_token))
+        assert r.status_code == 403
+
+    def test_list_pending_teams_forbidden_for_other_company(self, client):
+        token, first_team_id = _setup(client, "companyA.io")
+        company_a_id = client.get("/users/me/domain-status", headers=_auth(token)).json()["company_id"]
+        other_token, _ = _setup(client, "companyB.io")
+
+        r = client.get(f"/companies/{company_a_id}/pending-teams", headers=_auth(other_token))
+        assert r.status_code == 403
+
+    def test_confirm_team_by_ce_of_different_team_same_company(self, client):
+        token, first_team_id = _setup(client, "confirm-cross.io")
+        second = client.post("/teams", json={"name": "Second"}, headers=_auth(token))
+        second_team_id = second.json()["id"]
+
+        r = client.post(f"/teams/{second_team_id}/confirm", headers=_auth(token))
+        assert r.status_code == 200, r.text
+
+        proj = client.post(f"/teams/{second_team_id}/projects", json={"name": "P"}, headers=_auth(token))
+        assert proj.status_code == 201, proj.text
+
+    def test_confirm_team_twice_returns_409(self, client):
+        token, _ = _setup(client, "confirm-twice.io")
+        second = client.post("/teams", json={"name": "Second"}, headers=_auth(token))
+        second_team_id = second.json()["id"]
+
+        first = client.post(f"/teams/{second_team_id}/confirm", headers=_auth(token))
+        assert first.status_code == 200
+        second_call = client.post(f"/teams/{second_team_id}/confirm", headers=_auth(token))
+        assert second_call.status_code == 409
+
+    def test_reject_team_by_ce_of_different_team_same_company(self, client):
+        token, _ = _setup(client, "reject-cross.io")
+        second = client.post("/teams", json={"name": "Second"}, headers=_auth(token))
+        second_team_id = second.json()["id"]
+
+        r = client.post(f"/teams/{second_team_id}/reject", headers=_auth(token))
+        assert r.status_code == 200, r.text
+
+        proj = client.post(f"/teams/{second_team_id}/projects", json={"name": "P"}, headers=_auth(token))
+        assert proj.status_code == 403
+
+    def test_reject_team_then_confirm_returns_409(self, client):
+        token, _ = _setup(client, "reject-then-confirm.io")
+        second = client.post("/teams", json={"name": "Second"}, headers=_auth(token))
+        second_team_id = second.json()["id"]
+
+        client.post(f"/teams/{second_team_id}/reject", headers=_auth(token))
+        r = client.post(f"/teams/{second_team_id}/confirm", headers=_auth(token))
         assert r.status_code == 409
+
+    def test_domain_status_reports_company(self, client):
+        token, _ = _setup(client, "domain-company.io")
+        r = client.get("/users/me/domain-status", headers=_auth(token))
+        assert r.status_code == 200
+        assert r.json()["has_company"] is True
+        assert r.json()["company_id"] is not None
+
+    def test_users_me_teams_includes_company_and_status(self, client):
+        token, first_team_id = _setup(client, "teams-status.io")
+        second = client.post("/teams", json={"name": "Second"}, headers=_auth(token))
+        second_team_id = second.json()["id"]
+
+        r = client.get("/users/me/teams", headers=_auth(token))
+        assert r.status_code == 200
+        entries = {e["team_id"]: e for e in r.json()}
+        assert entries[first_team_id]["status"] == "CONFIRMED"
+        assert entries[second_team_id]["status"] == "PENDING_CONFIRMATION"
+        assert entries[first_team_id]["company_id"] == entries[second_team_id]["company_id"]
 
     def test_team_has_domain_field(self, client):
         token, team_id = _setup(client, "domaincheck.io")
@@ -156,6 +289,27 @@ class TestTeamMembers:
         candidate_emails = [c["email"] for c in r.json()["candidates"]]
         assert "junior@add.io" in member_emails
         assert "junior@add.io" not in candidate_emails
+
+    def test_candidates_exclude_members_of_any_team_in_company(self, client):
+        """A user added to one Team of a Company must not still show up as a candidate
+        in another Team of the same Company — candidates are scoped by Company domain,
+        not by a single Team."""
+        token, first_team_id = _setup(client, "multi-candidates.io")
+        second = client.post("/teams", json={"name": "Second"}, headers=_auth(token))
+        second_team_id = second.json()["id"]
+        client.post(f"/teams/{second_team_id}/confirm", headers=_auth(token))
+
+        junior_data = _register(client, "junior@multi-candidates.io", name="Junior")
+        client.post(
+            f"/teams/{first_team_id}/members",
+            json={"user_id": junior_data["id"], "role": "DEVELOPER"},
+            headers=_auth(token),
+        )
+
+        r = client.get(f"/teams/{second_team_id}/members", headers=_auth(token))
+        assert r.status_code == 200
+        candidate_emails = [c["email"] for c in r.json()["candidates"]]
+        assert "junior@multi-candidates.io" not in candidate_emails
 
     def test_non_cloud_engineer_cannot_add_member(self, client):
         token_ce, team_id = _setup(client, "perm.io")

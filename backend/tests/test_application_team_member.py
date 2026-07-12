@@ -20,11 +20,22 @@ from backend.api.security import create_token
 from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
 from backend.bd.models.application_team_member import ApplicationTeamMember
+from backend.bd.models.company import Company
 from backend.bd.models.environment import Environment
 from backend.bd.models.project import Project, SetupStatus
 from backend.bd.models.team import Team
 from backend.bd.models.team_member import TeamMember, TeamMemberRole
 from backend.bd.models.user import User
+
+
+def _make_team(db, name="T"):
+    company = Company(name=f"{uuid.uuid4()}.t", domain=f"{uuid.uuid4()}.t")
+    db.add(company)
+    db.flush()
+    team = Team(name=name, company_id=company.id)
+    db.add(team)
+    db.flush()
+    return team
 
 
 @pytest.fixture
@@ -90,9 +101,7 @@ def _make_ae(db, app, env):
 @pytest.fixture
 def scenario(db_session):
     """Team with two Applications (app_a, app_b), each with one Environment/ApplicationEnvironment."""
-    team = Team(name="T", domain=f"{uuid.uuid4()}.t")
-    db_session.add(team)
-    db_session.flush()
+    team = _make_team(db_session)
 
     project = Project(team_id=team.id, name="P", setup_status=SetupStatus.CONFIGURED)
     db_session.add(project)
@@ -200,9 +209,7 @@ class TestTechLeadAndCloudEngineerBypassLevel2:
 class TestOtherTeamIsolation:
     @pytest.mark.parametrize("role", [TeamMemberRole.DEVELOPER, TeamMemberRole.TECH_LEAD, TeamMemberRole.CLOUD_ENGINEER])
     def test_403_for_member_of_different_team(self, client, db_session, scenario, role):
-        other_team = Team(name="Other", domain=f"{uuid.uuid4()}.t")
-        db_session.add(other_team)
-        db_session.flush()
+        other_team = _make_team(db_session, name="Other")
         user = _make_user(db_session)
         _make_member(db_session, other_team, user, role)
         token = _token_for(user)

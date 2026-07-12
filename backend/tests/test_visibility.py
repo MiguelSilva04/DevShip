@@ -21,6 +21,7 @@ from backend.api.main import app
 from backend.api.deps import get_db
 from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
+from backend.bd.models.company import Company
 from backend.bd.models.deployment_version import DeploymentVersion, LifecycleStatus, TriggerSource
 from backend.bd.models.environment import Environment
 from backend.bd.models.project import Project, SetupStatus
@@ -48,7 +49,10 @@ def _make_user(db, email=None):
 
 
 def _make_team(db):
-    t = Team(name="T", domain=f"{uuid.uuid4()}.t")
+    company = Company(name=f"{uuid.uuid4()}.t", domain=f"{uuid.uuid4()}.t")
+    db.add(company)
+    db.flush()
+    t = Team(name="T", company_id=company.id)
     db.add(t)
     db.flush()
     return t

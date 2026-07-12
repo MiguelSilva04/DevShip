@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DataError, IntegrityError
 
-from backend.bd.models import Team, TeamMember, TeamMemberRole, User
+from backend.bd.models import Company, Team, TeamMember, TeamMemberRole, User
 
 
 # ---------------------------------------------------------------------------
@@ -19,9 +19,11 @@ def make_user(email: str = None, name: str = "Test User") -> User:
     )
 
 
-def make_team(name: str = "Test Team") -> Team:
-    import uuid as _uuid
-    return Team(name=name, domain=f"{_uuid.uuid4()}.test")
+def make_team(db_session, name: str = "Test Team") -> Team:
+    company = Company(name=f"{uuid.uuid4()}.test", domain=f"{uuid.uuid4()}.test")
+    db_session.add(company)
+    db_session.flush()
+    return Team(name=name, company_id=company.id)
 
 
 def make_member(
@@ -69,7 +71,7 @@ def test_duplicate_email_raises(db_session):
 # ---------------------------------------------------------------------------
 
 def test_create_team(db_session):
-    team = make_team("Alpha")
+    team = make_team(db_session, "Alpha")
     db_session.add(team)
     db_session.flush()
 
@@ -83,7 +85,7 @@ def test_create_team(db_session):
 
 def test_create_team_member(db_session):
     user = make_user()
-    team = make_team()
+    team = make_team(db_session)
     db_session.add_all([user, team])
     db_session.flush()
 
@@ -98,7 +100,7 @@ def test_create_team_member(db_session):
 
 def test_duplicate_team_member_raises(db_session):
     user = make_user()
-    team = make_team()
+    team = make_team(db_session)
     db_session.add_all([user, team])
     db_session.flush()
 
@@ -115,7 +117,7 @@ def test_duplicate_team_member_raises(db_session):
 
 def test_invalid_role_raises(db_session):
     user = make_user()
-    team = make_team()
+    team = make_team(db_session)
     db_session.add_all([user, team])
     db_session.flush()
 
@@ -136,7 +138,7 @@ def test_invalid_role_raises(db_session):
 
 def test_added_by_null_self_onboarding(db_session):
     user = make_user()
-    team = make_team()
+    team = make_team(db_session)
     db_session.add_all([user, team])
     db_session.flush()
 
@@ -149,8 +151,8 @@ def test_added_by_null_self_onboarding(db_session):
 
 def test_same_user_in_two_teams(db_session):
     user = make_user()
-    team_a = make_team("Team A")
-    team_b = make_team("Team B")
+    team_a = make_team(db_session, "Team A")
+    team_b = make_team(db_session, "Team B")
     db_session.add_all([user, team_a, team_b])
     db_session.flush()
 
@@ -169,7 +171,7 @@ def test_same_user_in_two_teams(db_session):
 
 def test_delete_team_cascades_members(db_session):
     user = make_user()
-    team = make_team()
+    team = make_team(db_session)
     db_session.add_all([user, team])
     db_session.flush()
 
@@ -192,7 +194,7 @@ def test_delete_team_cascades_members(db_session):
 
 def test_delete_user_cascades_members(db_session):
     user = make_user()
-    team = make_team()
+    team = make_team(db_session)
     db_session.add_all([user, team])
     db_session.flush()
 
@@ -216,7 +218,7 @@ def test_delete_user_cascades_members(db_session):
 def test_delete_adder_sets_added_by_null(db_session):
     adder = make_user(email="adder@example.com")
     member_user = make_user(email="member@example.com")
-    team = make_team()
+    team = make_team(db_session)
     db_session.add_all([adder, member_user, team])
     db_session.flush()
 
