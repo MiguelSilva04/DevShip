@@ -5,6 +5,7 @@ AWS calls are mocked with moto; K8s list_namespaces is mocked with unittest.mock
 """
 
 import os
+import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -236,6 +237,42 @@ class TestTeams:
         assert r.json()["has_company"] is True
         assert r.json()["company_id"] is not None
 
+    def test_domain_status_false_when_company_has_no_confirmed_ce(self, client, db_session):
+        """Regression: a Company can exist with zero Teams (e.g. its only Team was
+        deleted) — has_company must reflect "is there someone to ask to be added",
+        not just "does the row exist", or a new registrant on that domain sees a
+        misleading "waiting for approval" screen with no one able to approve them."""
+        from backend.bd.models.company import Company
+        company = Company(name="orphan.io", domain="orphan.io")
+        db_session.add(company)
+        db_session.flush()
+
+        _register(client, "newcomer@orphan.io")
+        token = _login(client, "newcomer@orphan.io")
+        r = client.get("/users/me/domain-status", headers=_auth(token))
+        assert r.status_code == 200
+        assert r.json()["has_company"] is False
+        assert r.json()["company_id"] == str(company.id)
+
+    def test_create_team_bootstrap_when_company_has_no_confirmed_ce(self, client, db_session):
+        """Same orphan-Company scenario, but for the actual create_team gate: the
+        founder must be CONFIRMED immediately, not stuck PENDING_CONFIRMATION with
+        no one able to confirm them."""
+        from backend.bd.models.company import Company
+        company = Company(name="orphan2.io", domain="orphan2.io")
+        db_session.add(company)
+        db_session.flush()
+
+        _register(client, "founder@orphan2.io")
+        token = _login(client, "founder@orphan2.io")
+        r = client.post("/teams", json={"name": "Recovery Team"}, headers=_auth(token))
+        assert r.status_code == 201, r.text
+        assert r.json()["member_status"] == "CONFIRMED"
+
+        team_id = r.json()["id"]
+        proj = client.post(f"/teams/{team_id}/projects", json={"name": "P"}, headers=_auth(token))
+        assert proj.status_code == 201, proj.text
+
     def test_users_me_teams_includes_company_and_status(self, client):
         token, first_team_id = _setup(client, "teams-status.io")
         second = client.post("/teams", json={"name": "Second"}, headers=_auth(token))
@@ -289,6 +326,41 @@ class TestTeamMembers:
         candidate_emails = [c["email"] for c in r.json()["candidates"]]
         assert "junior@add.io" in member_emails
         assert "junior@add.io" not in candidate_emails
+
+    def test_add_member_rejects_user_from_different_domain(self, client, db_session):
+        """Regression: add_team_member trusted the client to only send user_ids sourced
+        from the candidates list — nothing on the backend re-validated the domain at
+        write time. A Cloud Engineer with an out-of-domain user_id (copied from another
+        API call, guessed, etc.) must not be able to add them."""
+        token, team_id = _setup(client, "domain-guard.io")
+        outsider_data = _register(client, "outsider@other-domain.io", name="Outsider")
+
+        r = client.post(
+            f"/teams/{team_id}/members",
+            json={"user_id": outsider_data["id"], "role": "DEVELOPER"},
+            headers=_auth(token),
+        )
+        assert r.status_code == 403
+        assert "domínio" in r.json()["detail"]
+
+        from backend.bd.models.team_member import TeamMember
+        assert (
+            db_session.query(TeamMember)
+            .filter(TeamMember.team_id == team_id, TeamMember.user_id == outsider_data["id"])
+            .first()
+            is None
+        )
+
+    def test_add_member_unknown_user_id_returns_404_not_403(self, client):
+        """The 404 for a nonexistent user_id must fire before the domain check runs —
+        confirms the existing lookup order wasn't disturbed by the new validation."""
+        token, team_id = _setup(client, "unknown-user.io")
+        r = client.post(
+            f"/teams/{team_id}/members",
+            json={"user_id": str(uuid.uuid4()), "role": "DEVELOPER"},
+            headers=_auth(token),
+        )
+        assert r.status_code == 404
 
     def test_candidates_exclude_members_of_any_team_in_company(self, client):
         """A user added to one Team of a Company must not still show up as a candidate
@@ -424,6 +496,65 @@ class TestProjects:
 
         r = client.post(f"/teams/{team_id}/projects", json={"name": "P"}, headers=_auth(token2))
         assert r.status_code == 403
+
+    def test_create_second_project_in_same_team_succeeds(self, client):
+        token, team_id = _setup(client, "multiproj.io")
+        _project(client, token, team_id, name="First")
+        r = client.post(f"/teams/{team_id}/projects", json={"name": "Second"}, headers=_auth(token))
+        assert r.status_code == 201, r.text
+
+    def test_create_project_duplicate_name_in_same_team_returns_409(self, client):
+        token, team_id = _setup(client, "dupname.io")
+        _project(client, token, team_id, name="Same Name")
+        r = client.post(f"/teams/{team_id}/projects", json={"name": "Same Name"}, headers=_auth(token))
+        assert r.status_code == 409
+
+    def test_create_project_same_name_different_team_succeeds(self, client):
+        token1, team1_id = _setup(client, "teamx.io")
+        token2, team2_id = _setup(client, "teamy.io")
+        _project(client, token1, team1_id, name="Shared Name")
+        r = client.post(f"/teams/{team2_id}/projects", json={"name": "Shared Name"}, headers=_auth(token2))
+        assert r.status_code == 201, r.text
+
+    def test_list_team_projects_returns_all_non_archived(self, client):
+        token, team_id = _setup(client, "listproj.io")
+        _project(client, token, team_id, name="Alpha")
+        _project(client, token, team_id, name="Beta")
+
+        r = client.get(f"/teams/{team_id}/projects", headers=_auth(token))
+        assert r.status_code == 200
+        names = [p["name"] for p in r.json()]
+        assert names == ["Alpha", "Beta"]
+
+    def test_list_team_projects_excludes_archived(self, client):
+        token, team_id = _setup(client, "archivedproj.io")
+        _project(client, token, team_id, name="Keep")
+        archived_id = _project(client, token, team_id, name="Drop")
+        client.post(f"/projects/{archived_id}/archive", headers=_auth(token))
+
+        r = client.get(f"/teams/{team_id}/projects", headers=_auth(token))
+        assert r.status_code == 200
+        names = [p["name"] for p in r.json()]
+        assert names == ["Keep"]
+
+    def test_users_me_teams_lists_multiple_projects_per_team(self, client):
+        token, team_id = _setup(client, "meteams.io")
+        _project(client, token, team_id, name="Alpha")
+        _project(client, token, team_id, name="Beta")
+
+        r = client.get("/users/me/teams", headers=_auth(token))
+        assert r.status_code == 200
+        entries = [e for e in r.json() if e["team_id"] == team_id]
+        assert len(entries) == 1
+        names = [p["name"] for p in entries[0]["projects"]]
+        assert names == ["Alpha", "Beta"]
+
+    def test_users_me_teams_empty_projects_list_when_none(self, client):
+        token, team_id = _setup(client, "noprojteams.io")
+        r = client.get("/users/me/teams", headers=_auth(token))
+        assert r.status_code == 200
+        entry = next(e for e in r.json() if e["team_id"] == team_id)
+        assert entry["projects"] == []
 
 
 # ---------------------------------------------------------------------------

@@ -190,6 +190,12 @@ class GitOpsScanResult(BaseModel):
 
 # --- User teams (Lobby) ---
 
+class ProjectSummaryEntry(BaseModel):
+    id: uuid.UUID
+    name: str
+    setup_status: SetupStatus
+
+
 class UserTeamEntry(BaseModel):
     user_name: str
     user_email: str
@@ -199,15 +205,17 @@ class UserTeamEntry(BaseModel):
     company_id: uuid.UUID
     company_name: str
     status: TeamMemberStatus
-    project_id: Optional[uuid.UUID] = None
-    project_name: Optional[str] = None
-    setup_status: Optional[SetupStatus] = None
+    projects: list[ProjectSummaryEntry] = []
 
 
 # --- Domain / Company status (Lobby) ---
 
 class DomainStatusResponse(BaseModel):
     domain: str
+    # True apenas quando a Company já tem pelo menos uma Team com um Cloud Engineer
+    # CONFIRMED — é isso que torna "pedir para seres adicionado" uma opção real. Uma
+    # Company sem nenhum CE confirmado (ex.: todas as Teams foram apagadas) deve
+    # continuar a permitir bootstrap, como se o domínio fosse novo.
     has_company: bool
     company_id: Optional[uuid.UUID] = None
 

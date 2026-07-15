@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, Enum as SAEnum, ForeignKey, Index, String, Text, func, text
+from sqlalchemy import Boolean, Enum as SAEnum, ForeignKey, Index, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import DateTime
@@ -30,6 +30,7 @@ class Project(Base):
     __table_args__ = (
         Index("ix_projects_team_id", "team_id"),
         Index("ix_projects_created_by", "created_by"),
+        UniqueConstraint("team_id", "name", name="uq_projects_team_id_name"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

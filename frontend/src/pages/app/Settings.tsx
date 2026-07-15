@@ -1,6 +1,14 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
-import { OB_PROJ_NAME, OB_PROJECT_ID, GitOpsPathPreviewButton } from '../Onboarding';
+import { useUser } from '../../context/UserContext';
+import { OB_PROJ_NAME, OB_PROJECT_ID, OB_TEAM_ID, OB_MODE, GitOpsPathPreviewButton } from '../Onboarding';
+
+interface ProjectSummary {
+  id: string;
+  name: string;
+  setup_status: string;
+}
 
 interface Cluster {
   cluster_arn: string;
@@ -64,8 +72,13 @@ function formatDate(iso: string) {
 }
 
 export default function Settings() {
+  const { user } = useUser();
+  const nav = useNavigate();
   const projectId = localStorage.getItem(OB_PROJECT_ID);
   const projName = localStorage.getItem(OB_PROJ_NAME) ?? 'my-project';
+  const teamId = localStorage.getItem(OB_TEAM_ID);
+
+  const [teamProjects, setTeamProjects] = useState<ProjectSummary[]>([]);
 
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [showEditProject, setShowEditProject] = useState(false);
@@ -106,6 +119,32 @@ export default function Settings() {
   const [archiveErr, setArchiveErr] = useState('');
 
   const [loadErr, setLoadErr] = useState('');
+
+  useEffect(() => {
+    if (!teamId || user?.role !== 'cloud') return;
+    apiFetch(`/teams/${teamId}/projects`)
+      .then(setTeamProjects)
+      .catch(() => {});
+  }, [teamId, user?.role]);
+
+  function switchProject(id: string, name: string) {
+    if (!teamId) return;
+    localStorage.setItem(OB_PROJECT_ID, id);
+    localStorage.setItem(OB_PROJ_NAME, name);
+    localStorage.setItem(`ob_last_project_${teamId}`, id);
+    window.location.reload();
+  }
+
+  function startNewProject() {
+    // Limpa o projeto ativo antes de entrar no onboarding, senão o passo "Criar Project"
+    // faz pre-fill com o nome/gitops do projeto atual em vez de abrir um formulário vazio.
+    // ob_mode='new_project' diz ao onboarding para saltar o passo Team (já existe e não
+    // deve ser recriado) e ajusta a numeração/"Voltar" para refletir o sub-fluxo de 6 passos.
+    localStorage.removeItem(OB_PROJECT_ID);
+    localStorage.removeItem(OB_PROJ_NAME);
+    localStorage.setItem(OB_MODE, 'new_project');
+    nav('/onboarding/project');
+  }
 
   useEffect(() => {
     if (!projectId) return;
@@ -287,6 +326,32 @@ export default function Settings() {
         <div style={{ display: 'flex', gap: 9, border: '1px solid rgba(236,194,107,.35)', background: 'rgba(236,194,107,.08)', borderRadius: 9, padding: '10px 13px', marginBottom: 20 }}>
           <span style={{ color: '#ecc26b' }}>ⓘ</span>
           <span style={{ fontSize: 12, color: 'var(--text-2)' }}>Este projecto está arquivado. O histórico operacional continua disponível.</span>
+        </div>
+      )}
+
+      {/* Active project switcher + criar novo projeto — só Cloud Engineer */}
+      {user?.role === 'cloud' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+          {teamProjects.length > 1 && (
+            <>
+              <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>Projeto ativo</span>
+              <select
+                value={projectId ?? ''}
+                onChange={e => {
+                  const chosen = teamProjects.find(p => p.id === e.target.value);
+                  if (chosen) switchProject(chosen.id, chosen.name);
+                }}
+                className="select-base"
+              >
+                {teamProjects.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </>
+          )}
+          <button onClick={startNewProject} style={{ marginLeft: teamProjects.length > 1 ? 0 : 'auto', fontSize: 12, padding: '6px 13px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer' }}>
+            + Criar novo projeto
+          </button>
         </div>
       )}
 

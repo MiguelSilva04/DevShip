@@ -7,25 +7,37 @@ export const OB_TEAM_ID    = 'ob_team_id';
 export const OB_PROJECT_ID = 'ob_project_id';
 export const OB_TEAM_NAME  = 'ob_team_name';
 export const OB_PROJ_NAME  = 'ob_proj_name';
+// 'new_team' (default) percorre os 7 passos a partir de criar Team. 'new_project' é
+// entrado a partir de Settings → "Criar novo projeto" numa Team já existente — salta
+// direto para o passo Project, sem recriar a Team nem passar por ela na numeração/voltar.
+export const OB_MODE = 'ob_mode';
+
+function currentMode(): 'new_team' | 'new_project' {
+  return localStorage.getItem(OB_MODE) === 'new_project' ? 'new_project' : 'new_team';
+}
 
 // ─── Progress bar ───────────────────────────────────────────────────────────
-const STEP_PATHS = [
+const STEP_PATHS_NEW_TEAM = [
   '/onboarding/team',
   '/onboarding/project',
   '/onboarding/aws-setup',
   '/onboarding/cluster',
+  '/onboarding/argocd-metrics',
   '/onboarding/environments',
   '/onboarding/applications',
 ];
+const STEP_PATHS_NEW_PROJECT = STEP_PATHS_NEW_TEAM.slice(1); // sem o passo Team
 
 function stepIndex(pathname: string) {
-  return STEP_PATHS.findIndex(p => pathname.startsWith(p));
+  const paths = currentMode() === 'new_project' ? STEP_PATHS_NEW_PROJECT : STEP_PATHS_NEW_TEAM;
+  return paths.findIndex(p => pathname.startsWith(p));
 }
 
 export default function OnboardingLayout() {
   const loc = useLocation();
   const idx = stepIndex(loc.pathname);
   const showBar = idx >= 0;
+  const totalSteps = currentMode() === 'new_project' ? STEP_PATHS_NEW_PROJECT.length : STEP_PATHS_NEW_TEAM.length;
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)' }}>
@@ -37,11 +49,11 @@ export default function OnboardingLayout() {
           <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
           <span style={{ fontSize: 13, color: 'var(--text-2)' }}>Onboarding</span>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 11px', borderRadius: 7, fontSize: 11, fontWeight: 600, background: 'rgba(43,199,180,.12)', color: 'var(--teal)', border: '1px solid rgba(43,199,180,.3)' }}>Apenas Cloud Engineer</span>
-          {showBar && <span className="mono" style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)' }}>Passo {idx + 1} de 6</span>}
+          {showBar && <span className="mono" style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)' }}>Passo {idx + 1} de {totalSteps}</span>}
         </div>
         {showBar && (
           <div style={{ display: 'flex', gap: 5, padding: '0 26px 12px' }}>
-            {Array.from({ length: 6 }).map((_, i) => (
+            {Array.from({ length: totalSteps }).map((_, i) => (
               <span key={i} style={{ flex: 1, height: 3, borderRadius: 3, background: i <= idx ? 'var(--teal)' : 'var(--border)' }} />
             ))}
           </div>
@@ -58,9 +70,15 @@ export default function OnboardingLayout() {
 // ─── Shared sub-components ───────────────────────────────────────────────────
 
 export function StepLabel({ n, label, sub }: { n: number; label: string; sub?: string }) {
+  // n é sempre o número absoluto no fluxo new_team (1=Team..7=Applications). Em modo
+  // new_project o passo Team não existe, então tanto o número mostrado como o total
+  // descem 1 — sem obrigar cada StepLabel a saber em que modo está.
+  const isNewProject = currentMode() === 'new_project';
+  const shownN = isNewProject ? n - 1 : n;
+  const shownTotal = isNewProject ? STEP_PATHS_NEW_PROJECT.length : STEP_PATHS_NEW_TEAM.length;
   return (
     <>
-      <div className="mono" style={{ fontSize: 11, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--teal)' }}>Passo {n} de 6</div>
+      <div className="mono" style={{ fontSize: 11, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--teal)' }}>Passo {shownN} de {shownTotal}</div>
       <h1 style={{ fontSize: 23, fontWeight: 600, margin: '8px 0 6px' }}>{label}</h1>
       {sub && <p style={{ fontSize: 13.5, color: 'var(--text-2)', margin: '0 0 26px' }}>{sub}</p>}
     </>
@@ -324,6 +342,10 @@ export function OnboardingTeam() {
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Entrar pelo passo Team é sempre um onboarding "new_team" genuíno — garante que uma
+  // sessão anterior de "criar novo projeto" abandonada a meio não deixa a flag presa.
+  useEffect(() => { localStorage.removeItem(OB_MODE); }, []);
+
   // Pre-fill if team was already created (idempotency on back-navigation) — only if the
   // stored team still belongs to the logged-in user. A leftover ob_team_id from a previous
   // session/user would otherwise silently get reused for this one (403s further down the flow).
@@ -432,11 +454,6 @@ export function OnboardingProject() {
       nav('/onboarding/aws-setup');
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '';
-      if (msg.includes('já tem um projeto')) {
-        // Project already exists — just advance
-        nav('/onboarding/aws-setup');
-        return;
-      }
       setErr(msg || 'Erro ao criar projeto.');
     } finally { setLoading(false); }
   }
@@ -456,7 +473,7 @@ export function OnboardingProject() {
         </FormField>
         <ErrBanner msg={err} />
       </FormCard>
-      <NavRow onBack={() => nav('/onboarding/team')} onNext={submit} loading={loading} nextDisabled={!name.trim()} />
+      <NavRow onBack={() => nav(currentMode() === 'new_project' ? '/app/settings' : '/onboarding/team')} onNext={submit} loading={loading} nextDisabled={!name.trim()} />
     </>
   );
 }
@@ -1189,6 +1206,7 @@ export function OnboardingApplications() {
           .map(envName => ({ environment_id: envIds[envName], deployment_name: c.name, manifest_path: c.manifest_path })),
       }));
       await apiFetch(`/projects/${projectId}/applications/import`, { method: 'POST', body: JSON.stringify({ applications }) });
+      localStorage.removeItem(OB_MODE); // fim do fluxo — o próximo onboarding começa limpo
       setDone(true);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Erro ao importar applications.');

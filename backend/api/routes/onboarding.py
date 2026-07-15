@@ -30,6 +30,7 @@ from backend.api.schemas.onboarding import (
     PendingTeamEntry,
     ProjectCreate,
     ProjectResponse,
+    ProjectSummaryEntry,
     ProjectUpdate,
     RbacCheckResponse,
     TeamCreate,
@@ -148,7 +149,8 @@ def my_domain_status(
     domain is already claimed at all."""
     domain = current_user.email.rsplit("@", 1)[-1]
     company = db.query(Company).filter(Company.domain == domain).first()
-    return DomainStatusResponse(domain=domain, has_company=company is not None, company_id=company.id if company else None)
+    has_company = company is not None and _company_has_confirmed_ce(db, company.id)
+    return DomainStatusResponse(domain=domain, has_company=has_company, company_id=company.id if company else None)
 
 
 @router.patch("/users/me/github-identity", response_model=GithubIdentityResponse)
@@ -210,13 +212,26 @@ def list_my_teams(
     current_user: User = Depends(get_current_user),
 ):
     rows = (
-        db.query(TeamMember, Team, Company, Project)
+        db.query(TeamMember, Team, Company)
         .join(Team, TeamMember.team_id == Team.id)
         .join(Company, Team.company_id == Company.id)
-        .outerjoin(Project, Project.team_id == Team.id)
         .filter(TeamMember.user_id == current_user.id)
         .all()
     )
+
+    team_ids = [team.id for _, team, _ in rows]
+    projects_by_team: dict[uuid.UUID, list[ProjectSummaryEntry]] = {}
+    if team_ids:
+        for project in (
+            db.query(Project)
+            .filter(Project.team_id.in_(team_ids), Project.is_archived.is_(False))
+            .order_by(Project.created_at)
+            .all()
+        ):
+            projects_by_team.setdefault(project.team_id, []).append(
+                ProjectSummaryEntry(id=project.id, name=project.name, setup_status=project.setup_status)
+            )
+
     return [
         UserTeamEntry(
             user_name=current_user.name,
@@ -227,11 +242,9 @@ def list_my_teams(
             company_id=company.id,
             company_name=company.name,
             status=member.status,
-            project_id=project.id if project else None,
-            project_name=project.name if project else None,
-            setup_status=project.setup_status if project else None,
+            projects=projects_by_team.get(team.id, []),
         )
-        for member, team, company, project in rows
+        for member, team, company in rows
     ]
 
 
@@ -243,13 +256,15 @@ def list_my_teams(
 def create_team(body: TeamCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Cria sempre a Team (nunca 409 por domínio já ocupado — uma Company pode ter várias
     Teams). O criador torna-se CLOUD_ENGINEER de imediato, mas só fica CONFIRMED sem
-    espera se for a primeira Team de uma Company nova (bootstrap, sem ninguém para
-    aprovar) — a 2ª+ Team da mesma Company fica PENDING_CONFIRMATION até um Cloud
-    Engineer já confirmado de outra Team da Company a aprovar/rejeitar."""
+    espera se for bootstrap — Company nova OU Company já existente mas sem nenhum Cloud
+    Engineer CONFIRMED ainda (ex.: a única Team foi apagada, ficou órfã) — sem isso
+    nunca haveria ninguém capaz de confirmar a nova Team. Da 2ª Team em diante de uma
+    Company já operável, fica PENDING_CONFIRMATION até um Cloud Engineer já confirmado
+    de outra Team da Company a aprovar/rejeitar."""
     domain = current_user.email.rsplit("@", 1)[-1]
     company = db.query(Company).filter(Company.domain == domain).first()
-    is_bootstrap = company is None
-    if is_bootstrap:
+    is_bootstrap = company is None or not _company_has_confirmed_ce(db, company.id)
+    if company is None:
         company = Company(id=uuid.uuid4(), name=domain, domain=domain)
         db.add(company)
         db.flush()  # precisa do id antes de criar a Team
@@ -300,6 +315,24 @@ def update_team(
 # needs a CONFIRMED Cloud Engineer of ANY other Team in the same Company to approve
 # or reject it before its own founder gains real Cloud Engineer privileges.
 # ---------------------------------------------------------------------------
+
+def _company_has_confirmed_ce(db: Session, company_id: uuid.UUID) -> bool:
+    """Se nenhuma Team desta Company tem um Cloud Engineer CONFIRMED, não há ninguém a
+    quem pedir para ser adicionado nem ninguém para aprovar uma nova Team pendente — a
+    Company está, na prática, órfã (ex.: a única Team foi apagada). Nesse caso o próximo
+    create_team deve tratar-se como bootstrap, não como "a Company já existe"."""
+    member = (
+        db.query(TeamMember.id)
+        .join(Team, TeamMember.team_id == Team.id)
+        .filter(
+            Team.company_id == company_id,
+            TeamMember.role == TeamMemberRole.CLOUD_ENGINEER,
+            TeamMember.status == TeamMemberStatus.CONFIRMED,
+        )
+        .first()
+    )
+    return member is not None
+
 
 def _require_confirmed_ce_of_company(db: Session, company_id: uuid.UUID, user: User) -> None:
     member = (
@@ -445,7 +478,7 @@ def add_team_member(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _, caller = _require_team_manager(db, team_id, current_user)
+    team, caller = _require_team_manager(db, team_id, current_user)
 
     # A Tech Lead can only add Developers — promoting straight to Tech Lead or
     # Cloud Engineer is reserved for the Cloud Engineer (mirrors _require_manageable_target,
@@ -459,6 +492,17 @@ def add_team_member(
     target = db.get(User, body.user_id)
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # A candidatura só é válida dentro do domínio da própria Company — a lista de
+    # candidatos já filtra por isto, mas o endpoint de escrita tem de repetir a validação
+    # em vez de confiar que o cliente só envia user_ids que veio buscar a essa lista.
+    company = db.get(Company, team.company_id)
+    target_domain = target.email.rsplit("@", 1)[-1]
+    if target_domain != company.domain:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Este utilizador não pertence ao domínio desta empresa.",
+        )
 
     member = TeamMember(
         team_id=team_id,
@@ -563,6 +607,21 @@ def remove_team_member(
 # Projects
 # ---------------------------------------------------------------------------
 
+@router.get("/teams/{team_id}/projects", response_model=list[ProjectResponse])
+def list_team_projects(
+    team_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_team_reader(db, team_id, current_user)
+    return (
+        db.query(Project)
+        .filter(Project.team_id == team_id, Project.is_archived.is_(False))
+        .order_by(Project.created_at)
+        .all()
+    )
+
+
 @router.post("/teams/{team_id}/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 def create_project(
     team_id: uuid.UUID,
@@ -572,10 +631,6 @@ def create_project(
 ):
     _require_cloud_engineer_of_team(db, team_id, current_user)
 
-    existing = db.query(Project).filter(Project.team_id == team_id).first()
-    if existing:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esta equipa já tem um projeto criado.")
-
     project = Project(
         team_id=team_id,
         created_by=current_user.id,
@@ -584,6 +639,11 @@ def create_project(
         git_ops_repository_url=body.git_ops_repository_url,
     )
     db.add(project)
+    try:
+        with db.begin_nested():
+            db.flush()
+    except IntegrityError:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Já existe um projeto com este nome nesta equipa.")
     db.commit()
     db.refresh(project)
     return project

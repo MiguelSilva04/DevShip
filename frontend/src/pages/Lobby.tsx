@@ -6,6 +6,12 @@ import { OB_TEAM_ID, OB_PROJECT_ID, OB_TEAM_NAME, OB_PROJ_NAME } from './Onboard
 
 type MemberStatus = 'PENDING_CONFIRMATION' | 'CONFIRMED' | 'REJECTED';
 
+interface ProjectSummary {
+  id: string;
+  name: string;
+  setup_status: string;
+}
+
 interface TeamEntry {
   team_id: string;
   team_name: string;
@@ -13,9 +19,15 @@ interface TeamEntry {
   company_id: string;
   company_name: string;
   status: MemberStatus;
-  project_id: string | null;
-  project_name: string | null;
-  setup_status: string | null;
+  projects: ProjectSummary[];
+}
+
+// Último Project escolhido nesta Team (gravado pelo dropdown em Settings), ou o mais
+// antigo (projects[0], já vem ordenado por created_at do backend) se nunca escolheu.
+function resolveActiveProject(t: TeamEntry): ProjectSummary | null {
+  if (t.projects.length === 0) return null;
+  const lastId = localStorage.getItem(`ob_last_project_${t.team_id}`);
+  return t.projects.find(p => p.id === lastId) ?? t.projects[0];
 }
 
 interface DomainStatus {
@@ -40,14 +52,14 @@ const ROLE_BADGE: Record<string, { bg: string; col: string; bord: string; label:
   DEVELOPER:      { bg:'var(--surface-2)',      col:'var(--text-2)', bord:'var(--border)',       label:'Developer'      },
 };
 
-function setupStatus(entry: TeamEntry) {
+function setupStatus(entry: TeamEntry, activeProject: ProjectSummary | null) {
   if (entry.status === 'PENDING_CONFIRMATION') {
     return { label:'Pendente de confirmação', color:'#ecc26b', bg:'rgba(224,169,59,.13)', bord:'rgba(224,169,59,.26)', dot:'#E0A93B', dashed:false };
   }
-  if (!entry.project_id) {
+  if (!activeProject) {
     return { label:'Onboarding por concluir', color:'var(--text-3)', bg:'transparent', bord:'var(--border)', dot:'', dashed:true };
   }
-  if (entry.setup_status === 'CONFIGURED') {
+  if (activeProject.setup_status === 'CONFIGURED') {
     return { label:'Configurado', color:'#5dd57b', bg:'rgba(52,199,89,.13)', bord:'rgba(52,199,89,.24)', dot:'#34C759', dashed:false };
   }
   return { label:'Onboarding por concluir', color:'var(--text-3)', bg:'transparent', bord:'var(--border)', dot:'', dashed:true };
@@ -74,14 +86,17 @@ export default function Lobby() {
         const activeTeams = teamsData.filter(t => t.status !== 'REJECTED');
         // Non-Cloud Engineers com projeto configurado vão direto para a app — Teams
         // pendentes de confirmação não contam como "prontas", mesmo sendo CLOUD_ENGINEER.
-        const allConfigured = activeTeams.length > 0 && activeTeams.every(t => t.setup_status === 'CONFIGURED' && t.status !== 'PENDING_CONFIRMATION');
+        const allConfigured = activeTeams.length > 0 && activeTeams.every(t => resolveActiveProject(t)?.setup_status === 'CONFIGURED' && t.status !== 'PENDING_CONFIRMATION');
         const isNonCloud = activeTeams.length > 0 && activeTeams.every(t => t.role !== 'CLOUD_ENGINEER');
         if (allConfigured && isNonCloud) {
           const t = activeTeams[0];
+          const activeProject = resolveActiveProject(t);
           localStorage.setItem(OB_TEAM_ID, t.team_id);
           localStorage.setItem(OB_TEAM_NAME, t.team_name);
-          if (t.project_id) localStorage.setItem(OB_PROJECT_ID, t.project_id);
-          if (t.project_name) localStorage.setItem(OB_PROJ_NAME, t.project_name);
+          if (activeProject) {
+            localStorage.setItem(OB_PROJECT_ID, activeProject.id);
+            localStorage.setItem(OB_PROJ_NAME, activeProject.name);
+          }
           if (user) setUser(userFromBackend(user.name, user.email, t.role));
           nav('/app/home', { replace: true });
         }
@@ -196,34 +211,37 @@ export default function Lobby() {
               <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
                 {activeTeams.map(t => {
                   const badge = ROLE_BADGE[t.role] ?? ROLE_BADGE.DEVELOPER;
-                  const st = setupStatus(t);
+                  const activeProject = resolveActiveProject(t);
+                  const st = setupStatus(t, activeProject);
                   const initials = t.team_name.split(/[-_ ]/).map((w: string) => w[0]).slice(0, 2).join('').toUpperCase() || '??';
-                  const projectLine = t.project_name ?? 'projeto por configurar';
+                  const projectLine = activeProject?.name ?? 'projeto por configurar';
 
                   function goTo() {
                     // CE pendente de confirmação não avança — nem Developers sem onboarding concluído
                     if (t.status === 'PENDING_CONFIRMATION') return;
-                    if (t.setup_status !== 'CONFIGURED' && t.role !== 'CLOUD_ENGINEER') return;
+                    if (activeProject?.setup_status !== 'CONFIGURED' && t.role !== 'CLOUD_ENGINEER') return;
 
                     if (user) setUser(userFromBackend(user.name, user.email, t.role));
                     localStorage.setItem(OB_TEAM_ID, t.team_id);
                     localStorage.setItem(OB_TEAM_NAME, t.team_name);
-                    if (t.project_id) localStorage.setItem(OB_PROJECT_ID, t.project_id);
-                    if (t.project_name) localStorage.setItem(OB_PROJ_NAME, t.project_name);
+                    if (activeProject) {
+                      localStorage.setItem(OB_PROJECT_ID, activeProject.id);
+                      localStorage.setItem(OB_PROJ_NAME, activeProject.name);
+                    }
 
-                    if (t.setup_status === 'CONFIGURED') { nav('/app/home'); return; }
+                    if (activeProject?.setup_status === 'CONFIGURED') { nav('/app/home'); return; }
 
                     // Cloud Engineer — retomar onboarding no passo correto
-                    if (!t.project_id) { nav('/onboarding/team'); return; }
+                    if (!activeProject) { nav('/onboarding/team'); return; }
                     const dest: Record<string, string> = {
                       PENDING_CLUSTER:      '/onboarding/aws-setup',
                       PENDING_ENVIRONMENTS: '/onboarding/environments',
                       PENDING_APPLICATIONS: '/onboarding/applications',
                     };
-                    nav(dest[t.setup_status ?? ''] ?? '/onboarding/team');
+                    nav(dest[activeProject.setup_status ?? ''] ?? '/onboarding/team');
                   }
 
-                  const clickable = t.status !== 'PENDING_CONFIRMATION' && (t.setup_status === 'CONFIGURED' || t.role === 'CLOUD_ENGINEER');
+                  const clickable = t.status !== 'PENDING_CONFIRMATION' && (activeProject?.setup_status === 'CONFIGURED' || t.role === 'CLOUD_ENGINEER');
 
                   return (
                     <TeamButton
