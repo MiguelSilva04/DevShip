@@ -99,7 +99,8 @@ class ApplicationEnvironmentDetail(BaseModel):
     application_id: uuid.UUID
     environment_id: uuid.UUID
     deployment_name: str
-    enabled: bool
+    is_archived: bool
+    archived_at: Optional[datetime] = None
     current_version: Optional[DeploymentVersionDetail] = None
     discovered_status: Optional[LifecycleStatus] = None
     model_config = {"from_attributes": True}

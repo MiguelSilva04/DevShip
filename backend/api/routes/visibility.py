@@ -169,7 +169,7 @@ def list_environments(
     current_user: User = Depends(get_current_user),
 ):
     member = _require_project_member(db, project_id, current_user)
-    query = db.query(Environment).filter(Environment.project_id == project_id)
+    query = db.query(Environment).filter(Environment.project_id == project_id, Environment.is_archived.is_(False))
 
     if member.role == TeamMemberRole.CLOUD_ENGINEER:
         envs = query.order_by(Environment.deployment_order).all()
@@ -306,9 +306,43 @@ def get_application_environment(
         application_id=ae.application_id,
         environment_id=ae.environment_id,
         deployment_name=ae.deployment_name,
-        enabled=ae.enabled,
+        is_archived=ae.is_archived,
+        archived_at=ae.archived_at,
         current_version=current_version,
         discovered_status=discovered_status,
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /application-environments/{id}/archive
+# ---------------------------------------------------------------------------
+
+@router.post("/application-environments/{ae_id}/archive", response_model=ApplicationEnvironmentDetail)
+def archive_application_environment(
+    ae_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ae = db.get(ApplicationEnvironment, ae_id)
+    if ae is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ApplicationEnvironment not found")
+    member = _require_application_access(db, ae.application_id, current_user)
+    if member.role != TeamMemberRole.CLOUD_ENGINEER:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="É necessário ter o papel de Cloud Engineer para executar esta ação.")
+
+    if not ae.is_archived:
+        ae.is_archived = True
+        ae.archived_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(ae)
+
+    return ApplicationEnvironmentDetail(
+        id=ae.id,
+        application_id=ae.application_id,
+        environment_id=ae.environment_id,
+        deployment_name=ae.deployment_name,
+        is_archived=ae.is_archived,
+        archived_at=ae.archived_at,
     )
 
 
@@ -380,7 +414,8 @@ def refresh_application_environment(
         application_id=ae.application_id,
         environment_id=ae.environment_id,
         deployment_name=ae.deployment_name,
-        enabled=ae.enabled,
+        is_archived=ae.is_archived,
+        archived_at=ae.archived_at,
         current_version=DeploymentVersionDetail.model_validate(latest) if latest else None,
     )
 
@@ -531,7 +566,7 @@ def get_homepage(
     app_env_ids: list[uuid.UUID] = [
         row[0]
         for row in db.query(ApplicationEnvironment.id)
-        .filter(ApplicationEnvironment.application_id.in_(accessible_app_ids))
+        .filter(ApplicationEnvironment.application_id.in_(accessible_app_ids), ApplicationEnvironment.is_archived.is_(False))
         .all()
     ] if accessible_app_ids else []
 
@@ -573,7 +608,7 @@ def get_homepage(
 
     all_ae = (
         db.query(ApplicationEnvironment)
-        .filter(ApplicationEnvironment.application_id.in_([a.id for a in apps]))
+        .filter(ApplicationEnvironment.application_id.in_([a.id for a in apps]), ApplicationEnvironment.is_archived.is_(False))
         .all()
     ) if apps else []
 

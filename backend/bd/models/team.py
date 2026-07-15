@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, String, Text, func
+import sqlalchemy as sa
+from sqlalchemy import Boolean, ForeignKey, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import DateTime
@@ -22,6 +23,8 @@ class Team(Base):
         UUID(as_uuid=True),
         ForeignKey("companies.id", ondelete="CASCADE"),
     )
+    is_archived: Mapped[bool] = mapped_column(Boolean(), server_default=sa.false())
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

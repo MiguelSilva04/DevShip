@@ -503,7 +503,7 @@ def test_create_application_environment(db_session):
     db_session.flush()
 
     assert app_env.id is not None
-    assert app_env.enabled is True
+    assert app_env.is_archived is False
     assert app_env.created_at is not None
 
 

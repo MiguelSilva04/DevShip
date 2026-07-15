@@ -24,6 +24,8 @@ class TeamResponse(BaseModel):
     # Only populated by create_team, so the frontend knows whether the CE it just
     # created needs to wait for cross-Team confirmation before continuing onboarding.
     member_status: Optional[TeamMemberStatus] = None
+    is_archived: bool = False
+    archived_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -163,6 +165,8 @@ class EnvironmentResponse(BaseModel):
     name: str
     deployment_order: int
     validation: EnvironmentValidationResult
+    is_archived: bool = False
+    archived_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 

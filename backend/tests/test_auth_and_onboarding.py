@@ -558,6 +558,99 @@ class TestProjects:
 
 
 # ---------------------------------------------------------------------------
+# Archive Team
+# ---------------------------------------------------------------------------
+
+class TestArchiveTeam:
+    def test_archive_team_succeeds(self, client):
+        token, team_id = _setup(client, "archiveteam.io")
+        r = client.post(f"/teams/{team_id}/archive", headers=_auth(token))
+        assert r.status_code == 200
+        assert r.json()["is_archived"] is True
+        assert r.json()["archived_at"] is not None
+
+    def test_archive_team_idempotent(self, client):
+        token, team_id = _setup(client, "archiveteamidem.io")
+        first = client.post(f"/teams/{team_id}/archive", headers=_auth(token))
+        second = client.post(f"/teams/{team_id}/archive", headers=_auth(token))
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json()["archived_at"] == second.json()["archived_at"]
+
+    def test_archived_team_disappears_from_lobby(self, client):
+        token, team_id = _setup(client, "archiveteamlobby.io")
+        client.post(f"/teams/{team_id}/archive", headers=_auth(token))
+        r = client.get("/users/me/teams", headers=_auth(token))
+        assert r.status_code == 200
+        assert not any(e["team_id"] == team_id for e in r.json())
+
+    def test_non_cloud_engineer_cannot_archive_team(self, client):
+        token, team_id = _setup(client, "archiveteamperm.io")
+        dev_data = _register(client, "dev@archiveteamperm.io")
+        client.post(
+            f"/teams/{team_id}/members",
+            json={"user_id": dev_data["id"], "role": "DEVELOPER"},
+            headers=_auth(token),
+        )
+        dev_token = _login(client, "dev@archiveteamperm.io")
+        r = client.post(f"/teams/{team_id}/archive", headers=_auth(dev_token))
+        assert r.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Archive Environment
+# ---------------------------------------------------------------------------
+
+class TestArchiveEnvironment:
+    @mock_aws
+    def _team_project_env(self, client, domain):
+        import boto3
+        boto3.client("eks", region_name="eu-west-1").create_cluster(
+            name="my-cluster", version="1.29", roleArn=FAKE_ROLE_ARN,
+            resourcesVpcConfig={"subnetIds": ["subnet-abc"], "securityGroupIds": []},
+        )
+        token, team_id = _setup(client, domain)
+        project_id = _project(client, token, team_id, git_ops_repository_url="https://github.com/org/gitops")
+        with patch("backend.services.cluster_validation.list_namespaces", return_value=MagicMock(items=[])):
+            client.post(f"/projects/{project_id}/cluster", json={"cluster_arn": FAKE_ARN, "iam_role_arn": FAKE_ROLE_ARN}, headers=_auth(token))
+        with (
+            patch("backend.api.routes.onboarding.list_namespaces", return_value=MagicMock(items=[])),
+            patch("backend.api.routes.onboarding.validate_branch", return_value=True),
+            patch("backend.api.routes.onboarding.path_exists", return_value=True),
+            patch("backend.api.routes.onboarding._get_cluster_token", return_value=MagicMock()),
+        ):
+            r = client.post(
+                f"/projects/{project_id}/environments",
+                json=[{"name": "staging", "namespace": "staging", "source_branch": "main", "gitops_branch": "main", "git_ops_base_path": "envs/staging", "deployment_order": 1}],
+                headers=_auth(token),
+            )
+        env_id = r.json()[0]["id"]
+        return token, project_id, env_id
+
+    def test_archive_environment_succeeds(self, client):
+        token, project_id, env_id = self._team_project_env(client, "archiveenv.io")
+        r = client.post(f"/projects/{project_id}/environments/{env_id}/archive", headers=_auth(token))
+        assert r.status_code == 200
+        assert r.json()["is_archived"] is True
+        assert r.json()["archived_at"] is not None
+
+    def test_archive_environment_idempotent(self, client):
+        token, project_id, env_id = self._team_project_env(client, "archiveenvidem.io")
+        first = client.post(f"/projects/{project_id}/environments/{env_id}/archive", headers=_auth(token))
+        second = client.post(f"/projects/{project_id}/environments/{env_id}/archive", headers=_auth(token))
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json()["archived_at"] == second.json()["archived_at"]
+
+    def test_archived_environment_excluded_from_listing(self, client):
+        token, project_id, env_id = self._team_project_env(client, "archiveenvlist.io")
+        client.post(f"/projects/{project_id}/environments/{env_id}/archive", headers=_auth(token))
+        r = client.get(f"/projects/{project_id}/environments", headers=_auth(token))
+        assert r.status_code == 200
+        assert not any(e["id"] == env_id for e in r.json())
+
+
+# ---------------------------------------------------------------------------
 # Cluster setup info
 # ---------------------------------------------------------------------------
 

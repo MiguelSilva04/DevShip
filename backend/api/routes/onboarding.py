@@ -91,7 +91,10 @@ def _require_cloud_engineer_of_team(db: Session, team_id: uuid.UUID, user: User)
 
 def _team_response(db: Session, team: Team, member_status: "TeamMemberStatus | None" = None) -> TeamResponse:
     company = db.get(Company, team.company_id)
-    return TeamResponse(id=team.id, name=team.name, description=team.description, domain=company.domain, member_status=member_status)
+    return TeamResponse(
+        id=team.id, name=team.name, description=team.description, domain=company.domain,
+        member_status=member_status, is_archived=team.is_archived, archived_at=team.archived_at,
+    )
 
 
 def _require_cloud_engineer(db: Session, project_id: uuid.UUID, user: User) -> Project:
@@ -215,7 +218,7 @@ def list_my_teams(
         db.query(TeamMember, Team, Company)
         .join(Team, TeamMember.team_id == Team.id)
         .join(Company, Team.company_id == Company.id)
-        .filter(TeamMember.user_id == current_user.id)
+        .filter(TeamMember.user_id == current_user.id, Team.is_archived.is_(False))
         .all()
     )
 
@@ -307,6 +310,21 @@ def update_team(
         team.description = body.description
     db.commit()
     db.refresh(team)
+    return _team_response(db, team)
+
+
+@router.post("/teams/{team_id}/archive", response_model=TeamResponse)
+def archive_team(
+    team_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    team = _require_cloud_engineer_of_team(db, team_id, current_user)
+    if not team.is_archived:
+        team.is_archived = True
+        team.archived_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(team)
     return _team_response(db, team)
 
 
@@ -1041,6 +1059,8 @@ def _env_response(env: Environment, validation: EnvironmentValidation) -> Enviro
         name=env.name,
         deployment_order=env.deployment_order,
         validation=EnvironmentValidationResult.model_validate(validation),
+        is_archived=env.is_archived,
+        archived_at=env.archived_at,
     )
 
 
@@ -1082,6 +1102,33 @@ def update_environment(
 
     db.commit()
     db.refresh(env)
+    return _env_response(env, validation)
+
+
+@router.post("/projects/{project_id}/environments/{environment_id}/archive", response_model=EnvironmentResponse)
+def archive_environment(
+    project_id: uuid.UUID,
+    environment_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_cloud_engineer(db, project_id, current_user)
+    env = db.get(Environment, environment_id)
+    if env is None or env.project_id != project_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Environment not found")
+    validation = db.query(EnvironmentValidation).filter(EnvironmentValidation.environment_id == env.id).first()
+    if validation is None:
+        # Não deveria acontecer — create_environments cria sempre a validation junto com
+        # a Environment — mas se acontecer, persiste-a para os defaults do servidor
+        # (server_default) ficarem preenchidos antes de servir de resposta.
+        validation = EnvironmentValidation(environment_id=env.id)
+        db.add(validation)
+    if not env.is_archived:
+        env.is_archived = True
+        env.archived_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(env)
+    db.refresh(validation)
     return _env_response(env, validation)
 
 

@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
 
+import sqlalchemy as sa
 from sqlalchemy import Boolean, Enum as SAEnum, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -47,7 +48,8 @@ class ApplicationEnvironment(Base):
     exposure_type: Mapped[str | None] = mapped_column(String(32))
     deployment_strategy: Mapped[str | None] = mapped_column(String(64))
     health_probe_path: Mapped[str | None] = mapped_column(String(255))
-    enabled: Mapped[bool] = mapped_column(Boolean(), server_default="true")
+    is_archived: Mapped[bool] = mapped_column(Boolean(), server_default=sa.false())
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Cached live-K8s-read result for ApplicationEnvironments with no DeploymentVersion yet
     # (workload imported/managed outside DevShip). See _discover_lifecycle_status() in
     # backend/api/routes/visibility.py — TTL avoids hitting the cluster on every page load.

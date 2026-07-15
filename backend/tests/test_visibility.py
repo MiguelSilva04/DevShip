@@ -21,6 +21,7 @@ from backend.api.main import app
 from backend.api.deps import get_db
 from backend.bd.models.application import Application
 from backend.bd.models.application_environment import ApplicationEnvironment
+from backend.bd.models.application_team_member import ApplicationTeamMember
 from backend.bd.models.company import Company
 from backend.bd.models.deployment_version import DeploymentVersion, LifecycleStatus, TriggerSource
 from backend.bd.models.environment import Environment
@@ -333,6 +334,59 @@ class TestGetApplicationEnvironment:
     def test_404_on_unknown_ae(self, client, db_session):
         token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
         r = client.get(f"/application-environments/{uuid.uuid4()}", headers=_auth(token))
+        assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# POST /application-environments/{id}/archive
+# ---------------------------------------------------------------------------
+
+class TestArchiveApplicationEnvironment:
+    def test_archive_succeeds(self, client, db_session):
+        user, _, _, _, _, ae = _setup_chain(db_session)
+        token = _token_for(user)
+
+        r = client.post(f"/application-environments/{ae.id}/archive", headers=_auth(token))
+        assert r.status_code == 200
+        assert r.json()["is_archived"] is True
+        assert r.json()["archived_at"] is not None
+
+    def test_archive_idempotent(self, client, db_session):
+        user, _, _, _, _, ae = _setup_chain(db_session)
+        token = _token_for(user)
+
+        first = client.post(f"/application-environments/{ae.id}/archive", headers=_auth(token))
+        second = client.post(f"/application-environments/{ae.id}/archive", headers=_auth(token))
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json()["archived_at"] == second.json()["archived_at"]
+
+    def test_archived_ae_excluded_from_homepage(self, client, db_session):
+        user, _, project, _, _, ae = _setup_chain(db_session)
+        token = _token_for(user)
+
+        client.post(f"/application-environments/{ae.id}/archive", headers=_auth(token))
+        r = client.get(f"/projects/{project.id}/homepage", headers=_auth(token))
+        assert r.status_code == 200
+        ae_ids = {e["id"] for app in r.json()["applications"] for e in app["environments"]}
+        assert str(ae.id) not in ae_ids
+
+    def test_developer_cannot_archive(self, client, db_session):
+        user, team, _, _, app, ae = _setup_chain(db_session)
+        dev_user = _make_user(db_session)
+        dev_member = TeamMember(team_id=team.id, user_id=dev_user.id, role=TeamMemberRole.DEVELOPER, added_by=None)
+        db_session.add(dev_member)
+        db_session.flush()
+        db_session.add(ApplicationTeamMember(team_member_id=dev_member.id, application_id=app.id))
+        db_session.flush()
+        dev_token = _token_for(dev_user)
+
+        r = client.post(f"/application-environments/{ae.id}/archive", headers=_auth(dev_token))
+        assert r.status_code == 403
+
+    def test_404_on_unknown_ae(self, client, db_session):
+        token = _register_login(client, f"e@{uuid.uuid4().hex}.io")
+        r = client.post(f"/application-environments/{uuid.uuid4()}/archive", headers=_auth(token))
         assert r.status_code == 404
 
 

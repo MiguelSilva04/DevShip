@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
 
+import sqlalchemy as sa
 from sqlalchemy import Boolean, Enum as SAEnum, ForeignKey, Index, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -44,6 +45,8 @@ class Environment(Base):
     requires_approval: Mapped[bool] = mapped_column(Boolean(), server_default="false")
     approval_required_role: Mapped[TeamMemberRole | None] = mapped_column(_approval_role_enum)
     deployment_order: Mapped[int] = mapped_column(Integer())
+    is_archived: Mapped[bool] = mapped_column(Boolean(), server_default=sa.false())
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
