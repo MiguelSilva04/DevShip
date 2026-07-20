@@ -783,10 +783,38 @@ def configure_cluster(
         last_validated_at=datetime.now(timezone.utc),
     )
     db.add(cluster)
+    db.flush()  # cluster precisa de existir na BD para a checagem abaixo o encontrar via query
+
+    try:
+        _check_existing_environments_against_cluster_arn(db, project, body.cluster_arn)
+    except HTTPException:
+        db.rollback()
+        raise
+
     project.setup_status = SetupStatus.PENDING_ENVIRONMENTS
     db.commit()
     db.refresh(cluster)
     return cluster
+
+
+def _check_existing_environments_against_cluster_arn(db: Session, project: Project, cluster_arn: str) -> None:
+    """Guards cluster configure/reconfigure: if the project already has Environments,
+    the new cluster_arn must not collide with another project's Environment on that
+    same cluster. Normal onboarding order (cluster before environments) never triggers
+    this — it exists for the reconfigure case."""
+    envs = db.query(Environment).filter(
+        Environment.project_id == project.id,
+        Environment.is_archived.is_(False),
+    ).all()
+    for env in envs:
+        _check_environment_collisions(
+            db, project,
+            namespace=env.namespace,
+            argocd_application_name=env.argocd_application_name,
+            gitops_branch=env.gitops_branch,
+            git_ops_base_path=env.git_ops_base_path,
+            exclude_environment_id=env.id,
+        )
 
 
 def _get_cluster_or_404(db: Session, project_id: uuid.UUID) -> ClusterContext:
@@ -887,6 +915,14 @@ def update_cluster_credentials(
     if body.argocd_namespace:
         cluster.argocd_namespace = body.argocd_namespace
     cluster.last_validated_at = datetime.now(timezone.utc)
+    db.flush()  # cluster_arn novo precisa de estar visível à query da checagem abaixo
+
+    try:
+        _check_existing_environments_against_cluster_arn(db, project, body.cluster_arn)
+    except HTTPException:
+        db.rollback()
+        raise
+
     db.commit()
     db.refresh(cluster)
     return cluster
@@ -915,6 +951,66 @@ def archive_project(
 # Environments
 # ---------------------------------------------------------------------------
 
+def _check_environment_collisions(
+    db: Session,
+    project: Project,
+    *,
+    namespace: str | None,
+    argocd_application_name: str | None,
+    gitops_branch: str | None,
+    git_ops_base_path: str | None,
+    exclude_environment_id: uuid.UUID | None = None,
+) -> None:
+    """Rejeita configurações que colidem com outro Environment ativo — mesmo cluster para
+    namespace/ArgoCD Application, mesmo repositório+branch GitOps para o path. Aplica-se
+    também dentro do próprio projeto (a query só exclui o próprio Environment, nunca o
+    projeto inteiro). Environments/projetos arquivados ficam fora — coerente com as
+    listagens, que já os escondem."""
+    def _base_query():
+        q = (
+            db.query(Environment)
+            .join(Project, Environment.project_id == Project.id)
+            .filter(
+                Environment.is_archived.is_(False),
+                Project.is_archived.is_(False),
+            )
+        )
+        if exclude_environment_id is not None:
+            q = q.filter(Environment.id != exclude_environment_id)
+        return q
+
+    cluster = db.query(ClusterContext).filter(ClusterContext.project_id == project.id).first()
+    if cluster is not None and cluster.cluster_arn:
+        same_cluster = _base_query().join(
+            ClusterContext, ClusterContext.project_id == Project.id
+        ).filter(ClusterContext.cluster_arn == cluster.cluster_arn)
+
+        if namespace and same_cluster.filter(Environment.namespace == namespace).first():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"O namespace '{namespace}' já está a ser utilizado por outro environment neste cluster.",
+            )
+        if argocd_application_name and same_cluster.filter(
+            Environment.argocd_application_name == argocd_application_name
+        ).first():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"A ArgoCD Application '{argocd_application_name}' já está associada a outro environment neste cluster.",
+            )
+
+    if project.git_ops_repository_url and git_ops_base_path:
+        clash = _base_query().filter(
+            Project.git_ops_repository_url == project.git_ops_repository_url,
+            Environment.gitops_branch == gitops_branch,
+            Environment.git_ops_base_path == git_ops_base_path,
+        ).first()
+        if clash:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"O path GitOps '{git_ops_base_path}' (branch '{gitops_branch}') já está a ser utilizado por outro environment deste repositório.",
+            )
+
+
 @router.post("/projects/{project_id}/environments", response_model=list[EnvironmentResponse], status_code=status.HTTP_201_CREATED)
 def create_environments(
     project_id: uuid.UUID,
@@ -927,6 +1023,27 @@ def create_environments(
     cluster = db.query(ClusterContext).filter(ClusterContext.project_id == project_id).first()
     git_ops_url = project.git_ops_repository_url
 
+    # Colisões dentro do próprio lote (dois environments do mesmo pedido a apontar para o
+    # mesmo namespace/ArgoCD Application/path) nunca chegam à BD para _check_environment_collisions
+    # detetar — têm de ser verificadas em memória antes de qualquer coisa ser criada.
+    seen_namespaces: set[str] = set()
+    seen_argocd_apps: set[str] = set()
+    seen_gitops_paths: set[tuple[str | None, str | None]] = set()
+    for env_data in body:
+        if env_data.namespace:
+            if env_data.namespace in seen_namespaces:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"O namespace '{env_data.namespace}' está duplicado neste pedido.")
+            seen_namespaces.add(env_data.namespace)
+        if env_data.argocd_application_name:
+            if env_data.argocd_application_name in seen_argocd_apps:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"A ArgoCD Application '{env_data.argocd_application_name}' está duplicada neste pedido.")
+            seen_argocd_apps.add(env_data.argocd_application_name)
+        if env_data.git_ops_base_path:
+            path_key = (env_data.gitops_branch, env_data.git_ops_base_path)
+            if path_key in seen_gitops_paths:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"O path GitOps '{env_data.git_ops_base_path}' está duplicado neste pedido.")
+            seen_gitops_paths.add(path_key)
+
     results = []
     for env_data in body:
         # Upsert by (project_id, name) — idempotent on re-submit
@@ -935,7 +1052,7 @@ def create_environments(
             Environment.name == env_data.name,
         ).first()
         if env is None:
-            env = Environment(project_id=project_id, name=env_data.name)
+            env = Environment(id=uuid.uuid4(), project_id=project_id, name=env_data.name)
             db.add(env)
 
         env.display_name = env_data.display_name
@@ -947,6 +1064,20 @@ def create_environments(
         env.requires_approval = env_data.requires_approval
         env.approval_required_role = env_data.approval_required_role
         env.deployment_order = env_data.deployment_order
+
+        try:
+            _check_environment_collisions(
+                db, project,
+                namespace=env_data.namespace,
+                argocd_application_name=env_data.argocd_application_name,
+                gitops_branch=env_data.gitops_branch,
+                git_ops_base_path=env_data.git_ops_base_path,
+                exclude_environment_id=env.id,
+            )
+        except HTTPException:
+            db.rollback()
+            raise
+
         db.flush()
 
         validation = db.query(EnvironmentValidation).filter(EnvironmentValidation.environment_id == env.id).first()
@@ -1081,6 +1212,16 @@ def update_environment(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Environment not found")
 
     data = body.model_dump(exclude_unset=True)
+
+    _check_environment_collisions(
+        db, project,
+        namespace=data.get("namespace", env.namespace),
+        argocd_application_name=data.get("argocd_application_name", env.argocd_application_name),
+        gitops_branch=data.get("gitops_branch", env.gitops_branch),
+        git_ops_base_path=data.get("git_ops_base_path", env.git_ops_base_path),
+        exclude_environment_id=env.id,
+    )
+
     for field, value in data.items():
         setattr(env, field, value)
     db.flush()

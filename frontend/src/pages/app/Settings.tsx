@@ -61,6 +61,23 @@ interface ValidationResult {
   overall_status: string;
 }
 
+// 409s from _check_environment_collisions are plain text, not a ValidationResult JSON
+// payload like 422s — infer which field the message is about from its wording so it can
+// reuse the same per-field error slots instead of falling back to a generic banner.
+function collisionDetailToValidation(detail: string): ValidationResult | null {
+  const base: ValidationResult = {
+    namespace_status: 'VALID', namespace_error: null,
+    branch_status: 'VALID', branch_error: null,
+    git_ops_path_status: 'VALID', git_ops_path_error: null,
+    argocd_status: 'VALID', argocd_error: null,
+    overall_status: 'INVALID',
+  };
+  if (detail.includes('namespace')) return { ...base, namespace_status: 'INVALID', namespace_error: detail };
+  if (detail.includes('ArgoCD Application')) return { ...base, argocd_status: 'INVALID', argocd_error: detail };
+  if (detail.includes('path GitOps')) return { ...base, git_ops_path_status: 'INVALID', git_ops_path_error: detail };
+  return null;
+}
+
 const ROLE_LABEL: Record<string, string> = {
   CLOUD_ENGINEER: 'Cloud Engineer',
   TECH_LEAD: 'Tech Lead',
@@ -206,6 +223,8 @@ export default function Settings() {
           const parsed = JSON.parse(e.message) as ValidationResult;
           if (parsed.overall_status) { setEnvValidation(parsed); setEnvErr('A configuração não passou na validação — corrige os campos assinalados.'); return; }
         } catch { /* not a validation payload */ }
+        const collision = collisionDetailToValidation(e.message);
+        if (collision) { setEnvValidation(collision); setEnvErr('Conflito de configuração — corrige o campo assinalado.'); return; }
         setEnvErr(e.message);
       } else {
         setEnvErr('Erro ao guardar environment.');

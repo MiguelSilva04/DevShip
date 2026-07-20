@@ -28,7 +28,10 @@ def assume_user_role(role_arn: str, external_id: str, region: str) -> boto3.Sess
     exception is logged server-side only — it can contain internal deployment details
     (e.g. a missing local AWS config profile) that mean nothing to the end user."""
     try:
-        session = boto3.Session(profile_name=os.environ.get("DEVSHIP_AWS_PROFILE", "default"))
+        # ponytail: profile only set locally in dev; in prod the instance role is picked
+        # up automatically via IMDS when DEVSHIP_AWS_PROFILE is unset
+        profile_name = os.environ.get("DEVSHIP_AWS_PROFILE")
+        session = boto3.Session(profile_name=profile_name) if profile_name else boto3.Session()
         sts_client = session.client("sts")
 
         response = sts_client.assume_role(

@@ -1,0 +1,59 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: devship-postgres
+    environment:
+      POSTGRES_USER: devship
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: devship
+    volumes:
+      - devship-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devship -d devship"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: devship-backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://devship:${POSTGRES_PASSWORD}@postgres:5432/devship
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: devship-frontend
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    container_name: devship-caddy
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+
+volumes:
+  devship-postgres-data:
+  caddy-data:
+  caddy-config:

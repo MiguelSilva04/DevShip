@@ -956,6 +956,207 @@ class TestEnvironments:
 
 
 # ---------------------------------------------------------------------------
+# Environment collisions across projects
+# ---------------------------------------------------------------------------
+
+class TestEnvironmentCollisions:
+    """Two Environments must not share a namespace/ArgoCD Application on the same
+    cluster, nor a GitOps path in the same repo+branch — even across different
+    projects/teams. See _check_environment_collisions in onboarding.py."""
+
+    ARGOCD_ENV_MOCKS = (
+        patch("backend.api.routes.onboarding.list_namespaces", return_value=MagicMock(items=[])),
+        patch("backend.api.routes.onboarding.validate_branch", return_value=True),
+        patch("backend.api.routes.onboarding.path_exists", return_value=True),
+        patch("backend.api.routes.onboarding._get_cluster_token", return_value=MagicMock()),
+    )
+
+    def _project_on_cluster(self, client, domain, gitops_url="https://github.com/org/gitops"):
+        """Registers a fresh team + project and attaches FAKE_ARN as its cluster."""
+        token, team_id = _setup(client, domain)
+        project_id = _project(client, token, team_id, git_ops_repository_url=gitops_url)
+        with patch("backend.services.cluster_validation.list_namespaces", return_value=MagicMock(items=[])):
+            r = client.post(f"/projects/{project_id}/cluster", json={"cluster_arn": FAKE_ARN, "iam_role_arn": FAKE_ROLE_ARN}, headers=_auth(token))
+            assert r.status_code == 201, r.text
+        return token, project_id
+
+    def _create_env(self, client, token, project_id, **fields):
+        body = {"name": "dev", "deployment_order": 1, **fields}
+        with (
+            patch("backend.api.routes.onboarding.list_namespaces", return_value=MagicMock(items=[])),
+            patch("backend.api.routes.onboarding.validate_branch", return_value=True),
+            patch("backend.api.routes.onboarding.path_exists", return_value=True),
+            patch("backend.api.routes.onboarding._get_cluster_token", return_value=MagicMock()),
+        ):
+            return client.post(f"/projects/{project_id}/environments", json=[body], headers=_auth(token))
+
+    @mock_aws
+    def test_same_namespace_same_cluster_conflicts(self, client):
+        import boto3
+        boto3.client("eks", region_name="eu-west-1").create_cluster(
+            name="my-cluster", version="1.29", roleArn=FAKE_ROLE_ARN,
+            resourcesVpcConfig={"subnetIds": ["subnet-abc"], "securityGroupIds": []},
+        )
+        token_a, project_a = self._project_on_cluster(client, "collns-a.io")
+        token_b, project_b = self._project_on_cluster(client, "collns-b.io")
+
+        r1 = self._create_env(client, token_a, project_a, namespace="staging")
+        assert r1.status_code == 201, r1.text
+
+        r2 = self._create_env(client, token_b, project_b, namespace="staging")
+        assert r2.status_code == 409
+        assert "staging" in r2.json()["detail"]
+
+    @mock_aws
+    def test_different_namespace_same_cluster_succeeds(self, client):
+        import boto3
+        boto3.client("eks", region_name="eu-west-1").create_cluster(
+            name="my-cluster", version="1.29", roleArn=FAKE_ROLE_ARN,
+            resourcesVpcConfig={"subnetIds": ["subnet-abc"], "securityGroupIds": []},
+        )
+        token_a, project_a = self._project_on_cluster(client, "collns-c.io")
+        token_b, project_b = self._project_on_cluster(client, "collns-d.io")
+
+        r1 = self._create_env(client, token_a, project_a, namespace="staging")
+        assert r1.status_code == 201, r1.text
+        r2 = self._create_env(client, token_b, project_b, namespace="prod")
+        assert r2.status_code == 201, r2.text
+
+    def test_same_namespace_different_cluster_succeeds(self, client):
+        """No cluster configured on either project — the namespace scope check is
+        per-cluster_arn and never triggers when there's no ClusterContext at all."""
+        token_a, team_a = _setup(client, "collns-e.io")
+        project_a = _project(client, token_a, team_a)
+        token_b, team_b = _setup(client, "collns-f.io")
+        project_b = _project(client, token_b, team_b)
+
+        r1 = self._create_env(client, token_a, project_a, namespace="staging")
+        assert r1.status_code == 201, r1.text
+        r2 = self._create_env(client, token_b, project_b, namespace="staging")
+        assert r2.status_code == 201, r2.text
+
+    @mock_aws
+    def test_same_argocd_application_same_cluster_conflicts(self, client):
+        import boto3
+        boto3.client("eks", region_name="eu-west-1").create_cluster(
+            name="my-cluster", version="1.29", roleArn=FAKE_ROLE_ARN,
+            resourcesVpcConfig={"subnetIds": ["subnet-abc"], "securityGroupIds": []},
+        )
+        token_a, project_a = self._project_on_cluster(client, "collns-g.io")
+        token_b, project_b = self._project_on_cluster(client, "collns-h.io")
+
+        r1 = self._create_env(client, token_a, project_a, argocd_application_name="shared-app")
+        assert r1.status_code == 201, r1.text
+        r2 = self._create_env(client, token_b, project_b, argocd_application_name="shared-app")
+        assert r2.status_code == 409
+        assert "shared-app" in r2.json()["detail"]
+
+    def test_same_gitops_path_same_repo_branch_conflicts(self, client):
+        token_a, team_a = _setup(client, "collns-i.io")
+        project_a = _project(client, token_a, team_a, git_ops_repository_url="https://github.com/org/shared-repo")
+        token_b, team_b = _setup(client, "collns-j.io")
+        project_b = _project(client, token_b, team_b, git_ops_repository_url="https://github.com/org/shared-repo")
+
+        r1 = self._create_env(client, token_a, project_a, gitops_branch="main", git_ops_base_path="envs/dev")
+        assert r1.status_code == 201, r1.text
+        r2 = self._create_env(client, token_b, project_b, gitops_branch="main", git_ops_base_path="envs/dev")
+        assert r2.status_code == 409
+        assert "envs/dev" in r2.json()["detail"]
+
+    def test_same_gitops_path_different_repo_succeeds(self, client):
+        token_a, team_a = _setup(client, "collns-k.io")
+        project_a = _project(client, token_a, team_a, git_ops_repository_url="https://github.com/org/repo-one")
+        token_b, team_b = _setup(client, "collns-l.io")
+        project_b = _project(client, token_b, team_b, git_ops_repository_url="https://github.com/org/repo-two")
+
+        r1 = self._create_env(client, token_a, project_a, gitops_branch="main", git_ops_base_path="envs/dev")
+        assert r1.status_code == 201, r1.text
+        r2 = self._create_env(client, token_b, project_b, gitops_branch="main", git_ops_base_path="envs/dev")
+        assert r2.status_code == 201, r2.text
+
+    def test_same_namespace_within_same_batch_conflicts_and_creates_nothing(self, client):
+        token, team_id = _setup(client, "collns-m.io")
+        project_id = _project(client, token, team_id)
+
+        with (
+            patch("backend.api.routes.onboarding.list_namespaces", return_value=MagicMock(items=[])),
+            patch("backend.api.routes.onboarding.validate_branch", return_value=True),
+            patch("backend.api.routes.onboarding.path_exists", return_value=True),
+            patch("backend.api.routes.onboarding._get_cluster_token", return_value=MagicMock()),
+        ):
+            r = client.post(
+                f"/projects/{project_id}/environments",
+                json=[
+                    {"name": "dev", "namespace": "shared", "deployment_order": 1},
+                    {"name": "staging", "namespace": "shared", "deployment_order": 2},
+                ],
+                headers=_auth(token),
+            )
+        assert r.status_code == 409
+        assert "shared" in r.json()["detail"]
+
+        listing = client.get(f"/projects/{project_id}/environments", headers=_auth(token))
+        assert listing.json() == []
+
+    def test_update_without_changing_namespace_succeeds(self, client):
+        token, team_id = _setup(client, "collns-n.io")
+        project_id = _project(client, token, team_id)
+        r = self._create_env(client, token, project_id, namespace="dev")
+        env_id = r.json()[0]["id"]
+
+        with (
+            patch("backend.api.routes.onboarding.list_namespaces", return_value=MagicMock(items=[])),
+            patch("backend.api.routes.onboarding.validate_branch", return_value=True),
+            patch("backend.api.routes.onboarding.path_exists", return_value=True),
+            patch("backend.api.routes.onboarding._get_cluster_token", return_value=MagicMock()),
+        ):
+            r2 = client.patch(
+                f"/projects/{project_id}/environments/{env_id}",
+                json={"display_name": "Dev Env"},
+                headers=_auth(token),
+            )
+        assert r2.status_code == 200, r2.text
+
+    @mock_aws
+    def test_archived_environment_namespace_is_free_for_reuse(self, client):
+        import boto3
+        boto3.client("eks", region_name="eu-west-1").create_cluster(
+            name="my-cluster", version="1.29", roleArn=FAKE_ROLE_ARN,
+            resourcesVpcConfig={"subnetIds": ["subnet-abc"], "securityGroupIds": []},
+        )
+        token, project_id = self._project_on_cluster(client, "collns-o.io")
+        r1 = self._create_env(client, token, project_id, namespace="staging")
+        env_id = r1.json()[0]["id"]
+        archived = client.post(f"/projects/{project_id}/environments/{env_id}/archive", headers=_auth(token))
+        assert archived.status_code == 200
+
+        token_b, project_b = self._project_on_cluster(client, "collns-p.io")
+        r2 = self._create_env(client, token_b, project_b, namespace="staging")
+        assert r2.status_code == 201, r2.text
+
+    @mock_aws
+    def test_configure_cluster_conflicts_with_existing_environment_on_same_cluster(self, client):
+        import boto3
+        boto3.client("eks", region_name="eu-west-1").create_cluster(
+            name="my-cluster", version="1.29", roleArn=FAKE_ROLE_ARN,
+            resourcesVpcConfig={"subnetIds": ["subnet-abc"], "securityGroupIds": []},
+        )
+        token_a, project_a = self._project_on_cluster(client, "collns-q.io")
+        r1 = self._create_env(client, token_a, project_a, namespace="staging")
+        assert r1.status_code == 201, r1.text
+
+        token_b, team_b = _setup(client, "collns-r.io")
+        project_b = _project(client, token_b, team_b)
+        r2 = self._create_env(client, token_b, project_b, namespace="staging")
+        assert r2.status_code == 201, r2.text  # no cluster on project_b yet, no collision
+
+        with patch("backend.services.cluster_validation.list_namespaces", return_value=MagicMock(items=[])):
+            r3 = client.post(f"/projects/{project_b}/cluster", json={"cluster_arn": FAKE_ARN, "iam_role_arn": FAKE_ROLE_ARN}, headers=_auth(token_b))
+        assert r3.status_code == 409
+        assert "staging" in r3.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
 # GitOps scan
 # ---------------------------------------------------------------------------
 
