@@ -1,12 +1,17 @@
 import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { apiFetch } from '../api/client';
+import { parseCollisionDetail } from '../utils/collisionError';
 
 // ─── Shared storage keys ────────────────────────────────────────────────────
 export const OB_TEAM_ID    = 'ob_team_id';
 export const OB_PROJECT_ID = 'ob_project_id';
 export const OB_TEAM_NAME  = 'ob_team_name';
 export const OB_PROJ_NAME  = 'ob_proj_name';
+// Set only when OnboardingProject actually creates a project in the current onboarding
+// run — used to pre-fill that same form on back-navigation, without confusing it with
+// OB_PROJECT_ID (which may still hold a previous, unrelated project as a fallback).
+export const OB_NEW_PROJECT_ID = 'ob_new_project_id';
 // 'new_team' (default) percorre os 7 passos a partir de criar Team. 'new_project' é
 // entrado a partir de Settings → "Criar novo projeto" numa Team já existente — salta
 // direto para o passo Project, sem recriar a Team nem passar por ela na numeração/voltar.
@@ -48,7 +53,6 @@ export default function OnboardingLayout() {
           <span style={{ fontSize: 15, fontWeight: 600 }}>DevShip</span>
           <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
           <span style={{ fontSize: 13, color: 'var(--text-2)' }}>Onboarding</span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 11px', borderRadius: 7, fontSize: 11, fontWeight: 600, background: 'rgba(43,199,180,.12)', color: 'var(--teal)', border: '1px solid rgba(43,199,180,.3)' }}>Apenas Cloud Engineer</span>
           {showBar && <span className="mono" style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)' }}>Passo {idx + 1} de {totalSteps}</span>}
         </div>
         {showBar && (
@@ -343,8 +347,8 @@ export function OnboardingTeam() {
   const [loading, setLoading] = useState(false);
 
   // Entrar pelo passo Team é sempre um onboarding "new_team" genuíno — garante que uma
-  // sessão anterior de "criar novo projeto" abandonada a meio não deixa a flag presa.
-  useEffect(() => { localStorage.removeItem(OB_MODE); }, []);
+  // sessão anterior de "criar novo projeto" abandonada a meio não deixa flags presas.
+  useEffect(() => { localStorage.removeItem(OB_MODE); localStorage.removeItem(OB_NEW_PROJECT_ID); }, []);
 
   // Pre-fill if team was already created (idempotency on back-navigation) — only if the
   // stored team still belongs to the logged-in user. A leftover ob_team_id from a previous
@@ -428,9 +432,13 @@ export function OnboardingProject() {
 
   const teamId = localStorage.getItem(OB_TEAM_ID);
 
-  // Pre-fill if project was already created (idempotency on back-navigation)
+  // Pre-fill if this exact project was already created earlier in the same onboarding run
+  // (idempotency on back-navigation). OB_NEW_PROJECT_ID is set only once submit() below
+  // actually creates a project — distinct from OB_PROJECT_ID, which in 'new_project' mode
+  // still points at the *previous* active project (kept as a fallback, see Settings.tsx
+  // startNewProject) and must never be used to pre-fill this form.
   useEffect(() => {
-    const projectId = localStorage.getItem(OB_PROJECT_ID);
+    const projectId = localStorage.getItem(OB_NEW_PROJECT_ID);
     if (!projectId) return;
     apiFetch(`/projects/${projectId}`)
       .then((p: { name: string; git_ops_repository_url?: string }) => {
@@ -451,6 +459,7 @@ export function OnboardingProject() {
       });
       localStorage.setItem(OB_PROJECT_ID, project.id);
       localStorage.setItem(OB_PROJ_NAME, project.name);
+      localStorage.setItem(OB_NEW_PROJECT_ID, project.id);
       nav('/onboarding/aws-setup');
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '';
@@ -903,6 +912,7 @@ export function OnboardingEnvironments() {
   const [gitOpsUrl, setGitOpsUrl] = useState('');
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
+  const [rowErrors, setRowErrors] = useState<Record<string, Partial<Record<'namespace' | 'argocd_application_name' | 'git_ops_base_path', string>>>>({});
 
   const projectId = localStorage.getItem(OB_PROJECT_ID);
 
@@ -955,7 +965,7 @@ export function OnboardingEnvironments() {
   async function submit() {
     if (envs.length === 0) { setErr('Adiciona pelo menos um environment.'); return; }
     if (!projectId) { setErr('Projeto não encontrado — volta ao passo 2.'); return; }
-    setLoading(true); setErr('');
+    setLoading(true); setErr(''); setRowErrors({});
     try {
       const body = envs.map(e => ({
         name: e.name,
@@ -972,7 +982,17 @@ export function OnboardingEnvironments() {
       const res: EnvResult[] = await apiFetch(`/projects/${projectId}/environments`, { method: 'POST', body: JSON.stringify(body) });
       setResults(res);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Erro ao criar environments.');
+      const message = e instanceof Error ? e.message : 'Erro ao criar environments.';
+      // 409 de colisão identifica o valor em conflito mas não diz qual dos environments do
+      // lote é o dono — descobre-se comparando com o estado local para assinalar a row certa.
+      const collision = parseCollisionDetail(message);
+      const owner = collision && envs.find(env => env[collision.field] === collision.value);
+      if (collision && owner) {
+        setRowErrors({ [owner.key]: { [collision.field]: collision.detail } });
+        setErr('Conflito de configuração — corrige o campo assinalado abaixo.');
+      } else {
+        setErr(message);
+      }
     } finally { setLoading(false); }
   }
 
@@ -1043,6 +1063,9 @@ export function OnboardingEnvironments() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 15 }}>
                   <FormField label="Namespace">
                     <input className="input-base input-mono" value={env.namespace} onChange={e => update(env.key, 'namespace', e.target.value)} placeholder="app-dev" />
+                    {rowErrors[env.key]?.namespace && (
+                      <div style={{ fontSize: 12, color: '#ff8497', marginTop: 4 }}>{rowErrors[env.key].namespace}</div>
+                    )}
                   </FormField>
                   <FormField label="GitOps Base Path">
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1051,6 +1074,9 @@ export function OnboardingEnvironments() {
                         <GitOpsPathPreviewButton repoUrl={gitOpsUrl} basePath={env.git_ops_base_path} projectId={projectId!} />
                       )}
                     </div>
+                    {rowErrors[env.key]?.git_ops_base_path && (
+                      <div style={{ fontSize: 12, color: '#ff8497', marginTop: 4 }}>{rowErrors[env.key].git_ops_base_path}</div>
+                    )}
                   </FormField>
                   <FormField label="Source Branch (repo de código)">
                     <input className="input-base input-mono" value={env.source_branch} onChange={e => update(env.key, 'source_branch', e.target.value)} placeholder="main" />
@@ -1065,6 +1091,9 @@ export function OnboardingEnvironments() {
                       onChange={e => update(env.key, 'argocd_application_name', e.target.value)}
                       placeholder={`demo-app-${env.name.toLowerCase()}`}
                     />
+                    {rowErrors[env.key]?.argocd_application_name && (
+                      <div style={{ fontSize: 12, color: '#ff8497', marginTop: 4 }}>{rowErrors[env.key].argocd_application_name}</div>
+                    )}
                   </FormField>
                   <FormField label="Deployment Order">
                     <input className="input-base input-mono" type="number" min={1} value={env.deployment_order} onChange={e => update(env.key, 'deployment_order', Number(e.target.value))} style={{ maxWidth: 80 }} />
@@ -1207,6 +1236,7 @@ export function OnboardingApplications() {
       }));
       await apiFetch(`/projects/${projectId}/applications/import`, { method: 'POST', body: JSON.stringify({ applications }) });
       localStorage.removeItem(OB_MODE); // fim do fluxo — o próximo onboarding começa limpo
+      localStorage.removeItem(OB_NEW_PROJECT_ID);
       setDone(true);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Erro ao importar applications.');

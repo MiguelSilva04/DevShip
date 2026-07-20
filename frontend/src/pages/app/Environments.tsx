@@ -27,7 +27,7 @@ export default function Environments() {
 
   useEffect(() => {
     const projectId = localStorage.getItem('ob_project_id');
-    if (!projectId) { setError('Project não encontrado. Faz onboarding primeiro.'); return; }
+    if (!projectId) { setError('Projeto não encontrado. Faz onboarding primeiro.'); return; }
     apiFetch(`/projects/${projectId}/environments`)
       .then(setEnvs)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Erro ao carregar environments.'));

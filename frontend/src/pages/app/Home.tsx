@@ -49,7 +49,7 @@ export default function Home() {
 
   useEffect(() => {
     const projectId = localStorage.getItem('ob_project_id');
-    if (!projectId) { setError('Project não encontrado. Faz onboarding primeiro.'); return; }
+    if (!projectId) { setError('Projeto não encontrado. Faz onboarding primeiro.'); return; }
     apiFetch(`/projects/${projectId}/homepage`)
       .then(d => {
         setData(d);

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { useUser } from '../../context/UserContext';
 import { OB_PROJ_NAME, OB_PROJECT_ID, OB_TEAM_ID, OB_MODE, GitOpsPathPreviewButton } from '../Onboarding';
+import { parseCollisionDetail } from '../../utils/collisionError';
 
 interface ProjectSummary {
   id: string;
@@ -62,20 +63,27 @@ interface ValidationResult {
 }
 
 // 409s from _check_environment_collisions are plain text, not a ValidationResult JSON
-// payload like 422s — infer which field the message is about from its wording so it can
-// reuse the same per-field error slots instead of falling back to a generic banner.
+// payload like 422s — parseCollisionDetail infers which field the message is about so it
+// can reuse the same per-field error slots instead of falling back to a generic banner.
+const COLLISION_FIELD_TO_VALIDATION_KEY = {
+  namespace: 'namespace',
+  argocd_application_name: 'argocd',
+  git_ops_base_path: 'git_ops_path',
+} as const;
+
 function collisionDetailToValidation(detail: string): ValidationResult | null {
-  const base: ValidationResult = {
+  const collision = parseCollisionDetail(detail);
+  if (!collision) return null;
+  const key = COLLISION_FIELD_TO_VALIDATION_KEY[collision.field];
+  return {
     namespace_status: 'VALID', namespace_error: null,
     branch_status: 'VALID', branch_error: null,
     git_ops_path_status: 'VALID', git_ops_path_error: null,
     argocd_status: 'VALID', argocd_error: null,
     overall_status: 'INVALID',
+    [`${key}_status`]: 'INVALID',
+    [`${key}_error`]: detail,
   };
-  if (detail.includes('namespace')) return { ...base, namespace_status: 'INVALID', namespace_error: detail };
-  if (detail.includes('ArgoCD Application')) return { ...base, argocd_status: 'INVALID', argocd_error: detail };
-  if (detail.includes('path GitOps')) return { ...base, git_ops_path_status: 'INVALID', git_ops_path_error: detail };
-  return null;
 }
 
 const ROLE_LABEL: Record<string, string> = {
@@ -153,12 +161,12 @@ export default function Settings() {
   }
 
   function startNewProject() {
-    // Limpa o projeto ativo antes de entrar no onboarding, senão o passo "Criar Project"
-    // faz pre-fill com o nome/gitops do projeto atual em vez de abrir um formulário vazio.
+    // OB_PROJECT_ID/OB_PROJ_NAME ficam intactos até o novo projeto ser mesmo criado — se o
+    // utilizador abandonar o onboarding a meio (fecha o separador, navega para trás), a app
+    // continua a apontar para o projeto atual em vez de ficar sem nenhum. O formulário "Criar
+    // Project" usa OB_MODE (não estes valores) para decidir se deve fazer pre-fill.
     // ob_mode='new_project' diz ao onboarding para saltar o passo Team (já existe e não
     // deve ser recriado) e ajusta a numeração/"Voltar" para refletir o sub-fluxo de 6 passos.
-    localStorage.removeItem(OB_PROJECT_ID);
-    localStorage.removeItem(OB_PROJ_NAME);
     localStorage.setItem(OB_MODE, 'new_project');
     nav('/onboarding/project');
   }

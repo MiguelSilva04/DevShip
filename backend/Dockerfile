@@ -6,4 +6,4 @@ COPY requirements.txt pyproject.toml alembic.ini ./
 COPY backend ./backend
 RUN pip install --no-cache-dir -r requirements.txt -e .
 
-CMD ["uvicorn", "backend.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "backend.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=172.28.0.10"]
