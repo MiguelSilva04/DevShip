@@ -106,16 +106,25 @@ def _already_decided_message(current_status: RequestStatus) -> str:
     return f"Este pedido já não está pendente — o estado atual é {_STATUS_LABEL_PT[current_status]}."
 
 
-def _require_team_member(db: Session, app_env_id: uuid.UUID, user: User) -> tuple[ApplicationEnvironment, Environment, Application]:
+def _require_team_member(db: Session, app_env_id: uuid.UUID, user: User) -> tuple[TeamMember, Environment, Application]:
     ae = _get_app_env_or_404(db, app_env_id)
     env = db.get(Environment, ae.environment_id)
     app = db.get(Application, ae.application_id)
 
-    _require_application_access(db, ae.application_id, user)
-    return ae, env, app
+    member = _require_application_access(db, ae.application_id, user)
+    return member, env, app
 
 
-def _require_cluster_reachable(db: Session, env: Environment) -> None:
+# validate_cluster() devolve uma mensagem já pensada para quem configura o cluster (fala
+# de Cluster ARN / IAM Role ARN) — apropriada para um Cloud Engineer, mas ininteligível para
+# um Developer/Tech Lead que só está a tentar fazer deploy e não gere infraestrutura nenhuma.
+_CLUSTER_UNREACHABLE_NON_CLOUD_MESSAGE = (
+    "Não foi possível ligar ao cluster deste ambiente neste momento. "
+    "Tenta novamente mais tarde ou contacta um Cloud Engineer da tua equipa."
+)
+
+
+def _require_cluster_reachable(db: Session, env: Environment, requester_role: TeamMemberRole) -> None:
     """Checked before dispatching anything to GitHub Actions — without this, a deploy with
     an unreachable cluster still burns a real CI build (and its minutes/cost) only to fail
     later at the K8s phase in observe_deployment(), when the outcome was already knowable
@@ -132,7 +141,8 @@ def _require_cluster_reachable(db: Session, env: Environment) -> None:
             external_id=cluster_ctx.external_id,
         )
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
+        detail = str(e) if requester_role == TeamMemberRole.CLOUD_ENGINEER else _CLUSTER_UNREACHABLE_NON_CLOUD_MESSAGE
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
 
 
 def _check_github_gate(app: Application, environment: Environment, user: User, check_authorship: bool) -> str | None:
@@ -156,7 +166,7 @@ def _check_github_gate(app: Application, environment: Environment, user: User, c
 _ROLE_RANK = {TeamMemberRole.DEVELOPER: 0, TeamMemberRole.TECH_LEAD: 1, TeamMemberRole.CLOUD_ENGINEER: 2}
 
 
-def _require_approver(db: Session, req: DeploymentRequest, user: User) -> None:
+def _require_approver(db: Session, req: DeploymentRequest, user: User) -> TeamMember:
     """Check user has the approval_required_role for this request's environment, and —
     same as every other Application-scoped route — that a DEVELOPER approver also holds
     an ApplicationTeamMember grant for it. Without this, a Tech Lead with no grant on the
@@ -176,7 +186,7 @@ def _require_approver(db: Session, req: DeploymentRequest, user: User) -> None:
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Rollback para uma versão previamente abandonada requer aprovação de Tech Lead ou Cloud Engineer",
                 )
-            return
+            return member
 
     # approval_required_role é um patamar mínimo, não uma role exata — uma role acima na
     # hierarquia (ex: CLOUD_ENGINEER quando é exigido TECH_LEAD) cobre-a sempre, porque quem
@@ -189,6 +199,8 @@ def _require_approver(db: Session, req: DeploymentRequest, user: User) -> None:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Este pedido só pode ser aprovado por um {role_label}.",
             )
+
+    return member
 
 
 # ---------------------------------------------------------------------------
@@ -209,9 +221,9 @@ def create_deploy(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _, env, app = _require_team_member(db, app_env_id, current_user)
+    member, env, app = _require_team_member(db, app_env_id, current_user)
     warning = _check_github_gate(app, env, current_user, check_authorship=not body.confirmed)
-    _require_cluster_reachable(db, env)
+    _require_cluster_reachable(db, env, member.role)
 
     req = DeploymentRequest(
         application_environment_id=app_env_id,
@@ -267,9 +279,9 @@ def create_rollback(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _, env, app = _require_team_member(db, app_env_id, current_user)
+    member, env, app = _require_team_member(db, app_env_id, current_user)
     _check_github_gate(app, env, current_user, check_authorship=False)
-    _require_cluster_reachable(db, env)
+    _require_cluster_reachable(db, env, member.role)
 
     current = (
         db.query(DeploymentVersion)
@@ -422,7 +434,7 @@ def approve_deploy(
     current_user: User = Depends(get_current_user),
 ):
     req = _get_request_or_404(db, request_id)
-    _require_approver(db, req, current_user)
+    member = _require_approver(db, req, current_user)
 
     if req.status != RequestStatus.PENDING:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_already_decided_message(req.status))
@@ -430,7 +442,7 @@ def approve_deploy(
     ae = db.get(ApplicationEnvironment, req.application_environment_id)
     env = db.get(Environment, ae.environment_id)
     app = db.get(Application, ae.application_id)
-    _require_cluster_reachable(db, env)
+    _require_cluster_reachable(db, env, member.role)
 
     req.approved_by = current_user.id
     req.approved_at = datetime.now(timezone.utc)

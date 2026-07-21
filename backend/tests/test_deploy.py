@@ -208,6 +208,49 @@ class TestCreateDeploy:
             DeploymentRequest.application_environment_id == app_env.id
         ).count() == 0
 
+    def test_cluster_unreachable_message_is_adapted_for_non_cloud_engineer(self, client, db_session):
+        """A Cloud Engineer configures Cluster ARN / IAM Role ARN and understands a message
+        naming them — a Tech Lead or Developer trying to deploy has no idea what those are.
+        validate_cluster()'s message (infra-flavored) must only reach Cloud Engineers; anyone
+        else gets a plain-language message pointing them at a Cloud Engineer instead."""
+        user, team, project, env, app, app_env = _setup_chain(db_session)
+
+        cluster_ctx = ClusterContext(
+            project_id=project.id,
+            cluster_arn="arn:aws:eks:us-east-1:123:cluster/c",
+            cluster_name="c",
+            region="us-east-1",
+            eks_endpoint="https://k8s.example.com",
+            ca_certificate="CERT",
+            ca_file_path="/tmp/ca.crt",
+            iam_role_arn="arn:aws:iam::123:role/r",
+            external_id=str(uuid.uuid4()),
+        )
+        db_session.add(cluster_ctx)
+        db_session.flush()
+
+        tl_email = f"tl@{user.email.split('@')[1]}"
+        _register(client, tl_email)
+        token = _login(client, tl_email)
+        tl_user = db_session.query(User).filter(User.email == tl_email).first()
+        tl_user.github_username = "octocat"
+        db_session.add(TeamMember(team_id=team.id, user_id=tl_user.id, role=TeamMemberRole.TECH_LEAD, added_by=None))
+        db_session.flush()
+
+        with (
+            patch("backend.api.routes.deploy.is_repo_collaborator", return_value=True),
+            patch("backend.api.routes.deploy.validate_cluster", side_effect=ValueError("Não foi possível ligar ao cluster. Verifica se o cluster ainda existe e se as credenciais (Cluster ARN / IAM Role ARN) continuam válidas.")),
+            patch("backend.services.deploy_pipeline.http.post") as mock_post,
+        ):
+            r = client.post(f"/application-environments/{app_env.id}/deploy", json={}, headers=_auth(token))
+            mock_post.assert_not_called()
+
+        assert r.status_code == 502
+        detail = r.json()["detail"]
+        assert "Cluster ARN" not in detail
+        assert "IAM Role ARN" not in detail
+        assert "Cloud Engineer" in detail
+
     def test_in_flight_deploy_blocks_second(self, client, db_session):
         _, team, project, env, app, app_env = _setup_chain(db_session)
 
