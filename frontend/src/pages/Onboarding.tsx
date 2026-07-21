@@ -1028,7 +1028,13 @@ export function OnboardingEnvironments() {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10, fontSize: 12 }}>
                   <div><span style={{ color: 'var(--text-3)' }}>Namespace</span><div style={{ marginTop: 4 }}><ValBadge status={r.validation.namespace_status} error={r.validation.namespace_error} /></div></div>
-                  <div><span style={{ color: 'var(--text-3)' }}>Source Branch</span><div className="mono" style={{ marginTop: 4, color: 'var(--text-2)' }}>{envs.find(e => e.name === r.name)?.source_branch || '—'}</div></div>
+                  <div>
+                    <span className="ds-tooltip" style={{ position: 'relative', color: 'var(--text-3)', cursor: 'default', borderBottom: '1px dotted var(--text-3)' }}>
+                      Source Branch
+                      <span className="ds-tooltip-bubble">Não é validado neste passo — ainda não existe nenhuma Application associada a este Environment, por isso não há repositório de código para confirmar que a branch existe. A validação passa a ser possível depois de importares Applications.</span>
+                    </span>
+                    <div className="mono" style={{ marginTop: 4, color: 'var(--text-2)' }}>{envs.find(e => e.name === r.name)?.source_branch || '—'}</div>
+                  </div>
                   <div><span style={{ color: 'var(--text-3)' }}>GitOps Branch</span><div style={{ marginTop: 4 }}><ValBadge status={r.validation.branch_status} error={r.validation.branch_error} /></div></div>
                   <div><span style={{ color: 'var(--text-3)' }}>GitOps Path</span><div style={{ marginTop: 4 }}><ValBadge status={r.validation.git_ops_path_status} error={r.validation.git_ops_path_error} /></div></div>
                   <div><span style={{ color: 'var(--text-3)' }}>ArgoCD</span><div style={{ marginTop: 4 }}><ValBadge status={r.validation.argocd_status} error={r.validation.argocd_error} /></div></div>

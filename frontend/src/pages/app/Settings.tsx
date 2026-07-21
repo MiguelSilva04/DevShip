@@ -558,6 +558,7 @@ export default function Settings() {
             </Field>
             <Field label="Source branch">
               <input value={envForm.source_branch ?? ''} onChange={e => setEnvForm(f => ({ ...f, source_branch: e.target.value }))} style={inputStyle} className="mono" />
+              <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 5 }}>Não é validado — depende do repositório de código de cada Application, não do GitOps.</div>
             </Field>
             <Field label="ArgoCD application">
               <input value={envForm.argocd_application_name ?? ''} onChange={e => setEnvForm(f => ({ ...f, argocd_application_name: e.target.value }))} style={inputStyle} className="mono" placeholder="demo-app-dev" />
