@@ -164,6 +164,11 @@ function StageRow({ stage, state, events, isLast }: { stage: Stage; state: Stage
   const [open, setOpen] = useState(false);
   const labelColor = state === 'done' ? 'var(--text)' : state === 'failed' ? '#ff8497' : state === 'active' ? '#ecc26b' : 'var(--text-3)';
   const lineColor = state === 'done' ? 'rgba(52,199,89,.35)' : state === 'failed' ? 'rgba(241,85,108,.35)' : 'var(--border)';
+  // A seta (e a possibilidade de expandir) tem de estar disponível assim que o stage está
+  // "active" — a decorrer, mesmo sem nenhum evento ainda — e não só depois de já ter
+  // terminado com eventos guardados. Sem isto, um stage em curso ficava sem qualquer forma
+  // de o utilizador confirmar que está mesmo a decorrer até ele terminar.
+  const expandable = events.length > 0 || state === 'active';
 
   return (
     <div style={{ display: 'flex', gap: 14 }}>
@@ -173,15 +178,20 @@ function StageRow({ stage, state, events, isLast }: { stage: Stage; state: Stage
       </div>
       <div style={{ flex: 1, paddingBottom: isLast ? 0 : 18 }}>
         <button
-          onClick={() => events.length > 0 && setOpen(v => !v)}
-          style={{ background: 'transparent', border: 'none', padding: 0, cursor: events.length > 0 ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left' }}
+          onClick={() => expandable && setOpen(v => !v)}
+          style={{ background: 'transparent', border: 'none', padding: 0, cursor: expandable ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left' }}
         >
           <span style={{ fontSize: 13.5, fontWeight: 600, color: labelColor }}>{stage.label}</span>
           {state === 'active' && <span style={{ fontSize: 11, color: '#ecc26b', animation: 'ds-pulse 1.4s infinite' }}>a decorrer…</span>}
-          {events.length > 0 && (
+          {expandable && (
             <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--text-3)', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>▶</span>
           )}
         </button>
+        {open && events.length === 0 && (
+          <div className="mono" style={{ marginTop: 8, padding: '10px 12px', borderRadius: 8, background: 'var(--bg-2)', fontSize: 11, color: 'var(--text-3)' }}>
+            A aguardar o primeiro evento deste stage…
+          </div>
+        )}
         {open && events.length > 0 && (
           <div className="mono" style={{ marginTop: 8, padding: '10px 12px', borderRadius: 8, background: 'var(--bg-2)', fontSize: 11, lineHeight: 1.8 }}>
             {events.map(ev => (

@@ -22,9 +22,11 @@ from backend.bd.models.deployment_event import DeploymentEvent, DeploymentEventT
 from backend.bd.models.deployment_request import DeploymentRequest, DeploymentType, RequestStatus
 from backend.bd.models.deployment_version import DeploymentVersion, LifecycleStatus, TriggerSource
 from backend.bd.models.environment import Environment
+from backend.bd.models.project import Project
 from backend.bd.session import SessionLocal
 from backend.services.cluster_validation import get_cluster_token
 from backend.services.gitops_scanner import resolve_branch_head as _resolve_branch_head
+from backend.services.gitops_scanner import resolve_path_head as _resolve_path_head
 from backend.services.kubernetes_reader import KubernetesNotFoundError, get_argocd_application, list_deployment, list_pods_in_namespace
 
 _SEVERITY = {
@@ -161,6 +163,7 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
         app_env = db.get(ApplicationEnvironment, req.application_environment_id)
         env = db.get(Environment, app_env.environment_id)
         app = db.get(Application, app_env.application_id)
+        project = db.get(Project, env.project_id)
         cluster_ctx = db.query(ClusterContext).filter(ClusterContext.project_id == env.project_id).first()
 
         version = DeploymentVersion(
@@ -275,15 +278,21 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
 
                 if phase == "Succeeded" and "Succeeded" not in sync_phase_seen:
                     sync_phase_seen.add("Succeeded")
-                    # operation_sync_revision (status.operationState.syncResult.revision) é a
-                    # revisão que ESTA operação de sync aplicou — diferente de status.sync.revision,
-                    # que reflete o estado geral do app e pode ainda mostrar a revisão do sync
-                    # ANTERIOR mesmo já com phase="Succeeded" (são sub-objetos atualizados de
-                    # forma independente). Usar sync.revision aqui produzia uma condição de
-                    # corrida real: em deploys consecutivos rápidos ao mesmo Environment, a
-                    # versão do deploy N ficava gravada com o commit do deploy N-1, disparando
-                    # o falso aviso "manifesto alterado fora da DevShip" mesmo com tudo saudável.
-                    if argocd_app.status.operation_sync_revision:
+                    # Nem status.sync.revision nem status.operationState.syncResult.revision
+                    # são de fiar aqui: ambos são campos do CRD ArgoCD Application que podem
+                    # ainda refletir a operação de sync ANTERIOR por um instante, mesmo já com
+                    # phase="Succeeded" desta operação — confirmado na prática com dois deploys
+                    # consecutivos ao mesmo Environment poucos minutos à parte, onde a versão
+                    # do deploy N ficava gravada com o commit do deploy N-1 (falso aviso de
+                    # "manifesto alterado fora da DevShip" mesmo com tudo saudável). A única
+                    # fonte de verdade é perguntar ao próprio GitHub qual o commit mais recente
+                    # que tocou o manifest_path desta AE, na gitops_branch do Environment —
+                    # exatamente o mesmo cálculo que get_up_to_date() faz para comparar depois.
+                    if app_env.manifest_path and env.gitops_branch and project and project.git_ops_repository_url:
+                        path_head = _resolve_path_head(project.git_ops_repository_url, env.gitops_branch, app_env.manifest_path)
+                        if path_head:
+                            version.argocd_sync_revision = path_head
+                    elif argocd_app.status.operation_sync_revision:
                         version.argocd_sync_revision = argocd_app.status.operation_sync_revision
                     _emit_event(db, version, DeploymentEventType.SYNC_COMPLETED, EventSource.ARGOCD)
                     _emit_event(db, version, DeploymentEventType.GITOPS_UPDATED, EventSource.ARGOCD)

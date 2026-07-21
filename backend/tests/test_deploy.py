@@ -535,19 +535,26 @@ class TestDeployPipeline:
         assert req.failure_reason == "boom"
         assert req.completed_at is not None
 
-    def test_observe_deployment_ignores_stale_sync_revision_seen_during_running(self, db_session, monkeypatch):
-        """Regression: argocd_sync_revision used to be captured on the first poll where
-        status.sync.revision was non-null, which can be the "Running" poll — but ArgoCD's
-        status.sync.revision during "Running" may still reflect the PREVIOUS sync, not the
-        one in progress. Capturing there recorded a stale (older) commit, which then made
-        get_up_to_date() compare that stale value against the manifest's real HEAD and wrongly
-        report "gitops_drift_status: Outdated" right after a successful deploy — exactly the
-        false "manifesto alterado fora da DevShip" warning reported. The capture must wait for
-        the "Succeeded" poll, which is guaranteed to reflect what THIS sync applied."""
+    def test_observe_deployment_prefers_github_path_head_over_argocd_status(self, db_session, monkeypatch):
+        """Regression: argocd_sync_revision was captured straight from the ArgoCD Application's
+        status (first status.sync.revision seen, then operationState.syncResult.revision) —
+        but BOTH of those CRD fields can still reflect a PREVIOUS sync operation even once
+        THIS operation reports phase="Succeeded" (confirmed in practice: two deploys to the
+        same Environment a few minutes apart, where the second deploy's version was recorded
+        with the first deploy's commit). The only reliable source is asking GitHub directly
+        for the latest commit that touched this AE's manifest_path on the Environment's
+        gitops_branch — exactly what get_up_to_date() compares against later, so both sides
+        of the "did the manifest change outside DevShip" check now come from the same place.
+        This test proves the ArgoCD-reported revision is ignored once manifest_path/gitops_branch/
+        git_ops_repository_url are all configured, in favor of the resolve_path_head() result."""
         import backend.services.deploy_pipeline as dp
         from backend.services.deploy_pipeline import observe_deployment
 
         _, team, project, env, app, app_env = _setup_chain(db_session)
+        project.git_ops_repository_url = "https://github.com/org/gitops"
+        env.gitops_branch = "main"
+        app_env.manifest_path = "apps/demo-app/dev/api-deployment.yaml"
+        db_session.flush()
 
         cluster_ctx = ClusterContext(
             project_id=project.id,
@@ -588,20 +595,12 @@ class TestDeployPipeline:
         }
         github_run_resp.raise_for_status = MagicMock()
 
-        # "Running" poll still reports the PREVIOUS sync's revision on both fields — ArgoCD
-        # hasn't updated either to the new commit yet at this point.
-        argocd_running = MagicMock()
-        argocd_running.status.operation_phase = "Running"
-        argocd_running.status.sync_revision = "0ldc0mm1t"
-        argocd_running.status.operation_sync_revision = "0ldc0mm1t"
-
-        # "Succeeded" poll: operationState.syncResult.revision (operation_sync_revision) is
-        # what THIS sync actually applied — status.sync.revision is left stale on purpose to
-        # prove the code reads the right field, not the general (possibly lagging) one.
+        # ArgoCD reports the PREVIOUS operation's revision on both fields, even at
+        # phase="Succeeded" for THIS operation — the exact race observed in production.
         argocd_succeeded = MagicMock()
         argocd_succeeded.status.operation_phase = "Succeeded"
-        argocd_succeeded.status.sync_revision = "0ldc0mm1t"
-        argocd_succeeded.status.operation_sync_revision = "newcommit"
+        argocd_succeeded.status.sync_revision = "stale-from-prior-sync"
+        argocd_succeeded.status.operation_sync_revision = "stale-from-prior-sync"
 
         cond_done = MagicMock()
         cond_done.type = "Progressing"
@@ -628,7 +627,107 @@ class TestDeployPipeline:
         http_get_calls = iter([github_run_resp, raw_pods_resp])
         monkeypatch.setattr(dp.http, "get", lambda *a, **kw: next(http_get_calls))
 
-        argocd_calls = iter([argocd_running, argocd_succeeded])
+        argocd_calls = iter([argocd_succeeded])
+        monkeypatch.setattr(dp, "get_argocd_application", lambda *a, **kw: next(argocd_calls))
+
+        dep_calls = iter([dep_done])
+        monkeypatch.setattr(dp, "list_deployment", lambda *a, **kw: next(dep_calls))
+
+        monkeypatch.setattr(dp, "list_pods_in_namespace", lambda *a, **kw: pod_list)
+
+        fake_eks = MagicMock()
+        monkeypatch.setattr(dp, "get_cluster_token", lambda **kw: fake_eks)
+        monkeypatch.setattr(dp.time, "sleep", lambda _: None)
+        monkeypatch.setattr(dp, "_resolve_path_head", lambda repo_url, branch, path: "real-commit-for-this-deploy")
+
+        observe_deployment(req.id)
+
+        version = db_session.query(DeploymentVersion).filter(
+            DeploymentVersion.deployment_request_id == req.id
+        ).first()
+        assert version is not None
+        assert version.argocd_sync_revision == "real-commit-for-this-deploy"
+
+    def test_observe_deployment_falls_back_to_argocd_status_without_gitops_config(self, db_session, monkeypatch):
+        """When manifest_path/gitops_branch/git_ops_repository_url aren't all configured,
+        there's nothing to ask GitHub for — the old ArgoCD-status-based capture is the only
+        signal available, same as before this change."""
+        import backend.services.deploy_pipeline as dp
+        from backend.services.deploy_pipeline import observe_deployment
+
+        _, team, project, env, app, app_env = _setup_chain(db_session)
+        # manifest_path left unset on purpose — no GitHub path to resolve.
+
+        cluster_ctx = ClusterContext(
+            project_id=project.id,
+            cluster_arn="arn:aws:eks:us-east-1:123:cluster/c",
+            cluster_name="c",
+            region="us-east-1",
+            eks_endpoint="https://k8s.example.com",
+            ca_certificate="CERT",
+            ca_file_path="/tmp/ca.crt",
+            iam_role_arn="arn:aws:iam::123:role/r",
+            external_id=str(uuid.uuid4()),
+        )
+        db_session.add(cluster_ctx)
+        db_session.flush()
+
+        req = DeploymentRequest(
+            application_environment_id=app_env.id,
+            deployment_type=DeploymentType.STANDARD,
+            status=RequestStatus.RUNNING,
+            github_workflow_run_id=42,
+        )
+        db_session.add(req)
+        db_session.flush()
+
+        class _NoClose:
+            def __init__(self, s): self._s = s
+            def __getattr__(self, n): return getattr(self._s, n)
+            def close(self): pass
+
+        monkeypatch.setattr(dp, "SessionLocal", lambda: _NoClose(db_session))
+
+        github_run_resp = MagicMock()
+        github_run_resp.json.return_value = {
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "newcommit1234567890",
+            "run_number": 7,
+        }
+        github_run_resp.raise_for_status = MagicMock()
+
+        argocd_succeeded = MagicMock()
+        argocd_succeeded.status.operation_phase = "Succeeded"
+        argocd_succeeded.status.sync_revision = "abcdef1"
+        argocd_succeeded.status.operation_sync_revision = "abcdef1"
+
+        cond_done = MagicMock()
+        cond_done.type = "Progressing"
+        cond_done.reason = "NewReplicaSetAvailable"
+        dep_done = MagicMock()
+        dep_done.status.conditions = [cond_done]
+
+        pod = MagicMock()
+        pod.metadata.name = "api-deploy-abc"
+        pod_list = MagicMock()
+        pod_list.items = [pod]
+
+        raw_pods_resp = MagicMock()
+        raw_pods_resp.json.return_value = {
+            "items": [{
+                "metadata": {"name": "api-deploy-abc"},
+                "status": {
+                    "containerStatuses": [],
+                    "conditions": [{"type": "Ready", "status": "True"}],
+                },
+            }]
+        }
+
+        http_get_calls = iter([github_run_resp, raw_pods_resp])
+        monkeypatch.setattr(dp.http, "get", lambda *a, **kw: next(http_get_calls))
+
+        argocd_calls = iter([argocd_succeeded])
         monkeypatch.setattr(dp, "get_argocd_application", lambda *a, **kw: next(argocd_calls))
 
         dep_calls = iter([dep_done])
@@ -646,7 +745,7 @@ class TestDeployPipeline:
             DeploymentVersion.deployment_request_id == req.id
         ).first()
         assert version is not None
-        assert version.argocd_sync_revision == "newcommit"
+        assert version.argocd_sync_revision == "abcdef1"
 
     def test_fail_request_post_rollout_keeps_request_success(self, db_session):
         """DEV-10.1: a phase 4/5 failure (crash/readiness lost after rollout done) degrades
