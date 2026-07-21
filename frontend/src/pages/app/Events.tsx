@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
+import Breadcrumb from '../../components/Breadcrumb';
 
 interface K8sEvent {
   type: string;
@@ -23,7 +24,7 @@ function age(iso: string | null): string {
 
 export default function Events() {
   const { appId, aeId } = useParams<{ appId: string; aeId: string }>();
-  const { appLabel, envLabel } = useAppEnvBreadcrumb(appId, aeId);
+  const { appLabel, envLabel, appId: resolvedAppId } = useAppEnvBreadcrumb(appId, aeId);
   const [events, setEvents] = useState<K8sEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -42,7 +43,11 @@ export default function Events() {
 
   return (
     <div>
-      <div className="mono" style={{ fontSize:11, color:'var(--text-3)', marginBottom:6 }}>{appLabel} / {envLabel} / events</div>
+      <Breadcrumb segments={[
+        { label: appLabel, to: resolvedAppId ? `/app/${resolvedAppId}` : undefined },
+        { label: envLabel, to: (resolvedAppId && aeId) ? `/app/${resolvedAppId}/${aeId}` : undefined },
+        { label: 'events' },
+      ]} />
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
         <h1 style={{ fontSize:22, fontWeight:600, margin:0 }}>Kubernetes Events</h1>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>

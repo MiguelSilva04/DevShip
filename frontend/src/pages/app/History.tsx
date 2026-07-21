@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
-import { type LifecycleStatus, LIFECYCLE_COLOR } from '../../lib/lifecycle';
+import Breadcrumb from '../../components/Breadcrumb';
+import { type LifecycleStatus, LIFECYCLE_COLOR, LIFECYCLE_LABEL } from '../../lib/lifecycle';
 
 interface DeploymentVersionDetail {
   id: string;
@@ -21,7 +22,7 @@ function statusBadge(s: LifecycleStatus) {
 
 export default function History() {
   const { appId, aeId } = useParams<{ appId?: string; aeId?: string }>();
-  const { appLabel, envLabel } = useAppEnvBreadcrumb(appId, aeId);
+  const { appLabel, envLabel, appId: resolvedAppId } = useAppEnvBreadcrumb(appId, aeId);
   const [versions, setVersions] = useState<DeploymentVersionDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -38,8 +39,12 @@ export default function History() {
 
   return (
     <div>
-      <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.01em', margin: '0 0 4px' }}>Histórico</h1>
-      <p className="mono" style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 22px' }}>{appLabel} / {envLabel}</p>
+      <Breadcrumb segments={[
+        { label: appLabel, to: resolvedAppId ? `/app/${resolvedAppId}` : undefined },
+        { label: envLabel, to: (resolvedAppId && aeId) ? `/app/${resolvedAppId}/${aeId}` : undefined },
+        { label: 'história' },
+      ]} />
+      <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.01em', margin: '8px 0 22px' }}>Histórico</h1>
 
       {versions.length === 0 ? (
         <div style={{ fontSize: 13, color: 'var(--text-3)', padding: '20px 0' }}>Sem deploys registados.</div>
@@ -55,12 +60,12 @@ export default function History() {
                 <span>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999, fontSize: 11, background: b.bg, color: b.col, border: `1px solid ${b.bord}` }}>
                     <span style={{ width: 5, height: 5, borderRadius: '50%', background: b.dot, animation: b.anim ?? 'none', flex: 'none' }} />
-                    {v.lifecycle_status}
+                    {LIFECYCLE_LABEL[v.lifecycle_status] ?? v.lifecycle_status}
                   </span>
                 </span>
                 <span className="mono" style={{ fontSize: 12, color: 'var(--teal)' }}>{v.image_tag ?? '—'}</span>
                 <span className="mono" style={{ fontSize: 12, color: 'var(--text-2)' }}>{v.source_commit_sha ? v.source_commit_sha.slice(0, 7) : '—'}</span>
-                <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{v.trigger_source}</span>
+                <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{v.trigger_source === 'DEVSHIP' ? 'DevShip' : 'Externo'}</span>
                 <span style={{ fontSize: 11.5, color: 'var(--text-3)', textAlign: 'right' }}>
                   {v.deployed_at ? new Date(v.deployed_at).toLocaleString() : '—'}
                 </span>

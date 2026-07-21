@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
+import Breadcrumb from '../../components/Breadcrumb';
 
 interface Pod {
   name: string;
@@ -26,7 +27,7 @@ function age(iso: string | null): string {
 
 export default function Pods() {
   const { appId, aeId } = useParams<{ appId: string; aeId: string }>();
-  const { appLabel, envLabel } = useAppEnvBreadcrumb(appId, aeId);
+  const { appLabel, envLabel, appId: resolvedAppId } = useAppEnvBreadcrumb(appId, aeId);
   const [pods, setPods] = useState<Pod[]>([]);
   const [metricsAvailable, setMetricsAvailable] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -48,7 +49,11 @@ export default function Pods() {
 
   return (
     <div>
-      <div className="mono" style={{ fontSize:11, color:'var(--text-3)', marginBottom:6 }}>{appLabel} / {envLabel} / pods</div>
+      <Breadcrumb segments={[
+        { label: appLabel, to: resolvedAppId ? `/app/${resolvedAppId}` : undefined },
+        { label: envLabel, to: (resolvedAppId && aeId) ? `/app/${resolvedAppId}/${aeId}` : undefined },
+        { label: 'pods' },
+      ]} />
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
         <h1 style={{ fontSize:22, fontWeight:600, margin:0 }}>Pods</h1>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>

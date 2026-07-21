@@ -171,7 +171,10 @@ def _require_approver(db: Session, req: DeploymentRequest, user: User) -> None:
                 )
             return
 
-    if env.requires_approval and env.approval_required_role is not None:
+    # Cloud Engineer é o topo da hierarquia de roles da Team — não faz sentido bloqueá-lo
+    # atrás de um approval_required_role mais baixo (ex: TECH_LEAD): não existe ninguém acima
+    # dele para "escalar" o pedido, por isso pode sempre aprovar, seja qual for a role exigida.
+    if env.requires_approval and env.approval_required_role is not None and member.role != TeamMemberRole.CLOUD_ENGINEER:
         if member.role != env.approval_required_role:
             role_label = _ROLE_LABEL_PT.get(env.approval_required_role, env.approval_required_role.value)
             raise HTTPException(

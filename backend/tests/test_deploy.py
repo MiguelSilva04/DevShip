@@ -336,6 +336,62 @@ class TestApproveReject:
         assert r3.status_code == 409
         assert "em execução" in r3.json()["detail"]
 
+    def test_cloud_engineer_can_approve_even_when_role_requires_tech_lead(self, client, db_session):
+        """Cloud Engineer is the top of the Team role hierarchy — there's no one above to
+        escalate to, so an approval_required_role of TECH_LEAD (or any other role) must
+        never block a Cloud Engineer from approving. Regression: the equality check used to
+        be exact (member.role != approval_required_role), which rejected the Cloud Engineer
+        exactly like any other mismatched role."""
+        user, team, project, env, app, app_env = _setup_chain(db_session)
+        env.requires_approval = True
+        env.approval_required_role = TeamMemberRole.TECH_LEAD
+        db_session.flush()
+        req = self._pending_request(db_session, app_env, user)
+
+        approver_email = f"ce@{user.email.split('@')[1]}"
+        _register(client, approver_email)
+        token = _login(client, approver_email)
+        approver = db_session.query(User).filter(User.email == approver_email).first()
+        db_session.add(TeamMember(team_id=team.id, user_id=approver.id, role=TeamMemberRole.CLOUD_ENGINEER, added_by=None))
+        db_session.flush()
+
+        with (
+            patch("backend.services.deploy_pipeline._resolve_branch_head", return_value="abc"),
+            patch("backend.services.deploy_pipeline.http.post") as mock_post,
+            patch("backend.services.deploy_pipeline._resolve_run_id", return_value=99),
+        ):
+            mock_resp = MagicMock()
+            mock_resp.raise_for_status.return_value = None
+            mock_post.return_value = mock_resp
+            r = client.post(f"/deployment-requests/{req.id}/approve", headers=_auth(token))
+        assert r.status_code == 200, r.text
+
+    def test_tech_lead_requirement_still_blocks_developer(self, client, db_session):
+        """Regression guard for the Cloud Engineer exemption above: it must not accidentally
+        widen the check for everyone else — a Developer still can't approve a request that
+        requires TECH_LEAD."""
+        user, team, project, env, app, app_env = _setup_chain(db_session)
+        env.requires_approval = True
+        env.approval_required_role = TeamMemberRole.TECH_LEAD
+        db_session.flush()
+        req = self._pending_request(db_session, app_env, user)
+
+        from backend.bd.models.application_team_member import ApplicationTeamMember
+
+        dev_email = f"dev@{user.email.split('@')[1]}"
+        _register(client, dev_email)
+        token = _login(client, dev_email)
+        dev_user = db_session.query(User).filter(User.email == dev_email).first()
+        member = TeamMember(team_id=team.id, user_id=dev_user.id, role=TeamMemberRole.DEVELOPER, added_by=None)
+        db_session.add(member)
+        db_session.flush()
+        db_session.add(ApplicationTeamMember(team_member_id=member.id, application_id=app.id))
+        db_session.flush()
+
+        r = client.post(f"/deployment-requests/{req.id}/approve", headers=_auth(token))
+        assert r.status_code == 403
+        assert "Tech Lead" in r.json()["detail"]
+
     def test_reject_requires_justification_pydantic(self, client, db_session):
         """Empty justification → 422 from Pydantic before hitting DB."""
         user, team, project, env, app, app_env = _setup_chain(db_session)

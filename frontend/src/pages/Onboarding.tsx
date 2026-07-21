@@ -1328,7 +1328,12 @@ export function OnboardingApplications() {
         ci_workflow_file: ciWorkflow[c.name] ?? '',
         environments: c.environments
           .filter(envName => envIds[envName])
-          .map(envName => ({ environment_id: envIds[envName], deployment_name: c.name, manifest_path: c.manifest_path })),
+          // manifest_paths[envName] — não o c.manifest_path singular (o do primeiro
+          // environment descoberto) — sem isto, todos os ApplicationEnvironments de um app
+          // com >1 environment ficavam a apontar para o mesmo ficheiro do GitOps, fazendo
+          // resolve_path_head devolver o mesmo commit para todos e o aviso de drift
+          // disparar/persistir incorretamente em environments que não tinham nada de errado.
+          .map(envName => ({ environment_id: envIds[envName], deployment_name: c.name, manifest_path: c.manifest_paths[envName] ?? c.manifest_path })),
       }));
       await apiFetch(`/projects/${projectId}/applications/import`, { method: 'POST', body: JSON.stringify({ applications }) });
       localStorage.removeItem(OB_MODE); // fim do fluxo — o próximo onboarding começa limpo

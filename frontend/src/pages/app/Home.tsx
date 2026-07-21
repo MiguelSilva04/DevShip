@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
-import { type LifecycleStatus, type UpToDateStatus, lifecycleColor, UP_TO_DATE_LABEL } from '../../lib/lifecycle';
+import { type LifecycleStatus, type UpToDateStatus, lifecycleColor, LIFECYCLE_LABEL, UP_TO_DATE_LABEL } from '../../lib/lifecycle';
 
 interface AEStatus {
   id: string;
@@ -141,7 +141,7 @@ export default function Home() {
                       style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 10px', borderRadius: 999, fontSize: 11, background: p.bg, color: p.col, border: `1px solid ${p.bord}` }}
                     >
                       <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.dot, animation: isActive(status) ? 'ds-pulse 1.4s infinite' : 'none' }} />
-                      {status ?? 'Desconhecido'}
+                      {status ? LIFECYCLE_LABEL[status] : 'Desconhecido'}
                       {status === null && (
                         <span className={`ds-tooltip-bubble${i === 0 ? ' ds-tooltip-bubble-below' : ''}`}>
                           A aplicação "{app.name}" ainda não foi <em>deployada</em> em {ae.environment_name} através da DevShip — o estado fica Desconhecido até ao primeiro deploy.

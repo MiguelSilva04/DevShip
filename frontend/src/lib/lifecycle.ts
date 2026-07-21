@@ -1,7 +1,15 @@
 // Shared LifecycleStatus type + color map — was duplicated across AppDetail, EnvDetail,
-// Home and History. Labels stay the raw enum values (no existing PT translation for these
-// was in use anywhere before this refactor); only the color/dot mapping is deduped here.
+// Home and History.
 export type LifecycleStatus = 'Deploying' | 'Healthy' | 'Degraded' | 'Failed' | 'RolledBack' | 'Superseded';
+
+export const LIFECYCLE_LABEL: Record<LifecycleStatus, string> = {
+  Deploying: 'A implementar',
+  Healthy: 'Saudável',
+  Degraded: 'Degradado',
+  Failed: 'Falhou',
+  RolledBack: 'Revertido',
+  Superseded: 'Substituído',
+};
 
 export interface LifecycleColor {
   bg: string;

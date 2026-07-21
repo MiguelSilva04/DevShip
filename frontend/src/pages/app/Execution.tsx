@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
+import Breadcrumb from '../../components/Breadcrumb';
 
 type RequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
 type Severity = 'INFO' | 'WARNING' | 'ERROR';
@@ -98,6 +99,7 @@ function computeStageStates(events: DeploymentEvent[], requestStatus: RequestSta
   const result: Record<string, { state: StageState; events: DeploymentEvent[] }> = {};
   const seenTypes = new Set(events.map(e => e.event_type));
   const anyFailed = requestStatus === 'FAILED' || requestStatus === 'CANCELLED';
+  const isTerminal = TERMINAL.includes(requestStatus);
 
   let priorStageDone = true;
   for (const stage of STAGES) {
@@ -113,6 +115,12 @@ function computeStageStates(events: DeploymentEvent[], requestStatus: RequestSta
     else if (failed) state = 'failed';
     else if (done) state = 'done';
     else if (started) state = anyFailed ? 'skipped' : 'active';
+    // O stage anterior já terminou mas este ainda não emitiu o seu próprio evento de
+    // início — o backend só emite ROLLOUT_STARTED/POD_CREATED quando encontra a condição
+    // certa no K8s, o que pode demorar um ou mais polls depois do stage anterior acabar.
+    // Sem isto, esse intervalo aparecia como "pending" (cinzento, parado) mesmo com o
+    // pipeline já em curso — o "espaço morto" reportado entre Sync e Rollout.
+    else if (!isTerminal) state = 'active';
     else state = 'pending';
 
     result[stage.key] = { state, events: stageEvents };
@@ -193,7 +201,7 @@ function StageRow({ stage, state, events, isLast }: { stage: Stage; state: Stage
 
 export default function Execution() {
   const { appId, aeId, reqId } = useParams<{ appId: string; aeId: string; reqId: string }>();
-  const { appLabel, envLabel } = useAppEnvBreadcrumb(appId, aeId);
+  const { appLabel, envLabel, appId: resolvedAppId } = useAppEnvBreadcrumb(appId, aeId);
   const nav = useNavigate();
   const [data, setData] = useState<RequestWithEvents | null>(null);
   const [error, setError] = useState('');
@@ -230,7 +238,11 @@ export default function Execution() {
 
   return (
     <div>
-      <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 6 }}>{appLabel} / {envLabel} / execução</div>
+      <Breadcrumb segments={[
+        { label: appLabel, to: resolvedAppId ? `/app/${resolvedAppId}` : undefined },
+        { label: envLabel, to: (resolvedAppId && aeId) ? `/app/${resolvedAppId}/${aeId}` : undefined },
+        { label: 'execução' },
+      ]} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 22 }}>
         <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>Execução do Deploy</h1>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 12px', borderRadius: 999, fontSize: 12, background: st.bg, color: st.col, border: `1px solid ${st.bord}` }}>

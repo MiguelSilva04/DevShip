@@ -37,5 +37,6 @@ export function useAppEnvBreadcrumb(appId: string | undefined, aeId: string | un
     appLabel: appName || appId || '',
     envLabel: envName || aeId || '',
     appId: appId ?? resolvedAppId,
+    aeId,
   };
 }

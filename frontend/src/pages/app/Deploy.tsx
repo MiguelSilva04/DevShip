@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useUser } from '../../context/UserContext';
 import { apiFetch } from '../../api/client';
 import GithubIdentityPrompt, { GITHUB_IDENTITY_ERROR } from '../../components/GithubIdentityPrompt';
+import Breadcrumb from '../../components/Breadcrumb';
 import { UP_TO_DATE_LABEL } from '../../lib/lifecycle';
 
 interface AEDetail {
@@ -100,7 +101,11 @@ export default function Deploy() {
 
   return (
     <div style={{ maxWidth: 720 }}>
-      <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 6 }}>{appLabel} / {envLabel} / deploy</div>
+      <Breadcrumb segments={[
+        { label: appLabel, to: appId ? `/app/${appId}` : undefined },
+        { label: envLabel, to: (appId && aeId) ? `/app/${appId}/${aeId}` : undefined },
+        { label: 'deploy' },
+      ]} />
       <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 4px' }}>
         {requiresApproval ? 'Solicitar deploy' : 'Deploy'} — <span style={{ color: 'var(--text-2)' }}>{envLabel}</span>
       </h1>

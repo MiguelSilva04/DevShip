@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
+import Breadcrumb from '../../components/Breadcrumb';
 
 interface LogLine {
   timestamp: string | null;
@@ -24,7 +25,7 @@ const levelColor: Record<string,string> = {
 
 export default function Logs() {
   const { appId, aeId } = useParams<{ appId: string; aeId: string }>();
-  const { appLabel, envLabel } = useAppEnvBreadcrumb(appId, aeId);
+  const { appLabel, envLabel, appId: resolvedAppId } = useAppEnvBreadcrumb(appId, aeId);
   const [pods, setPods] = useState<string[] | null>(null);
   const [pod, setPod] = useState('');
   const [lines, setLines] = useState<LogLine[]>([]);
@@ -66,7 +67,11 @@ export default function Logs() {
 
   return (
     <div>
-      <div className="mono" style={{ fontSize:11, color:'var(--text-3)', marginBottom:6 }}>{appLabel} / {envLabel} / logs</div>
+      <Breadcrumb segments={[
+        { label: appLabel, to: resolvedAppId ? `/app/${resolvedAppId}` : undefined },
+        { label: envLabel, to: (resolvedAppId && aeId) ? `/app/${resolvedAppId}/${aeId}` : undefined },
+        { label: 'logs' },
+      ]} />
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18 }}>
         <h1 style={{ fontSize:22, fontWeight:600, margin:0 }}>Logs</h1>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>

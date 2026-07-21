@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
-import { type LifecycleStatus, type UpToDateStatus, lifecycleColor, UP_TO_DATE_LABEL } from '../../lib/lifecycle';
+import { type LifecycleStatus, type UpToDateStatus, lifecycleColor, LIFECYCLE_LABEL, UP_TO_DATE_LABEL } from '../../lib/lifecycle';
+import Breadcrumb from '../../components/Breadcrumb';
 
 interface UpToDateResult {
   status: UpToDateStatus;
@@ -122,9 +123,11 @@ export default function EnvDetail() {
 
   return (
     <div>
-      <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 6 }}>
-        {appName || appId} / {label}
-      </div>
+      <Breadcrumb segments={[
+        { label: 'aplicações', to: '/app/home' },
+        { label: appName || appId || '', to: (appId) ? `/app/${appId}` : undefined },
+        { label },
+      ]} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginBottom: 22 }}>
         <h1 style={{ fontSize: 23, fontWeight: 600, margin: 0 }}>
           {appName || appId} <span style={{ color: 'var(--text-3)' }}>/</span> {label}
@@ -134,7 +137,7 @@ export default function EnvDetail() {
           style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 12px', borderRadius: 999, fontSize: 12, background: p.bg, color: p.col, border: `1px solid ${p.bord}` }}
         >
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.dot, animation: status === 'Deploying' ? 'ds-pulse 1.4s infinite' : 'none' }} />
-          {status ?? 'Desconhecido'}
+          {status ? LIFECYCLE_LABEL[status] : 'Desconhecido'}
           {status === null && (
             <span className="ds-tooltip-bubble">
               A aplicação "{appName || appId}" ainda não foi <em>deployada</em> em {label} através da DevShip — o estado fica Desconhecido até ao primeiro deploy.
@@ -249,7 +252,7 @@ export default function EnvDetail() {
                 <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 14, borderTop: '1px solid var(--border-soft)', paddingTop: 12 }}>Sem erros recentes.</div>
               </>
             ) : (
-              <div style={{ fontSize: 13, color: 'var(--text-3)' }}>Estado: {status ?? 'Desconhecido'}. Ver Health Details para mais info.</div>
+              <div style={{ fontSize: 13, color: 'var(--text-3)' }}>Estado: {status ? LIFECYCLE_LABEL[status] : 'Desconhecido'}. Ver Health Details para mais info.</div>
             )}
           </div>
         </div>
