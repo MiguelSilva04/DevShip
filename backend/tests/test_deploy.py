@@ -392,6 +392,34 @@ class TestApproveReject:
         assert r.status_code == 403
         assert "Tech Lead" in r.json()["detail"]
 
+    def test_tech_lead_can_approve_when_role_requires_only_developer(self, client, db_session):
+        """approval_required_role is a floor, not an exact match — a role above it in the
+        hierarchy (TECH_LEAD when DEVELOPER is required) always covers it, same principle
+        as the Cloud Engineer exemption above but for the DEVELOPER/TECH_LEAD pair."""
+        user, team, project, env, app, app_env = _setup_chain(db_session)
+        env.requires_approval = True
+        env.approval_required_role = TeamMemberRole.DEVELOPER
+        db_session.flush()
+        req = self._pending_request(db_session, app_env, user)
+
+        tl_email = f"tl@{user.email.split('@')[1]}"
+        _register(client, tl_email)
+        token = _login(client, tl_email)
+        tl_user = db_session.query(User).filter(User.email == tl_email).first()
+        db_session.add(TeamMember(team_id=team.id, user_id=tl_user.id, role=TeamMemberRole.TECH_LEAD, added_by=None))
+        db_session.flush()
+
+        with (
+            patch("backend.services.deploy_pipeline._resolve_branch_head", return_value="abc"),
+            patch("backend.services.deploy_pipeline.http.post") as mock_post,
+            patch("backend.services.deploy_pipeline._resolve_run_id", return_value=99),
+        ):
+            mock_resp = MagicMock()
+            mock_resp.raise_for_status.return_value = None
+            mock_post.return_value = mock_resp
+            r = client.post(f"/deployment-requests/{req.id}/approve", headers=_auth(token))
+        assert r.status_code == 200, r.text
+
     def test_reject_requires_justification_pydantic(self, client, db_session):
         """Empty justification → 422 from Pydantic before hitting DB."""
         user, team, project, env, app, app_env = _setup_chain(db_session)

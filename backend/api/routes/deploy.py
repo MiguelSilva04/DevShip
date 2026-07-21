@@ -149,6 +149,13 @@ def _check_github_gate(app: Application, environment: Environment, user: User, c
     return None
 
 
+# Hierarquia de roles da Team, do mais baixo ao mais alto — usada só para decidir se uma
+# role "cobre" a que é exigida numa aprovação (ex: approval_required_role=TECH_LEAD deixa
+# um CLOUD_ENGINEER aprovar também, nunca o contrário). Não usar isto para autorização de
+# acesso a nível de Application — aí a comparação continua a ser de igualdade exata.
+_ROLE_RANK = {TeamMemberRole.DEVELOPER: 0, TeamMemberRole.TECH_LEAD: 1, TeamMemberRole.CLOUD_ENGINEER: 2}
+
+
 def _require_approver(db: Session, req: DeploymentRequest, user: User) -> None:
     """Check user has the approval_required_role for this request's environment, and —
     same as every other Application-scoped route — that a DEVELOPER approver also holds
@@ -171,11 +178,12 @@ def _require_approver(db: Session, req: DeploymentRequest, user: User) -> None:
                 )
             return
 
-    # Cloud Engineer é o topo da hierarquia de roles da Team — não faz sentido bloqueá-lo
-    # atrás de um approval_required_role mais baixo (ex: TECH_LEAD): não existe ninguém acima
-    # dele para "escalar" o pedido, por isso pode sempre aprovar, seja qual for a role exigida.
-    if env.requires_approval and env.approval_required_role is not None and member.role != TeamMemberRole.CLOUD_ENGINEER:
-        if member.role != env.approval_required_role:
+    # approval_required_role é um patamar mínimo, não uma role exata — uma role acima na
+    # hierarquia (ex: CLOUD_ENGINEER quando é exigido TECH_LEAD) cobre-a sempre, porque quem
+    # está acima já podia fazer tudo o que a role exigida faz. O inverso não vale: uma role
+    # abaixo não aprova, mesmo que o pedido pareça "menos crítico" à primeira vista.
+    if env.requires_approval and env.approval_required_role is not None:
+        if _ROLE_RANK[member.role] < _ROLE_RANK[env.approval_required_role]:
             role_label = _ROLE_LABEL_PT.get(env.approval_required_role, env.approval_required_role.value)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
