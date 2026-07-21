@@ -78,9 +78,25 @@ def scenario(db_session):
 
 
 class TestGetPendingCommits:
-    def test_no_current_version_returns_reason(self, client, db_session, scenario):
+    def test_no_current_version_shows_branch_head(self, client, db_session, scenario):
+        """Primeiro deploy — sem versão anterior para comparar, mas o utilizador ainda vê
+        o HEAD da branch como o commit que vai ser deployado, em vez de um ecrã vazio."""
         token = _token_for(scenario["user"])
-        r = client.get(f"/application-environments/{scenario['ae'].id}/pending-commits", headers=_auth(token))
+        head_commit = {"sha": "a3f5b8c0000000000000000000000000000000", "type": "feat", "message": "setup inicial", "author": "jane.smith", "date": "2026-06-11T10:00:00Z"}
+        with patch("backend.api.routes.visibility.get_head_commit_detail", return_value=head_commit):
+            r = client.get(f"/application-environments/{scenario['ae'].id}/pending-commits", headers=_auth(token))
+        assert r.status_code == 200
+        data = r.json()
+        assert data["current_sha"] is None
+        assert data["head_sha"] == "a3f5b8c0000000000000000000000000000000"
+        assert len(data["commits"]) == 1
+        assert data["commits"][0]["type"] == "feat"
+        assert data["reason"] is None
+
+    def test_no_current_version_and_github_failure_returns_reason(self, client, db_session, scenario):
+        token = _token_for(scenario["user"])
+        with patch("backend.api.routes.visibility.get_head_commit_detail", return_value=None):
+            r = client.get(f"/application-environments/{scenario['ae'].id}/pending-commits", headers=_auth(token))
         assert r.status_code == 200
         data = r.json()
         assert data["commits"] == []

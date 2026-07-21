@@ -46,7 +46,7 @@ from backend.bd.models.user import User
 from backend.services.cluster_validation import get_cluster_token
 from backend.services.deploy_pipeline import compute_lifecycle_status
 from backend.services.eks_discovery import EKSClusterInfo
-from backend.services.gitops_scanner import compare_commits, resolve_branch_head, resolve_path_head
+from backend.services.gitops_scanner import compare_commits, get_head_commit_detail, resolve_branch_head, resolve_path_head
 from backend.services.kubernetes_reader import (
     container_probe_statuses,
     get_pod_logs,
@@ -733,10 +733,18 @@ def get_pending_commits(
 
     latest = _latest_versions_subquery(db, [ae_id]).first()
     current_sha = latest.source_commit_sha if latest else None
-    if current_sha is None:
-        return PendingCommitsResponse(reason="Sem deploy anterior — nada para comparar")
-
     branch = env.source_branch or "main"
+
+    if current_sha is None:
+        # Primeiro deploy — não há nada para comparar, mas o utilizador ainda quer saber
+        # o que vai ser deployado: mostra o HEAD da branch como o único "commit incluído",
+        # em vez de deixar o ecrã sem nenhuma informação do repositório.
+        head = get_head_commit_detail(app.source_repository, branch)
+        if head is None:
+            return PendingCommitsResponse(reason="Não foi possível obter o HEAD da branch via GitHub")
+        return PendingCommitsResponse(head_sha=head["sha"], commits=[PendingCommit(**head)])
+
+
     commits = compare_commits(app.source_repository, current_sha, branch)
     if commits is None:
         return PendingCommitsResponse(
