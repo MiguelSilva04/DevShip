@@ -269,22 +269,23 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
                 argocd_misses = 0
                 phase = argocd_app.status.operation_phase
 
-                # sync_revision não é exclusivo da fase "Running" — captura-se assim que
-                # disponível, independentemente de qual fase o polling apanhar primeiro.
-                # Evita perder o valor quando o sync é rápido e o primeiro poll já apanha
-                # "Succeeded" diretamente, sem nunca passar por "Running" no meio.
-                if version.argocd_sync_revision is None and argocd_app.status.sync_revision:
-                    version.argocd_sync_revision = argocd_app.status.sync_revision
-                    db.commit()
-
                 if phase == "Running" and "Running" not in sync_phase_seen:
                     sync_phase_seen.add("Running")
                     _emit_event(db, version, DeploymentEventType.SYNC_STARTED, EventSource.ARGOCD)
 
                 if phase == "Succeeded" and "Succeeded" not in sync_phase_seen:
                     sync_phase_seen.add("Succeeded")
+                    # Só aqui, na conclusão desta operação, é que status.sync.revision reflete
+                    # com certeza o commit que ELA sincronizou — capturar em qualquer poll
+                    # anterior (ex: o primeiro, antes do sync desta operação terminar) podia
+                    # gravar a revisão ainda anterior a este deploy, produzindo um falso aviso
+                    # de "manifesto alterado fora da DevShip" no ecrã do Environment logo a
+                    # seguir a um deploy bem sucedido.
+                    if argocd_app.status.sync_revision:
+                        version.argocd_sync_revision = argocd_app.status.sync_revision
                     _emit_event(db, version, DeploymentEventType.SYNC_COMPLETED, EventSource.ARGOCD)
                     _emit_event(db, version, DeploymentEventType.GITOPS_UPDATED, EventSource.ARGOCD)
+                    db.commit()
                     break
 
                 if phase in ("Failed", "Error"):

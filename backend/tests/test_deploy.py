@@ -479,56 +479,114 @@ class TestDeployPipeline:
         assert req.failure_reason == "boom"
         assert req.completed_at is not None
 
-    def test_sync_revision_capture_condition_skips_empty_value(self, db_session):
-        """Unit-level check of the capture guard itself: `version.argocd_sync_revision is
-        None and argocd_app.status.sync_revision` — a falsy sync_revision (None or "") must
-        not overwrite the field, even though the "is None" side of the guard is satisfied."""
+    def test_observe_deployment_ignores_stale_sync_revision_seen_during_running(self, db_session, monkeypatch):
+        """Regression: argocd_sync_revision used to be captured on the first poll where
+        status.sync.revision was non-null, which can be the "Running" poll — but ArgoCD's
+        status.sync.revision during "Running" may still reflect the PREVIOUS sync, not the
+        one in progress. Capturing there recorded a stale (older) commit, which then made
+        get_up_to_date() compare that stale value against the manifest's real HEAD and wrongly
+        report "gitops_drift_status: Outdated" right after a successful deploy — exactly the
+        false "manifesto alterado fora da DevShip" warning reported. The capture must wait for
+        the "Succeeded" poll, which is guaranteed to reflect what THIS sync applied."""
+        import backend.services.deploy_pipeline as dp
+        from backend.services.deploy_pipeline import observe_deployment
+
         _, team, project, env, app, app_env = _setup_chain(db_session)
-        version = DeploymentVersion(
-            application_environment_id=app_env.id,
-            trigger_source=TriggerSource.DEVSHIP,
-            lifecycle_status=LifecycleStatus.DEPLOYING,
+
+        cluster_ctx = ClusterContext(
+            project_id=project.id,
+            cluster_arn="arn:aws:eks:us-east-1:123:cluster/c",
+            cluster_name="c",
+            region="us-east-1",
+            eks_endpoint="https://k8s.example.com",
+            ca_certificate="CERT",
+            ca_file_path="/tmp/ca.crt",
+            iam_role_arn="arn:aws:iam::123:role/r",
+            external_id=str(uuid.uuid4()),
         )
-        db_session.add(version)
+        db_session.add(cluster_ctx)
         db_session.flush()
 
-        argocd_app = MagicMock()
-        argocd_app.status.sync_revision = None
-
-        if version.argocd_sync_revision is None and argocd_app.status.sync_revision:
-            version.argocd_sync_revision = argocd_app.status.sync_revision
-            db_session.commit()
-
-        db_session.refresh(version)
-        assert version.argocd_sync_revision is None
-
-    def test_sync_revision_capture_condition_does_not_overwrite_once_set(self, db_session):
-        """Unit-level check: once argocd_sync_revision is set, later polls (even with a
-        different sync_revision, e.g. a subsequent sync) must not overwrite it or re-commit —
-        this is the guard that keeps observe_deployment's polling loop from writing on
-        every single iteration once the value is already known."""
-        _, team, project, env, app, app_env = _setup_chain(db_session)
-        version = DeploymentVersion(
+        req = DeploymentRequest(
             application_environment_id=app_env.id,
-            trigger_source=TriggerSource.DEVSHIP,
-            lifecycle_status=LifecycleStatus.DEPLOYING,
-            argocd_sync_revision="first-revision",
+            deployment_type=DeploymentType.STANDARD,
+            status=RequestStatus.RUNNING,
+            github_workflow_run_id=42,
         )
-        db_session.add(version)
+        db_session.add(req)
         db_session.flush()
 
-        argocd_app = MagicMock()
-        argocd_app.status.sync_revision = "second-revision"
+        class _NoClose:
+            def __init__(self, s): self._s = s
+            def __getattr__(self, n): return getattr(self._s, n)
+            def close(self): pass
 
-        commits = 0
-        if version.argocd_sync_revision is None and argocd_app.status.sync_revision:
-            version.argocd_sync_revision = argocd_app.status.sync_revision
-            db_session.commit()
-            commits += 1
+        monkeypatch.setattr(dp, "SessionLocal", lambda: _NoClose(db_session))
 
-        assert commits == 0
-        db_session.refresh(version)
-        assert version.argocd_sync_revision == "first-revision"
+        github_run_resp = MagicMock()
+        github_run_resp.json.return_value = {
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "newcommit1234567890",
+            "run_number": 7,
+        }
+        github_run_resp.raise_for_status = MagicMock()
+
+        # "Running" poll still reports the PREVIOUS sync's revision (0ldc0mm1t) — ArgoCD
+        # hasn't updated status.sync.revision to the new commit yet at this point.
+        argocd_running = MagicMock()
+        argocd_running.status.operation_phase = "Running"
+        argocd_running.status.sync_revision = "0ldc0mm1t"
+
+        # "Succeeded" poll reflects the commit THIS sync actually applied.
+        argocd_succeeded = MagicMock()
+        argocd_succeeded.status.operation_phase = "Succeeded"
+        argocd_succeeded.status.sync_revision = "newcommit"
+
+        cond_done = MagicMock()
+        cond_done.type = "Progressing"
+        cond_done.reason = "NewReplicaSetAvailable"
+        dep_done = MagicMock()
+        dep_done.status.conditions = [cond_done]
+
+        pod = MagicMock()
+        pod.metadata.name = "api-deploy-abc"
+        pod_list = MagicMock()
+        pod_list.items = [pod]
+
+        raw_pods_resp = MagicMock()
+        raw_pods_resp.json.return_value = {
+            "items": [{
+                "metadata": {"name": "api-deploy-abc"},
+                "status": {
+                    "containerStatuses": [],
+                    "conditions": [{"type": "Ready", "status": "True"}],
+                },
+            }]
+        }
+
+        http_get_calls = iter([github_run_resp, raw_pods_resp])
+        monkeypatch.setattr(dp.http, "get", lambda *a, **kw: next(http_get_calls))
+
+        argocd_calls = iter([argocd_running, argocd_succeeded])
+        monkeypatch.setattr(dp, "get_argocd_application", lambda *a, **kw: next(argocd_calls))
+
+        dep_calls = iter([dep_done])
+        monkeypatch.setattr(dp, "list_deployment", lambda *a, **kw: next(dep_calls))
+
+        monkeypatch.setattr(dp, "list_pods_in_namespace", lambda *a, **kw: pod_list)
+
+        fake_eks = MagicMock()
+        monkeypatch.setattr(dp, "get_cluster_token", lambda **kw: fake_eks)
+        monkeypatch.setattr(dp.time, "sleep", lambda _: None)
+
+        observe_deployment(req.id)
+
+        version = db_session.query(DeploymentVersion).filter(
+            DeploymentVersion.deployment_request_id == req.id
+        ).first()
+        assert version is not None
+        assert version.argocd_sync_revision == "newcommit"
 
     def test_fail_request_post_rollout_keeps_request_success(self, db_session):
         """DEV-10.1: a phase 4/5 failure (crash/readiness lost after rollout done) degrades
