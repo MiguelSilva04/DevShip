@@ -122,6 +122,14 @@ def parse_argocd_application(data: dict):
     operation_state = data.get("status", {}).get("operationState", {}) or {}
     health = data.get("status", {}).get("health", {}) or {}
     sync = data.get("status", {}).get("sync", {}) or {}
+    # status.operationState.syncResult.revision — the revision THIS specific sync operation
+    # applied — not status.sync.revision, which reflects the Application's general current
+    # state and can still show the PREVIOUS sync's revision for a moment after operationState
+    # already reports "Succeeded" (they're two different sub-objects, updated independently).
+    # Reading sync.revision here caused a deploy_pipeline race: it captured whichever
+    # revision was fresh at the exact "Succeeded" poll, sometimes still the prior deploy's,
+    # which then made get_up_to_date() wrongly flag the manifest as "changed outside DevShip".
+    operation_sync_result = operation_state.get("syncResult", {}) or {}
     return type("ArgoCDApplication", (), {
         "metadata": type("Metadata", (), {
             "name": data["metadata"]["name"],
@@ -130,6 +138,7 @@ def parse_argocd_application(data: dict):
         "status": type("Status", (), {
             "sync_status": sync.get("status", "Unknown"),
             "sync_revision": sync.get("revision"),
+            "operation_sync_revision": operation_sync_result.get("revision"),
             "health_status": health.get("status", "Unknown"),
             "operation_phase": operation_state.get("phase", ""),
         })(),

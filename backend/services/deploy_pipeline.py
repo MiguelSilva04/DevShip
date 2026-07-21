@@ -275,14 +275,16 @@ def observe_deployment(deployment_request_id: uuid.UUID) -> None:
 
                 if phase == "Succeeded" and "Succeeded" not in sync_phase_seen:
                     sync_phase_seen.add("Succeeded")
-                    # Só aqui, na conclusão desta operação, é que status.sync.revision reflete
-                    # com certeza o commit que ELA sincronizou — capturar em qualquer poll
-                    # anterior (ex: o primeiro, antes do sync desta operação terminar) podia
-                    # gravar a revisão ainda anterior a este deploy, produzindo um falso aviso
-                    # de "manifesto alterado fora da DevShip" no ecrã do Environment logo a
-                    # seguir a um deploy bem sucedido.
-                    if argocd_app.status.sync_revision:
-                        version.argocd_sync_revision = argocd_app.status.sync_revision
+                    # operation_sync_revision (status.operationState.syncResult.revision) é a
+                    # revisão que ESTA operação de sync aplicou — diferente de status.sync.revision,
+                    # que reflete o estado geral do app e pode ainda mostrar a revisão do sync
+                    # ANTERIOR mesmo já com phase="Succeeded" (são sub-objetos atualizados de
+                    # forma independente). Usar sync.revision aqui produzia uma condição de
+                    # corrida real: em deploys consecutivos rápidos ao mesmo Environment, a
+                    # versão do deploy N ficava gravada com o commit do deploy N-1, disparando
+                    # o falso aviso "manifesto alterado fora da DevShip" mesmo com tudo saudável.
+                    if argocd_app.status.operation_sync_revision:
+                        version.argocd_sync_revision = argocd_app.status.operation_sync_revision
                     _emit_event(db, version, DeploymentEventType.SYNC_COMPLETED, EventSource.ARGOCD)
                     _emit_event(db, version, DeploymentEventType.GITOPS_UPDATED, EventSource.ARGOCD)
                     db.commit()

@@ -588,16 +588,20 @@ class TestDeployPipeline:
         }
         github_run_resp.raise_for_status = MagicMock()
 
-        # "Running" poll still reports the PREVIOUS sync's revision (0ldc0mm1t) — ArgoCD
-        # hasn't updated status.sync.revision to the new commit yet at this point.
+        # "Running" poll still reports the PREVIOUS sync's revision on both fields — ArgoCD
+        # hasn't updated either to the new commit yet at this point.
         argocd_running = MagicMock()
         argocd_running.status.operation_phase = "Running"
         argocd_running.status.sync_revision = "0ldc0mm1t"
+        argocd_running.status.operation_sync_revision = "0ldc0mm1t"
 
-        # "Succeeded" poll reflects the commit THIS sync actually applied.
+        # "Succeeded" poll: operationState.syncResult.revision (operation_sync_revision) is
+        # what THIS sync actually applied — status.sync.revision is left stale on purpose to
+        # prove the code reads the right field, not the general (possibly lagging) one.
         argocd_succeeded = MagicMock()
         argocd_succeeded.status.operation_phase = "Succeeded"
-        argocd_succeeded.status.sync_revision = "newcommit"
+        argocd_succeeded.status.sync_revision = "0ldc0mm1t"
+        argocd_succeeded.status.operation_sync_revision = "newcommit"
 
         cond_done = MagicMock()
         cond_done.type = "Progressing"
@@ -743,10 +747,12 @@ class TestDeployPipeline:
         argocd_running = MagicMock()
         argocd_running.status.operation_phase = "Running"
         argocd_running.status.sync_revision = "abcdef1"
+        argocd_running.status.operation_sync_revision = "abcdef1"
 
         argocd_succeeded = MagicMock()
         argocd_succeeded.status.operation_phase = "Succeeded"
         argocd_succeeded.status.sync_revision = "abcdef1"
+        argocd_succeeded.status.operation_sync_revision = "abcdef1"
 
         # ── K8s Deployment: Progressing → NewReplicaSetAvailable ─────────────
         cond_updating = MagicMock()
@@ -879,6 +885,7 @@ class TestDeployPipeline:
         argocd_succeeded = MagicMock()
         argocd_succeeded.status.operation_phase = "Succeeded"
         argocd_succeeded.status.sync_revision = "abcdef1"
+        argocd_succeeded.status.operation_sync_revision = "abcdef1"
 
         cond_done = MagicMock()
         cond_done.type = "Progressing"
@@ -991,10 +998,12 @@ class TestDeployPipeline:
         argocd_running = MagicMock()
         argocd_running.status.operation_phase = "Running"
         argocd_running.status.sync_revision = "0ldc0mm1t"
+        argocd_running.status.operation_sync_revision = "0ldc0mm1t"
 
         argocd_succeeded = MagicMock()
         argocd_succeeded.status.operation_phase = "Succeeded"
         argocd_succeeded.status.sync_revision = "0ldc0mm1t"
+        argocd_succeeded.status.operation_sync_revision = "0ldc0mm1t"
 
         cond_updating = MagicMock()
         cond_updating.type = "Progressing"
