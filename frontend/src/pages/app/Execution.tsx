@@ -278,7 +278,7 @@ export default function Execution() {
       <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '22px 22px 6px', marginBottom: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <span style={{ fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>Pipeline</span>
-          {!isTerminal && <span style={{ fontSize: 11, color: 'var(--teal)', animation: 'ds-pulse 1.4s infinite' }}>● live</span>}
+          {!isTerminal && <span style={{ fontSize: 11, color: 'var(--teal)', animation: 'ds-pulse 1.4s infinite' }}>● ao vivo</span>}
         </div>
         {STAGES.map((stage, i) => (
           <StageRow
