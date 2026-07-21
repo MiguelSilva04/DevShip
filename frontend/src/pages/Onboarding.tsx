@@ -128,10 +128,12 @@ export function ErrBanner({ msg }: { msg: string }) {
 }
 
 // ─── File preview (CI workflow, discovered manifest) ────────────────────────
-interface EnvPreviewOption { name: string; path: string; ref?: string; }
+interface EnvPreviewOption { name: string; path: string; branch?: string; }
 
-function FilePreviewButton({ repoUrl, path, ref, projectId, envOptions }: {
-  repoUrl: string; path: string; ref?: string; projectId: string;
+function FilePreviewButton({ repoUrl, path, branch, projectId, envOptions }: {
+  // 'branch', não 'ref' — 'ref' é uma prop reservada do React (referências DOM/instância);
+  // passá-la como prop normal a um componente funcional é descartada/gera warning.
+  repoUrl: string; path: string; branch?: string; projectId: string;
   // Quando o mesmo app foi encontrado em vários environments (manifest_paths com >1
   // entrada), mostra um seletor para trocar de environment sem fechar o modal — sem isto
   // o preview ficava preso ao primeiro environment descoberto.
@@ -142,18 +144,18 @@ function FilePreviewButton({ repoUrl, path, ref, projectId, envOptions }: {
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  // Identifica o último (repoUrl, path, ref) já carregado — refaz o fetch sempre que
+  // Identifica o último (repoUrl, path, branch) já carregado — refaz o fetch sempre que
   // qualquer um muda (ex.: o utilizador edita o nome do workflow file), em vez de assumir
   // "já tenho conteúdo, não repito" para sempre.
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
 
   const effectivePath = envOptions && activeEnv ? envOptions.find(o => o.name === activeEnv)?.path ?? path : path;
-  const effectiveRef = envOptions && activeEnv ? envOptions.find(o => o.name === activeEnv)?.ref ?? ref : ref;
-  const key = `${repoUrl}::${effectivePath}::${effectiveRef ?? ''}`;
+  const effectiveBranch = envOptions && activeEnv ? envOptions.find(o => o.name === activeEnv)?.branch ?? branch : branch;
+  const key = `${repoUrl}::${effectivePath}::${effectiveBranch ?? ''}`;
 
   function load() {
     setLoading(true); setError('');
-    const refParam = effectiveRef ? `&ref=${encodeURIComponent(effectiveRef)}` : '';
+    const refParam = effectiveBranch ? `&ref=${encodeURIComponent(effectiveBranch)}` : '';
     apiFetch(`/projects/${projectId}/file-preview?repo_url=${encodeURIComponent(repoUrl)}&path=${encodeURIComponent(effectivePath)}${refParam}`)
       .then((r: { content: string }) => { setContent(r.content); setLoadedKey(key); })
       .catch((e: Error) => { setError(e.message); setLoadedKey(key); })
@@ -1447,7 +1449,7 @@ export function OnboardingApplications() {
                             <FilePreviewButton
                               repoUrl={c.source_repository}
                               path={`.github/workflows/${ciWorkflow[c.name]}`}
-                              ref={c.environments[0] ? c.source_branches[c.environments[0]] : undefined}
+                              branch={c.environments[0] ? c.source_branches[c.environments[0]] : undefined}
                               projectId={projectId!}
                             />
                           </div>
