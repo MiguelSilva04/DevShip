@@ -55,12 +55,14 @@ def _scan_path(owner: str, repo: str, env_name: str, path: str, headers: dict, c
             if existing:
                 if env_name not in existing["environments"]:
                     existing["environments"].append(env_name)
+                existing["manifest_paths"][env_name] = file_entry["path"]
             else:
                 candidates.append({
                     "name": app_name,
                     "source_repository": source_repo,
                     "manifest_path": file_entry["path"],
                     "environments": [env_name],
+                    "manifest_paths": {env_name: file_entry["path"]},
                 })
 
 
@@ -149,11 +151,13 @@ def list_directory(repo_url: str, path: str, ref: str | None = None) -> list[dic
     return [{"name": e["name"], "type": e["type"]} for e in entries]
 
 
-def list_workflow_files(repo_url: str) -> list[str]:
-    """Lista os .yml/.yaml em .github/workflows/ do repo. Lista vazia se a pasta não existir
-    (repo sem workflows é um caso válido, ainda que incomum) — não é erro."""
+def list_workflow_files(repo_url: str, ref: str | None = None) -> list[str]:
+    """Lista os .yml/.yaml em .github/workflows/ do repo, no branch `ref` (o source_branch
+    configurado no Environment) se indicado — sem isto, cairia sempre no branch default do
+    repo de código mesmo que source_branch aponte para outro. Lista vazia se a pasta não
+    existir nesse branch (repo sem workflows, ou branch sem essa pasta) — não é erro."""
     return [
-        e["name"] for e in list_directory(repo_url, ".github/workflows")
+        e["name"] for e in list_directory(repo_url, ".github/workflows", ref)
         if e["type"] == "file" and e["name"].endswith((".yml", ".yaml"))
     ]
 

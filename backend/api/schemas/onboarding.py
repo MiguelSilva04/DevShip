@@ -185,11 +185,21 @@ class EnvironmentUpdate(BaseModel):
 
 # --- GitOps scan ---
 
+class WorkflowFilesResult(BaseModel):
+    files: list[str]
+    branch_error: Optional[str] = None
+
+
 class GitOpsScanResult(BaseModel):
     name: str
     source_repository: str
     manifest_path: str
     environments: list[str]
+    manifest_paths: dict[str, str] = {}
+    # Environment.source_branch de cada environment onde este app foi encontrado — permite
+    # ao frontend saber, por environment, qual branch usar ao ler o workflow file do repo
+    # de código (source_repository), já que essa branch não vem do manifest do GitOps.
+    source_branches: dict[str, str] = {}
 
 
 # --- User teams (Lobby) ---

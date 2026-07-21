@@ -1197,7 +1197,7 @@ class TestWorkflowFiles:
             )
 
         assert r.status_code == 200
-        assert r.json() == ["gitops-deploy.yml"]
+        assert r.json() == {"files": ["gitops-deploy.yml"], "branch_error": None}
 
     def test_returns_empty_list_on_upstream_error(self, client):
         token, team_id = _setup(client, "workflows2.io")
@@ -1211,7 +1211,26 @@ class TestWorkflowFiles:
             )
 
         assert r.status_code == 200
-        assert r.json() == []
+        assert r.json() == {"files": [], "branch_error": None}
+
+    def test_reports_branch_error_when_source_branch_not_found(self, client):
+        token, team_id = _setup(client, "workflows4.io")
+        project_id = _project(client, token, team_id)
+
+        with (
+            patch("backend.api.routes.onboarding.gs.validate_branch", return_value=False),
+            patch("backend.api.routes.onboarding.gs.list_workflow_files", return_value=[]),
+        ):
+            r = client.get(
+                f"/projects/{project_id}/workflow-files",
+                params={"source_repository": "https://github.com/org/backend", "source_branch": "principal"},
+                headers=_auth(token),
+            )
+
+        assert r.status_code == 200
+        data = r.json()
+        assert data["files"] == []
+        assert "principal" in data["branch_error"]
 
     def test_non_cloud_engineer_forbidden(self, client):
         token, team_id = _setup(client, "workflows3.io")

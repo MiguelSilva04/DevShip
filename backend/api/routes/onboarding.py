@@ -25,6 +25,7 @@ from backend.api.schemas.onboarding import (
     GithubIdentityRequest,
     GithubIdentityResponse,
     GitOpsScanResult,
+    WorkflowFilesResult,
     MemberEntry,
     PatchMemberRequest,
     PendingTeamEntry,
@@ -1293,29 +1294,42 @@ def gitops_scan(
 
     environments = db.query(Environment).filter(Environment.project_id == project_id).all()
     env_paths = [(e.name, e.git_ops_base_path) for e in environments if e.git_ops_base_path]
+    env_source_branches = {e.name: e.source_branch for e in environments if e.source_branch}
 
     try:
         candidates = gs.scan_gitops_repo(project.git_ops_repository_url, env_paths)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
+    for c in candidates:
+        c["source_branches"] = {env: env_source_branches[env] for env in c["environments"] if env in env_source_branches}
+
     return [GitOpsScanResult(**c) for c in candidates]
 
 
-@router.get("/projects/{project_id}/workflow-files", response_model=list[str])
+@router.get("/projects/{project_id}/workflow-files", response_model=WorkflowFilesResult)
 def list_workflow_files_for_repo(
     project_id: uuid.UUID,
     source_repository: str = Query(...),
+    source_branch: str | None = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Lista os workflow files no source_branch configurado no Environment — não no branch
+    default do repo. Uma source_branch inexistente é um erro visível (branch_error), não um
+    resultado vazio silencioso, porque um Deployment já foi encontrado no GitOps para este
+    app: o repo de código existe, só a branch indicada é que pode estar errada."""
     _require_cloud_engineer(db, project_id, current_user)
+    branch_error = None
+    if source_branch and not gs.validate_branch(source_repository, source_branch):
+        branch_error = f"A branch '{source_branch}' não foi encontrada em {source_repository}."
     try:
-        return gs.list_workflow_files(source_repository)
+        files = gs.list_workflow_files(source_repository, source_branch)
     except Exception:
         # rate limit, repo inacessível, etc. — não bloquear o onboarding por isto,
         # o frontend cai para o input manual.
-        return []
+        files = []
+    return WorkflowFilesResult(files=files, branch_error=branch_error)
 
 
 @router.get("/projects/{project_id}/file-preview")

@@ -128,21 +128,56 @@ export function ErrBanner({ msg }: { msg: string }) {
 }
 
 // ─── File preview (CI workflow, discovered manifest) ────────────────────────
-function FilePreviewButton({ repoUrl, path, projectId }: { repoUrl: string; path: string; projectId: string }) {
+interface EnvPreviewOption { name: string; path: string; ref?: string; }
+
+function FilePreviewButton({ repoUrl, path, ref, projectId, envOptions }: {
+  repoUrl: string; path: string; ref?: string; projectId: string;
+  // Quando o mesmo app foi encontrado em vários environments (manifest_paths com >1
+  // entrada), mostra um seletor para trocar de environment sem fechar o modal — sem isto
+  // o preview ficava preso ao primeiro environment descoberto.
+  envOptions?: EnvPreviewOption[];
+}) {
   const [open, setOpen] = useState(false);
+  const [activeEnv, setActiveEnv] = useState<string | null>(null);
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // Identifica o último (repoUrl, path, ref) já carregado — refaz o fetch sempre que
+  // qualquer um muda (ex.: o utilizador edita o nome do workflow file), em vez de assumir
+  // "já tenho conteúdo, não repito" para sempre.
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+
+  const effectivePath = envOptions && activeEnv ? envOptions.find(o => o.name === activeEnv)?.path ?? path : path;
+  const effectiveRef = envOptions && activeEnv ? envOptions.find(o => o.name === activeEnv)?.ref ?? ref : ref;
+  const key = `${repoUrl}::${effectivePath}::${effectiveRef ?? ''}`;
+
+  function load() {
+    setLoading(true); setError('');
+    const refParam = effectiveRef ? `&ref=${encodeURIComponent(effectiveRef)}` : '';
+    apiFetch(`/projects/${projectId}/file-preview?repo_url=${encodeURIComponent(repoUrl)}&path=${encodeURIComponent(effectivePath)}${refParam}`)
+      .then((r: { content: string }) => { setContent(r.content); setLoadedKey(key); })
+      .catch((e: Error) => { setError(e.message); setLoadedKey(key); })
+      .finally(() => setLoading(false));
+  }
 
   function handleOpen() {
     setOpen(true);
-    if (content !== null) return; // já carregado, não repetir o fetch
-    setLoading(true); setError('');
-    apiFetch(`/projects/${projectId}/file-preview?repo_url=${encodeURIComponent(repoUrl)}&path=${encodeURIComponent(path)}`)
-      .then((r: { content: string }) => setContent(r.content))
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
+    if (envOptions && !activeEnv) setActiveEnv(envOptions[0]?.name ?? null);
+    if (loadedKey === key) return; // já carregado exatamente este (repo, path, ref), não repetir
+    setContent(null);
+    load();
   }
+
+  function selectEnv(name: string) {
+    setActiveEnv(name);
+    setContent(null);
+  }
+
+  // Refaz o fetch quando o environment ativo muda dentro do modal já aberto.
+  useEffect(() => {
+    if (open && loadedKey !== key) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, open]);
 
   return (
     <>
@@ -153,12 +188,31 @@ function FilePreviewButton({ repoUrl, path, projectId }: { repoUrl: string; path
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setOpen(false)}>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: '20px 22px', maxWidth: 640, width: '100%', margin: '0 16px', maxHeight: '70vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <span className="mono" style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{path}</span>
+              <span className="mono" style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{effectivePath}</span>
               <button onClick={() => setOpen(false)} className="btn-ghost" style={{ fontSize: 12 }}>Fechar</button>
             </div>
+            {envOptions && envOptions.length > 1 && (
+              <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+                {envOptions.map(o => (
+                  <button
+                    key={o.name}
+                    onClick={() => selectEnv(o.name)}
+                    className="mono"
+                    style={{
+                      fontSize: 11, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                      border: `1px solid ${activeEnv === o.name ? 'var(--teal)' : 'var(--border)'}`,
+                      background: activeEnv === o.name ? 'rgba(43,199,180,.1)' : 'transparent',
+                      color: activeEnv === o.name ? 'var(--teal)' : 'var(--text-2)',
+                    }}
+                  >
+                    {o.name}
+                  </button>
+                ))}
+              </div>
+            )}
             {loading && <div style={{ fontSize: 13, color: 'var(--text-3)' }}>A carregar…</div>}
             {error && <div style={{ fontSize: 13, color: '#ff8497' }}>{error}</div>}
-            {content !== null && (
+            {!loading && content !== null && (
               <pre className="mono" style={{ fontSize: 12, color: 'var(--text)', overflow: 'auto', margin: 0, whiteSpace: 'pre-wrap' }}>{content}</pre>
             )}
           </div>
@@ -1147,6 +1201,8 @@ interface ScanResult {
   source_repository: string;
   manifest_path: string;
   environments: string[];
+  manifest_paths: Record<string, string>;
+  source_branches: Record<string, string>;
 }
 
 interface AppImportItem {
@@ -1165,6 +1221,7 @@ export function OnboardingApplications() {
   const [ciWorkflow, setCiWorkflow] = useState<Record<string, string>>({});
   const [workflowFiles, setWorkflowFiles] = useState<Record<string, string[]>>({});
   const [workflowLoading, setWorkflowLoading] = useState<Record<string, boolean>>({});
+  const [workflowBranchErr, setWorkflowBranchErr] = useState<Record<string, string>>({});
   const [envIds, setEnvIds] = useState<EnvIdMap>({});
   const [gitOpsUrl, setGitOpsUrl] = useState('');
   const [err, setErr] = useState('');
@@ -1198,12 +1255,20 @@ export function OnboardingApplications() {
       setSelected(new Set(res.map(r => r.name)));
 
       res.forEach(c => {
+        // A branch a usar para descobrir o workflow file é o source_branch do primeiro
+        // environment do candidato — mesmo critério já usado implicitamente para escolher
+        // qual manifest_path mostrar por omissão. Uma branch errada (o edge case que motivou
+        // isto) já não é ignorada: vem um branch_error explícito do backend.
+        const firstEnv = c.environments[0];
+        const branch = firstEnv ? c.source_branches[firstEnv] : undefined;
+        const branchParam = branch ? `&source_branch=${encodeURIComponent(branch)}` : '';
         setWorkflowLoading(p => ({ ...p, [c.name]: true }));
-        apiFetch(`/projects/${projectId}/workflow-files?source_repository=${encodeURIComponent(c.source_repository)}`)
-          .then((files: string[]) => {
-            setWorkflowFiles(p => ({ ...p, [c.name]: files }));
-            if (files.length === 1) {
-              setCiWorkflow(p => (p[c.name] ? p : { ...p, [c.name]: files[0] })); // não sobrescrever edição manual já feita
+        apiFetch(`/projects/${projectId}/workflow-files?source_repository=${encodeURIComponent(c.source_repository)}${branchParam}`)
+          .then((r: { files: string[]; branch_error: string | null }) => {
+            setWorkflowFiles(p => ({ ...p, [c.name]: r.files }));
+            if (r.branch_error) setWorkflowBranchErr(p => ({ ...p, [c.name]: r.branch_error! }));
+            if (r.files.length === 1) {
+              setCiWorkflow(p => (p[c.name] ? p : { ...p, [c.name]: r.files[0] })); // não sobrescrever edição manual já feita
             }
           })
           .catch(() => setWorkflowFiles(p => ({ ...p, [c.name]: [] })))
@@ -1232,6 +1297,28 @@ export function OnboardingApplications() {
       return;
     }
     setLoading(true); setErr('');
+
+    // O nome do workflow file pode ter sido escrito à mão (não veio da lista detetada
+    // automaticamente) — confirma que o ficheiro existe mesmo antes de importar, em vez de
+    // só verificar que o campo não está vazio. Sem isto, um nome errado só seria descoberto
+    // muito mais tarde, ao tentar correr o deploy.
+    const toVerify = toImport.filter(c => !(workflowFiles[c.name] ?? []).includes(ciWorkflow[c.name]));
+    if (toVerify.length > 0) {
+      const results = await Promise.all(toVerify.map(c => {
+        const branch = c.environments[0] ? c.source_branches[c.environments[0]] : undefined;
+        const refParam = branch ? `&ref=${encodeURIComponent(branch)}` : '';
+        return apiFetch(`/projects/${projectId}/file-preview?repo_url=${encodeURIComponent(c.source_repository)}&path=${encodeURIComponent(`.github/workflows/${ciWorkflow[c.name]}`)}${refParam}`)
+          .then(() => null)
+          .catch(() => c.name);
+      }));
+      const notFound = results.filter((n): n is string => n !== null);
+      if (notFound.length > 0) {
+        setErr(`O ficheiro de workflow indicado não foi encontrado para: ${notFound.join(', ')}. Confirma o nome e a branch.`);
+        setLoading(false);
+        return;
+      }
+    }
+
     try {
       const applications: AppImportItem[] = toImport.map(c => ({
         name: c.name,
@@ -1311,7 +1398,14 @@ export function OnboardingApplications() {
                     <input type="checkbox" checked={isSel} onChange={() => toggleSelect(c.name)} style={{ accentColor: 'var(--teal)', width: 16, height: 16, flex: 'none', cursor: 'pointer' }} />
                     <span style={{ fontSize: 14.5, fontWeight: 600 }}>{c.name}</span>
                     <span className="mono" style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{c.manifest_path}</span>
-                    {gitOpsUrl && <FilePreviewButton repoUrl={gitOpsUrl} path={c.manifest_path} projectId={projectId!} />}
+                    {gitOpsUrl && (
+                      <FilePreviewButton
+                        repoUrl={gitOpsUrl}
+                        path={c.manifest_path}
+                        projectId={projectId!}
+                        envOptions={c.environments.map(env => ({ name: env, path: c.manifest_paths[env] ?? c.manifest_path }))}
+                      />
+                    )}
                     <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       {c.environments.map(env => (
                         <span key={env} className="mono" style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: envIds[env] ? 'rgba(52,199,89,.12)' : 'var(--surface-2)', color: envIds[env] ? '#5dd57b' : 'var(--text-3)', border: `1px solid ${envIds[env] ? 'rgba(52,199,89,.24)' : 'var(--border)'}` }}>
@@ -1345,9 +1439,17 @@ export function OnboardingApplications() {
                             placeholder={workflowFiles[c.name]?.length === 0 ? 'Não detetado — escreve o nome do ficheiro' : 'gitops-deploy.yml'}
                           />
                         )}
+                        {workflowBranchErr[c.name] && (
+                          <div style={{ fontSize: 11.5, color: '#ff9aaa', marginTop: 6 }}>⚠ {workflowBranchErr[c.name]}</div>
+                        )}
                         {ciWorkflow[c.name] && (
                           <div style={{ marginTop: 8 }}>
-                            <FilePreviewButton repoUrl={c.source_repository} path={`.github/workflows/${ciWorkflow[c.name]}`} projectId={projectId!} />
+                            <FilePreviewButton
+                              repoUrl={c.source_repository}
+                              path={`.github/workflows/${ciWorkflow[c.name]}`}
+                              ref={c.environments[0] ? c.source_branches[c.environments[0]] : undefined}
+                              projectId={projectId!}
+                            />
                           </div>
                         )}
                       </FormField>
