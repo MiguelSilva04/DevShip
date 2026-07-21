@@ -1110,7 +1110,7 @@ def _run_environment_validations(
                 v.namespace_status = ValidationStatus.VALID
             else:
                 v.namespace_status = ValidationStatus.INVALID
-                v.namespace_error = f"Namespace '{env.namespace}' not found in cluster"
+                v.namespace_error = f"O namespace '{env.namespace}' não foi encontrado no cluster."
         except Exception:
             logger.exception("_run_environment_validations: namespace check failed (namespace=%s)", env.namespace)
             v.namespace_status = ValidationStatus.INVALID
@@ -1124,7 +1124,7 @@ def _run_environment_validations(
             ok = validate_branch(git_ops_url, env.gitops_branch)
             v.branch_status = ValidationStatus.VALID if ok else ValidationStatus.INVALID
             if not ok:
-                v.branch_error = f"Branch '{env.gitops_branch}' not found in {git_ops_url}"
+                v.branch_error = f"A branch '{env.gitops_branch}' não foi encontrada no repositório GitOps '{git_ops_url}'."
         except Exception:
             logger.exception("_run_environment_validations: branch check failed (branch=%s)", env.gitops_branch)
             v.branch_status = ValidationStatus.INVALID
@@ -1138,7 +1138,7 @@ def _run_environment_validations(
             ok = path_exists(git_ops_url, env.git_ops_base_path, env.gitops_branch)
             v.git_ops_path_status = ValidationStatus.VALID if ok else ValidationStatus.INVALID
             if not ok:
-                v.git_ops_path_error = f"Path '{env.git_ops_base_path}' not found on branch '{env.gitops_branch}'"
+                v.git_ops_path_error = f"O caminho '{env.git_ops_base_path}' não foi encontrado na branch '{env.gitops_branch}'."
         except Exception:
             logger.exception("_run_environment_validations: GitOps path check failed (path=%s)", env.git_ops_base_path)
             v.git_ops_path_status = ValidationStatus.INVALID
@@ -1156,7 +1156,7 @@ def _run_environment_validations(
             v.argocd_status = ValidationStatus.VALID
         except KubernetesNotFoundError:
             v.argocd_status = ValidationStatus.INVALID
-            v.argocd_error = f"ArgoCD Application '{env.argocd_application_name}' not found in namespace '{cluster.argocd_namespace}'"
+            v.argocd_error = f"A ArgoCD Application '{env.argocd_application_name}' não foi encontrada no namespace '{cluster.argocd_namespace}'."
         except Exception:
             logger.exception(
                 "_run_environment_validations: ArgoCD Application check failed (application=%s)",
