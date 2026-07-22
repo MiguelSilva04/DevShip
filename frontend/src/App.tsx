@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { UserProvider } from './context/UserContext';
+import { ThemeProvider } from './context/ThemeContext';
+import { LanguageProvider } from './context/LanguageContext';
 import ProtectedRoute from './routes/ProtectedRoute';
 import PublicRoute    from './routes/PublicRoute';
 import RoleRoute      from './routes/RoleRoute';
@@ -43,6 +45,8 @@ import HowItWorks   from './pages/app/HowItWorks';
 export default function App() {
   return (
     <BrowserRouter>
+      <ThemeProvider>
+      <LanguageProvider>
       <UserProvider>
         <Routes>
           <Route element={<PublicRoute />}>
@@ -102,6 +106,8 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </UserProvider>
+      </LanguageProvider>
+      </ThemeProvider>
     </BrowserRouter>
   );
 }

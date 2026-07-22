@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { type LifecycleStatus, type UpToDateStatus, lifecycleColor, LIFECYCLE_LABEL, UP_TO_DATE_LABEL } from '../../lib/lifecycle';
+import { useLanguage } from '../../context/LanguageContext';
 
 interface AEStatus {
   id: string;
@@ -38,6 +39,7 @@ function effectiveStatus(ae: AEStatus): LifecycleStatus | null {
 
 export default function Home() {
   const nav = useNavigate();
+  const { t } = useLanguage();
   const [data, setData] = useState<HomepageData | null>(null);
   const [error, setError] = useState('');
   const [open, setOpen] = useState<Record<string, boolean>>({});
@@ -49,7 +51,7 @@ export default function Home() {
 
   useEffect(() => {
     const projectId = localStorage.getItem('ob_project_id');
-    if (!projectId) { setError('Projeto não encontrado. Faz onboarding primeiro.'); return; }
+    if (!projectId) { setError(t('home.projectNotFound')); return; }
     apiFetch(`/projects/${projectId}/homepage`)
       .then(d => {
         setData(d);
@@ -84,19 +86,19 @@ export default function Home() {
 
   return (
     <div>
-      <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.01em', margin: '0 0 18px' }}>Resumo</h1>
+      <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.01em', margin: '0 0 18px' }}>{t('home.title')}</h1>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 13, marginBottom: 26 }}>
-        <StatCard label="Deploys ativos" value={String(data.total_application_environments)} />
-        <StatCard label="Saudáveis" value={String(data.healthy_count)} valueColor="#5dd57b" />
-        <StatCard label="Degradados" value={String(data.degraded_count)} valueColor="#ff8497" sub={data.degraded_count > 0 ? 'Requer atenção' : undefined} highlight={data.degraded_count > 0} />
-        <StatCard label="Deploys hoje" value={String(data.deploys_today)} />
+        <StatCard label={t('home.activeDeploys')} value={String(data.total_application_environments)} />
+        <StatCard label={t('home.healthy')} value={String(data.healthy_count)} valueColor="#5dd57b" />
+        <StatCard label={t('home.degraded')} value={String(data.degraded_count)} valueColor="#ff8497" sub={data.degraded_count > 0 ? t('home.needsAttention') : undefined} highlight={data.degraded_count > 0} />
+        <StatCard label={t('home.deploysToday')} value={String(data.deploys_today)} />
       </div>
 
-      <h2 style={{ fontSize: 15, fontWeight: 600, margin: '0 0 13px' }}>Aplicações</h2>
+      <h2 style={{ fontSize: 15, fontWeight: 600, margin: '0 0 13px' }}>{t('home.applicationsTitle')}</h2>
 
       {data.applications.length === 0 && (
-        <div style={{ color: 'var(--text-3)', fontSize: 13, padding: '24px 0' }}>Sem applications configuradas.</div>
+        <div style={{ color: 'var(--text-3)', fontSize: 13, padding: '24px 0' }}>{t('home.noApplications')}</div>
       )}
       {data.applications.map(app => (
         <div key={app.id} style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', overflow: 'hidden', marginBottom: 12 }}>
@@ -141,7 +143,7 @@ export default function Home() {
                       style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 10px', borderRadius: 999, fontSize: 11, background: p.bg, color: p.col, border: `1px solid ${p.bord}` }}
                     >
                       <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.dot, animation: isActive(status) ? 'ds-pulse 1.4s infinite' : 'none' }} />
-                      {status ? LIFECYCLE_LABEL[status] : 'Desconhecido'}
+                      {status ? LIFECYCLE_LABEL[status] : t('home.unknown')}
                       {status === null && (
                         <span className={`ds-tooltip-bubble${i === 0 ? ' ds-tooltip-bubble-below' : ''}`}>
                           A aplicação "{app.name}" ainda não foi <em>deployada</em> em {ae.environment_name} através da DevShip — o estado fica Desconhecido até ao primeiro deploy.
@@ -165,11 +167,11 @@ export default function Home() {
               style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: '1px solid rgba(43,199,180,.3)', background: 'rgba(43,199,180,.08)', color: 'var(--teal)', fontWeight: 600, fontSize: 12, padding: '7px 14px', borderRadius: 8, cursor: 'pointer' }}
               className="hover-bright"
             >
-              <DeployIcon />Deploy
+              <DeployIcon />{t('home.deploy')}
             </button>
             {picker[app.id] ? (
               <>
-                <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>para:</span>
+                <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{t('home.forEnv')}:</span>
                 {app.environments.map(ae => {
                   const checked = upToDate[ae.id];
                   if (!checked) {
@@ -180,7 +182,7 @@ export default function Home() {
                         className="mono"
                         style={{ fontSize: 11.5, border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--text-3)', padding: '6px 12px', borderRadius: 7, cursor: 'default', opacity: .7 }}
                       >
-                        {ae.environment_name} · a verificar…
+                        {ae.environment_name} · {t('home.checking')}
                       </button>
                     );
                   }
@@ -188,7 +190,7 @@ export default function Home() {
                     <button
                       key={ae.id}
                       disabled
-                      title="Já está tudo deployado — sem commits novos desde o último deploy."
+                      title={t('home.alreadyDeployedTitle')}
                       className="mono"
                       style={{ fontSize: 11.5, border: '1px solid rgba(52,199,89,.24)', background: 'rgba(52,199,89,.08)', color: '#5dd57b', padding: '6px 12px', borderRadius: 7, cursor: 'default' }}
                     >
@@ -207,9 +209,9 @@ export default function Home() {
                 })}
               </>
             ) : (
-              <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>Escolhe o environment de destino</span>
+              <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{t('home.chooseTargetEnv')}</span>
             )}
-            <button onClick={() => nav(`/app/${app.id}`)} className="btn-ghost" style={{ marginLeft: 'auto', fontSize: 12, padding: '6px 8px', borderRadius: 7 }}>Ver app →</button>
+            <button onClick={() => nav(`/app/${app.id}`)} className="btn-ghost" style={{ marginLeft: 'auto', fontSize: 12, padding: '6px 8px', borderRadius: 7 }}>{t('home.viewApp')}</button>
           </div>
         </div>
       ))}
@@ -230,7 +232,8 @@ function StatCard({ label, value, valueColor, sub, highlight }: { label: string;
 }
 
 function Spinner() {
-  return <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-3)', fontSize: 13, padding: '40px 0' }}><span style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--teal)', animation: 'ds-spin .9s linear infinite', display: 'inline-block' }} />A carregar…</div>;
+  const { t } = useLanguage();
+  return <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-3)', fontSize: 13, padding: '40px 0' }}><span style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--teal)', animation: 'ds-spin .9s linear infinite', display: 'inline-block' }} />{t('common.loading')}</div>;
 }
 
 function DeployIcon() {

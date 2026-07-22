@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { useUser, userFromBackend } from '../../context/UserContext';
+import { useTheme } from '../../context/ThemeContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { OB_TEAM_ID } from '../Onboarding';
 import GithubIdentityPrompt from '../../components/GithubIdentityPrompt';
 
@@ -12,6 +14,8 @@ export default function AppLayout() {
   const nav = useNavigate();
   const loc = useLocation();
   const { user, setUser, logout: authLogout } = useUser();
+  const { theme, toggleTheme } = useTheme();
+  const { language, setLanguage, t } = useLanguage();
   const [project, setProject] = useState<{ name: string; team_name: string } | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
   const [candidateCount, setCandidateCount] = useState(0);
@@ -112,24 +116,24 @@ export default function AppLayout() {
           <span style={{ fontSize:15, fontWeight:600, color:'var(--text)' }}>DevShip</span>
         </button>
 
-        <NavBtn icon={IconGrid}   label="Aplicações" style={active('home')}         onClick={() => nav('/app/home')} />
-        {isCloud && <NavBtn icon={IconLayers} label="Ambientes" style={active('environments')} onClick={() => nav('/app/environments')} />}
+        <NavBtn icon={IconGrid}   label={t('appLayout.applications')} style={active('home')}         onClick={() => nav('/app/home')} />
+        {isCloud && <NavBtn icon={IconLayers} label={t('appLayout.environments')} style={active('environments')} onClick={() => nav('/app/environments')} />}
         {canApprove && (
-          <NavBtn icon={IconShield} label="Aprovações" style={active('approvals')} onClick={() => nav('/app/approvals')}>
+          <NavBtn icon={IconShield} label={t('appLayout.approvals')} style={active('approvals')} onClick={() => nav('/app/approvals')}>
             {pendingCount > 0 && (
               <span style={{ marginLeft:'auto', background:'var(--teal)', color:'var(--teal-ink)', fontSize:10, fontWeight:600, minWidth:18, height:18, borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 5px' }}>{pendingCount}</span>
             )}
           </NavBtn>
         )}
         {canViewTeam && (
-          <NavBtn icon={IconUsers} label="Equipa" style={active('team')} onClick={() => nav('/app/team')}>
+          <NavBtn icon={IconUsers} label={t('appLayout.team')} style={active('team')} onClick={() => nav('/app/team')}>
             {canManageTeam && candidateCount > 0 && (
               <span style={{ marginLeft:'auto', background:'var(--teal)', color:'var(--teal-ink)', fontSize:10, fontWeight:600, minWidth:18, height:18, borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 5px' }}>{candidateCount}</span>
             )}
           </NavBtn>
         )}
-        {isCloud && <NavBtn icon={IconSettings} label="Definições"  style={active('settings')}  onClick={() => nav('/app/settings')} />}
-        <NavBtn icon={IconBook} label="Como funciona" style={active('how')} onClick={() => nav('/app/how')} />
+        {isCloud && <NavBtn icon={IconSettings} label={t('appLayout.settings')}  style={active('settings')}  onClick={() => nav('/app/settings')} />}
+        <NavBtn icon={IconBook} label={t('appLayout.howItWorks')} style={active('how')} onClick={() => nav('/app/how')} />
 
         {/* User — abre o popover de conta; logout passou a viver lá dentro, separado
             desta ação (que só mostra o perfil/identidade GitHub). */}
@@ -168,12 +172,12 @@ export default function AppLayout() {
             <div style={{ borderTop:'1px solid var(--border-soft)', paddingTop:14, marginBottom:14 }}>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                 <div>
-                  <div style={{ fontSize:12.5, fontWeight:500 }}>Identidade GitHub</div>
+                  <div style={{ fontSize:12.5, fontWeight:500 }}>{t('appLayout.githubIdentity')}</div>
                   <div style={{ fontSize:11, color:'var(--text-3)', marginTop:3 }}>
                     {me?.github_username ? (
                       <span className="mono">{me.github_username}</span>
                     ) : (
-                      'Ainda não configurada'
+                      t('appLayout.notConfigured')
                     )}
                   </div>
                 </div>
@@ -186,12 +190,35 @@ export default function AppLayout() {
               </div>
             </div>
 
+            <div style={{ borderTop:'1px solid var(--border-soft)', paddingTop:14, marginBottom:14, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <div style={{ display:'inline-flex', border:'1px solid var(--border)', borderRadius:8, padding:2 }}>
+                <button
+                  onClick={() => setLanguage('pt')}
+                  style={{ padding:'4px 9px', borderRadius:6, border:'none', cursor:'pointer', fontSize:11.5, fontWeight:600, background: language === 'pt' ? 'var(--surface-3)' : 'transparent', color: language === 'pt' ? 'var(--text)' : 'var(--text-3)' }}
+                >
+                  PT
+                </button>
+                <button
+                  onClick={() => setLanguage('en')}
+                  style={{ padding:'4px 9px', borderRadius:6, border:'none', cursor:'pointer', fontSize:11.5, fontWeight:600, background: language === 'en' ? 'var(--surface-3)' : 'transparent', color: language === 'en' ? 'var(--text)' : 'var(--text-3)' }}
+                >
+                  EN
+                </button>
+              </div>
+              <button
+                onClick={toggleTheme}
+                style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 10px', borderRadius:8, border:'1px solid var(--border)', background:'transparent', cursor:'pointer', fontSize:11.5, fontWeight:500, color:'var(--text)' }}
+              >
+                {theme === 'dark' ? '🌙' : '☀️'} {theme === 'dark' ? 'Dark' : 'Light'}
+              </button>
+            </div>
+
             <button
               onClick={logout}
               style={{ display:'flex', alignItems:'center', gap:9, borderTop:'1px solid var(--border-soft)', paddingTop:14, border:'none', background:'transparent', cursor:'pointer', color:'#ff8497', fontSize:12.5, width:'100%', textAlign:'left' }}
             >
               <IconLogout style={{ flex:'none', width:15, height:15 }} />
-              Terminar sessão
+              {t('appLayout.logout')}
             </button>
           </div>
         </div>

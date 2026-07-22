@@ -1,4 +1,11 @@
-:root {
+/* Tema escuro — omissão. O atributo data-theme no <html> (ThemeContext.tsx) escolhe qual
+   bloco se aplica; --teal/--green/--amber/--red/--gray/--blue mantêm-se iguais nos dois
+   temas (são cores de estado/marca, não de superfície) — só as cores de fundo/texto/borda
+   mudam. As centenas de cores hardcoded fora de var(--...) espalhadas pelas páginas NÃO
+   reagem a este toggle — só os elementos que já usam var(--...) mudam de tema; migrar
+   essas cores hardcoded é trabalho incremental por página, não desta mudança. */
+:root,
+:root[data-theme="dark"] {
   --bg: #0F1117;
   --bg-2: #0A0C11;
   --surface: #1A1D27;
@@ -20,6 +27,30 @@
   --panel-2: #0D1015;
   --line: rgba(255,255,255,.07);
   --line-2: rgba(255,255,255,.12);
+}
+
+:root[data-theme="light"] {
+  --bg: #F5F6F8;
+  --bg-2: #FFFFFF;
+  --surface: #FFFFFF;
+  --surface-2: #EEF0F3;
+  --surface-3: #E4E7EC;
+  --border: #D7DBE2;
+  --border-soft: #E4E7EC;
+  --text: #14161C;
+  --text-2: #4B5262;
+  --text-3: #7C8494;
+  --teal: #1A9C8C;
+  --teal-ink: #FFFFFF;
+  --green: #1E9A46;
+  --amber: #B0791E;
+  --red: #D6304C;
+  --gray: #6B7280;
+  --blue: #2E6FCB;
+  --panel: #FFFFFF;
+  --panel-2: #F5F6F8;
+  --line: rgba(0,0,0,.07);
+  --line-2: rgba(0,0,0,.12);
 }
 
 html, body {
