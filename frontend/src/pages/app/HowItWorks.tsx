@@ -50,7 +50,7 @@ function HowItWorksDev() {
       <h2 style={{ fontSize:14, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-3)', fontWeight:600, margin:'0 0 16px' }}>A mesma verdade, com menos fricção</h2>
       <div style={{ display:'flex', flexDirection:'column', gap:1, border:'1px solid var(--border)', borderRadius:14, overflow:'hidden', marginBottom:28 }}>
         {TRANSLATION_ROWS.map(([t1, t2, body], i) => (
-          <div key={i} style={{ display:'grid', gridTemplateColumns:'260px 1fr', background:'var(--surface)', borderBottom: i < TRANSLATION_ROWS.length - 1 ? '1px solid var(--border-soft)' : 'none' }}>
+          <div key={i} className="responsive-grid" style={{ display:'grid', gridTemplateColumns:'260px 1fr', background:'var(--surface)', borderBottom: i < TRANSLATION_ROWS.length - 1 ? '1px solid var(--border-soft)' : 'none' }}>
             <div style={{ padding:'17px 20px', borderRight:'1px solid var(--border-soft)' }}>
               <span style={{ fontSize:14, fontWeight:600 }}>{t1}</span><br />
               <span style={{ fontSize:14, fontWeight:600, color:'var(--teal)' }}>{t2}</span>
@@ -62,7 +62,7 @@ function HowItWorksDev() {
 
       {/* Permissões — reaproveita a mesma tabela de roles */}
       <h2 style={{ fontSize:14, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-3)', fontWeight:600, margin:'0 0 16px' }}>Permissões por role</h2>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:13 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:13 }}>
         {ROLES.map(r => (
           <div key={r.name} style={{ border:`1px solid ${r.border}`, borderRadius:13, background:r.bg, padding:'18px 18px' }}>
             <div style={{ fontSize:14, fontWeight:600, color:r.color, marginBottom:13 }}>{r.name}</div>
@@ -186,7 +186,7 @@ export default function HowItWorks() {
 
       {/* Roles */}
       <h2 style={{ fontSize:14, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-3)', fontWeight:600, margin:'0 0 16px' }}>Permissões por role</h2>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:13, marginBottom:28 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:13, marginBottom:28 }}>
         {ROLES.map(r => (
           <div key={r.name} style={{ border:`1px solid ${r.border}`, borderRadius:13, background:r.bg, padding:'18px 18px' }}>
             <div style={{ fontSize:14, fontWeight:600, color:r.color, marginBottom:13 }}>{r.name}</div>

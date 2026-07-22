@@ -86,7 +86,7 @@ export default function Home() {
     <div>
       <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.01em', margin: '0 0 18px' }}>Resumo</h1>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 13, marginBottom: 26 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 13, marginBottom: 26 }}>
         <StatCard label="Deploys ativos" value={String(data.total_application_environments)} />
         <StatCard label="Saudáveis" value={String(data.healthy_count)} valueColor="#5dd57b" />
         <StatCard label="Degradados" value={String(data.degraded_count)} valueColor="#ff8497" sub={data.degraded_count > 0 ? 'Requer atenção' : undefined} highlight={data.degraded_count > 0} />

@@ -431,7 +431,7 @@ export default function Settings() {
               </div>
               <button onClick={() => navigator.clipboard.writeText(cluster.cluster_arn)} style={btnSecondary}>Copiar</button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, fontSize: 12.5 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 14, fontSize: 12.5 }}>
               <div>
                 <div style={{ color: 'var(--text-3)' }}>Região</div>
                 <div className="mono" style={{ marginTop: 3 }}>{cluster.region}</div>

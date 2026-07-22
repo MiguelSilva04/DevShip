@@ -17,6 +17,11 @@ export default function AppLayout() {
   const [candidateCount, setCandidateCount] = useState(0);
   const [showAccount, setShowAccount] = useState(false);
   const [me, setMe] = useState<MeInfo | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Fecha o drawer da sidebar sempre que a rota muda — sem isto, navegar a partir de um
+  // NavBtn deixava o drawer aberto por cima da página seguinte em ecrãs estreitos.
+  useEffect(() => { setSidebarOpen(false); }, [loc.pathname]);
 
   useEffect(() => {
     const projectId = localStorage.getItem('ob_project_id');
@@ -94,8 +99,11 @@ export default function AppLayout() {
 
   return (
     <div style={{ display:'flex', alignItems:'flex-start', minHeight:'100vh' }}>
-      {/* Sidebar */}
-      <aside style={{ position:'sticky', top:0, height:'100vh', width:226, flex:'none', background:'var(--surface)', borderRight:'1px solid var(--border)', display:'flex', flexDirection:'column', padding:'16px 12px', overflowY:'auto' }}>
+      {/* Overlay atrás do drawer da sidebar em mobile — clicar fora fecha */}
+      <div className={`app-sidebar-overlay${sidebarOpen ? ' sidebar-open' : ''}`} onClick={() => setSidebarOpen(false)} />
+
+      {/* Sidebar — vira drawer com toggle abaixo de 900px (ver .app-sidebar em index.css) */}
+      <aside className={`app-sidebar${sidebarOpen ? ' sidebar-open' : ''}`} style={{ position:'sticky', top:0, height:'100vh', width:226, flex:'none', background:'var(--surface)', borderRight:'1px solid var(--border)', display:'flex', flexDirection:'column', padding:'16px 12px', overflowY:'auto' }}>
         <button
           onClick={() => nav('/app/home')}
           style={{ display:'flex', alignItems:'center', gap:9, padding:'4px 10px 16px', background:'transparent', border:'none', cursor:'pointer', textAlign:'left' }}
@@ -193,12 +201,23 @@ export default function AppLayout() {
       <main style={{ flex:1, minWidth:0 }}>
         {/* Topbar */}
         <div style={{ position:'sticky', top:0, zIndex:30, display:'flex', alignItems:'center', gap:14, padding:'14px 26px', background:'rgba(15,17,23,.85)', backdropFilter:'blur(12px)', borderBottom:'1px solid var(--border)' }}>
+          <button
+            className="app-hamburger"
+            onClick={() => setSidebarOpen(v => !v)}
+            aria-label="Abrir menu"
+            style={{ alignItems:'center', justifyContent:'center', width:34, height:34, borderRadius:8, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', cursor:'pointer', flex:'none' }}
+          >
+            <IconMenu style={{ width:16, height:16 }} />
+          </button>
           {project && (
-            <span className="mono" style={{ fontSize:13, color:'var(--text-2)' }}>
+            <span className="mono app-topbar-project" style={{ fontSize:13, color:'var(--text-2)' }}>
               {project.team_name} <span style={{ color:'var(--text-3)' }}>/</span> <span style={{ color:'var(--text)' }}>{project.name}</span>
             </span>
           )}
-          <div style={{ marginLeft:'auto', display:'flex', gap:8 }}>
+          {/* Duplicam a navegação já disponível na sidebar/drawer — só fazem sentido como
+              atalho quando a sidebar está sempre visível (desktop); em mobile escondem-se
+              via .app-topbar-actions (index.css) para não repetir a mesma navegação duas vezes. */}
+          <div className="app-topbar-actions" style={{ marginLeft:'auto', display:'flex', gap:8 }}>
             {canApprove && (
               <button onClick={() => nav('/app/approvals')} className="btn-secondary" style={{ display:'inline-flex', alignItems:'center', gap:7, fontSize:12, padding:'7px 12px', borderRadius:8 }}>
                 Aprovações
@@ -244,6 +263,9 @@ function NavBtn({ icon: Icon, label, style, onClick, children }: {
 }
 
 // SVG Icons
+function IconMenu({ style }: { style?: React.CSSProperties }) {
+  return <svg style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>;
+}
 function IconGrid({ style }: { style?: React.CSSProperties }) {
   return <svg style={style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>;
 }

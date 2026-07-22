@@ -57,14 +57,14 @@ export default function GithubIdentityPrompt({ onConfigured, configured, current
             <input
               value={username}
               onChange={e => setUsername(e.target.value)}
-              placeholder="ex: miguelsilva"
+              placeholder="ex: octocat"
               style={{ width: '100%', background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 13px', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 14 }}
             />
             <label style={{ fontSize: 12.5, color: 'var(--text-2)', display: 'block', marginBottom: 7 }}>Email associado ao GitHub</label>
             <input
               value={email}
               onChange={e => setEmail(e.target.value)}
-              placeholder="ex: miguel@github-noreply.com"
+              placeholder="ex: octocat@github-noreply.com"
               style={{ width: '100%', background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 13px', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }}
             />
             <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>

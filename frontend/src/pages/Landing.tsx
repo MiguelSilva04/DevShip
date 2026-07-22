@@ -21,7 +21,7 @@ export default function Landing() {
           <span style={{ fontSize:15.5, fontWeight:600, letterSpacing:'-.01em' }}>DevShip</span>
           <span className="mono" style={{ fontSize:10, fontWeight:600, letterSpacing:'.22em', color:'var(--teal)', background:'rgba(43,199,180,.1)', border:'1px solid rgba(43,199,180,.3)', borderRadius:5, padding:'3px 8px 3px 9px', marginLeft:4 }}>IDP</span>
         </div>
-        <div style={{ display:'flex', gap:24, marginLeft:26, fontSize:13, color:'var(--text-2)' }}>
+        <div className="landing-nav-links" style={{ display:'flex', gap:24, marginLeft:26, fontSize:13, color:'var(--text-2)' }}>
           <a href="#problema" className="hover-teal">O Problema</a>
           <a href="#pipeline" className="hover-teal">Pipeline</a>
           <a href="#prerequisitos" className="hover-teal">Pré-requisitos</a>
@@ -37,10 +37,10 @@ export default function Landing() {
 
       {/* HERO */}
       <header style={{ maxWidth:1180, margin:'0 auto', padding:'0 26px' }}>
-        <div style={{ display:'grid', gridTemplateColumns:'1.15fr .85fr', borderLeft:'1px solid var(--line-2)', borderRight:'1px solid var(--line-2)' }}>
-          <div style={{ padding:'64px 44px 56px', borderRight:'1px solid var(--line-2)' }}>
+        <div className="responsive-grid" style={{ display:'grid', gridTemplateColumns:'1.15fr .85fr', borderLeft:'1px solid var(--line-2)', borderRight:'1px solid var(--line-2)' }}>
+          <div className="responsive-border-bottom landing-section" style={{ padding:'64px 44px 56px', borderRight:'1px solid var(--line-2)' }}>
             <div className="mono" style={{ fontSize:11.5, letterSpacing:'.14em', color:'var(--teal)', marginBottom:22 }}>INTERNAL DEVELOPER PLATFORM · AWS&nbsp;EKS</div>
-            <h1 style={{ fontSize:48, lineHeight:1.06, fontWeight:700, letterSpacing:'-.03em', margin:0 }}>
+            <h1 style={{ fontSize:'clamp(32px, 8vw, 48px)', lineHeight:1.06, fontWeight:700, letterSpacing:'-.03em', margin:0 }}>
               Traduzimos Kubernetes.<br />
               <span style={{ color:'var(--text-3)' }}>Não o escondemos.</span>
             </h1>
@@ -85,9 +85,9 @@ export default function Landing() {
 
       {/* PROBLEMA */}
       <section id="problema" style={{ maxWidth:1180, margin:'0 auto', padding:'0 26px' }}>
-        <div style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px' }}>
+        <div className="landing-section" style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px' }}>
           <SectionLabel n="01" label="O Problema" />
-          <h2 style={{ fontSize:30, fontWeight:700, letterSpacing:'-.02em', margin:0, maxWidth:640, lineHeight:1.18 }}>Entre o developer e o cluster há demasiada espera</h2>
+          <h2 style={{ fontSize:'clamp(22px, 5vw, 30px)', fontWeight:700, letterSpacing:'-.02em', margin:0, maxWidth:640, lineHeight:1.18 }}>Entre o developer e o cluster há demasiada espera</h2>
           <p style={{ fontSize:14.5, color:'var(--text-2)', lineHeight:1.7, maxWidth:600, margin:'16px 0 0' }}>Sem uma plataforma interna, publicar uma aplicação significa pedir, esperar e depender de quem domina a infraestrutura. O Cloud Engineer torna-se um gargalo; o developer perde o controlo do que acontece depois do "deploy".</p>
           <figure style={{ margin:'30px 0 0', border:'1px solid var(--line-2)', borderRadius:10, overflow:'hidden', background:'var(--panel)' }}>
             <figcaption className="mono" style={{ display:'flex', alignItems:'center', gap:10, fontSize:10.5, color:'var(--text-3)', padding:'9px 14px', borderBottom:'1px solid var(--line)' }}>
@@ -100,9 +100,9 @@ export default function Landing() {
 
       {/* PIPELINE */}
       <section id="pipeline" style={{ maxWidth:1180, margin:'0 auto', padding:'0 26px' }}>
-        <div style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px', background:'var(--panel-2)' }}>
+        <div className="landing-section" style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px', background:'var(--panel-2)' }}>
           <SectionLabel n="02" label="Pipeline de Deployment" />
-          <h2 style={{ fontSize:30, fontWeight:700, letterSpacing:'-.02em', margin:0, maxWidth:640, lineHeight:1.18 }}>Um clique. Sete passos rastreáveis.</h2>
+          <h2 style={{ fontSize:'clamp(22px, 5vw, 30px)', fontWeight:700, letterSpacing:'-.02em', margin:0, maxWidth:640, lineHeight:1.18 }}>Um clique. Sete passos rastreáveis.</h2>
           <p style={{ fontSize:14.5, color:'var(--text-2)', lineHeight:1.7, maxWidth:600, margin:'16px 0 30px' }}>Do pedido do developer até pods saudáveis em produção. Cada aresta transporta um artefacto concreto — e cada passo é observável na plataforma.</p>
           <div>
             {pipeline.map(n => (
@@ -135,9 +135,9 @@ export default function Landing() {
 
       {/* PRÉ-REQUISITOS */}
       <section id="prerequisitos" style={{ maxWidth:1180, margin:'0 auto', padding:'0 26px' }}>
-        <div style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px', background:'var(--panel-2)' }}>
+        <div className="landing-section" style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px', background:'var(--panel-2)' }}>
           <SectionLabel n="03" label="Pré-requisitos" />
-          <h2 style={{ fontSize:30, fontWeight:700, letterSpacing:'-.02em', margin:0, maxWidth:640, lineHeight:1.18 }}>Antes do primeiro deploy, isto tem de estar montado</h2>
+          <h2 style={{ fontSize:'clamp(22px, 5vw, 30px)', fontWeight:700, letterSpacing:'-.02em', margin:0, maxWidth:640, lineHeight:1.18 }}>Antes do primeiro deploy, isto tem de estar montado</h2>
           <p style={{ fontSize:15, color:'var(--text-2)', lineHeight:1.6, maxWidth:600, margin:'10px 0 0', fontWeight:500 }}>A DevShip não substitui a tua infraestrutura — assenta em cima dela. Aqui está tudo o que precisas de ter pronto.</p>
           <p style={{ fontSize:14.5, color:'var(--text-2)', lineHeight:1.7, maxWidth:600, margin:'16px 0 0' }}>
             A DevShip não é mágica: é uma camada de coordenação sobre ferramentas que já usas ou vais usar — Git, CI/CD, um registo de imagens, um cluster Kubernetes, GitOps. Se a tua equipa já segue estas boas práticas, o setup demora minutos. Se ainda não segue todas, o onboarding guiado leva-te passo a passo por cada uma.
@@ -156,10 +156,10 @@ export default function Landing() {
 
       {/* TRADUÇÃO */}
       <section id="traducao" style={{ maxWidth:1180, margin:'0 auto', padding:'0 26px' }}>
-        <div style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px' }}>
+        <div className="landing-section" style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px' }}>
           <SectionLabel n="04" label="Traduzir, não esconder" />
-          <h2 style={{ fontSize:30, fontWeight:700, letterSpacing:'-.02em', margin:0, maxWidth:640, lineHeight:1.18 }}>A mesma verdade, com menos fricção</h2>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 64px 1fr', alignItems:'center', gap:0, marginTop:30 }}>
+          <h2 style={{ fontSize:'clamp(22px, 5vw, 30px)', fontWeight:700, letterSpacing:'-.02em', margin:0, maxWidth:640, lineHeight:1.18 }}>A mesma verdade, com menos fricção</h2>
+          <div className="responsive-grid" style={{ display:'grid', gridTemplateColumns:'1fr 64px 1fr', alignItems:'center', gap:0, marginTop:30 }}>
             <div style={{ border:'1px solid var(--line-2)', borderRadius:10, background:'var(--panel-2)', overflow:'hidden' }}>
               <div className="mono" style={{ fontSize:10.5, color:'var(--text-3)', padding:'9px 14px', borderBottom:'1px solid var(--line)' }}>deployment.yaml · o que o Kubernetes te pede</div>
               <pre className="mono" style={{ margin:0, padding:'15px 16px', fontSize:11, lineHeight:1.65, color:'#aeb6c6', overflowX:'auto' }}>{`apiVersion: apps/v1
@@ -208,7 +208,7 @@ spec:
               ['Não removemos GitOps.','Tornamo-lo observável.','O repositório GitOps continua a ser a fonte de verdade. A DevShip mostra o diff, o commit e o sync do ArgoCD a acontecer — em vez de os esconder atrás de um botão.'],
               ['Não substituímos Cloud Engineers.','Devolvemos-lhes tempo.','Os pedidos repetitivos de deploy deixam de passar por eles. Mantêm IAM, políticas de aprovação e governação do cluster — sem serem o gargalo.'],
             ].map(([t1,t2,body],i) => (
-              <div key={i} style={{ display:'grid', gridTemplateColumns:'300px 1fr', background:'var(--panel)', borderBottom: i<2 ? '1px solid var(--line)' : 'none' }}>
+              <div key={i} className="responsive-grid" style={{ display:'grid', gridTemplateColumns:'300px 1fr', background:'var(--panel)', borderBottom: i<2 ? '1px solid var(--line)' : 'none' }}>
                 <div style={{ padding:'20px 22px', borderRight:'1px solid var(--line)' }}>
                   <span style={{ fontSize:16, fontWeight:600 }}>{t1}</span><br />
                   <span style={{ fontSize:16, fontWeight:600, color:'var(--teal)' }}>{t2}</span>
@@ -222,9 +222,9 @@ spec:
 
       {/* ESTADOS */}
       <section id="estados" style={{ maxWidth:1180, margin:'0 auto', padding:'0 26px' }}>
-        <div style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px', background:'var(--panel-2)' }}>
+        <div className="landing-section" style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px', background:'var(--panel-2)' }}>
           <SectionLabel n="05" label="LifecycleStatus" />
-          <h2 style={{ fontSize:30, fontWeight:700, letterSpacing:'-.02em', margin:0, maxWidth:640, lineHeight:1.18 }}>O estado real de um deployment, como máquina de estados</h2>
+          <h2 style={{ fontSize:'clamp(22px, 5vw, 30px)', fontWeight:700, letterSpacing:'-.02em', margin:0, maxWidth:640, lineHeight:1.18 }}>O estado real de um deployment, como máquina de estados</h2>
           <p style={{ fontSize:14.5, color:'var(--text-2)', lineHeight:1.7, maxWidth:600, margin:'16px 0 32px' }}>
             Cada ApplicationEnvironment percorre estados explícitos. As health probes determinam a transição de <span className="mono" style={{ color:'var(--amber)' }}>Deploy em curso</span> para <span className="mono" style={{ color:'var(--green)' }}>Saudável</span> — ou despoletam um rollback.
           </p>
@@ -246,13 +246,13 @@ spec:
               <StateBox label="Revertida" sub="versão anterior" color="#8fbcf7" border="rgba(91,157,240,.4)" bg="rgba(91,157,240,.06)" />
             </div>
           </div>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:0, marginTop:30, border:'1px solid var(--line-2)', borderRadius:10, overflow:'hidden' }}>
+          <div className="responsive-grid" style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:0, marginTop:30, border:'1px solid var(--line-2)', borderRadius:10, overflow:'hidden' }}>
             {[
               ['startup probe','Confirma que o container arrancou antes de qualquer tráfego.'],
               ['readiness probe','Decide se o pod recebe pedidos. Falha aqui → Degradado.'],
               ['liveness probe','Reinicia o pod se deixar de responder em runtime.'],
             ].map(([t,d],i) => (
-              <div key={t} style={{ padding:'18px 20px', borderRight: i<2 ? '1px solid var(--line)' : 'none' }}>
+              <div key={t} className="responsive-border-bottom" style={{ padding:'18px 20px', borderRight: i<2 ? '1px solid var(--line)' : 'none' }}>
                 <div className="mono" style={{ fontSize:10.5, color:'var(--text-3)', marginBottom:8 }}>{t}</div>
                 <div style={{ fontSize:13, color:'var(--text-2)', lineHeight:1.55 }}>{d}</div>
               </div>
@@ -263,11 +263,11 @@ spec:
 
       {/* ROLES */}
       <section id="roles" style={{ maxWidth:1180, margin:'0 auto', padding:'0 26px' }}>
-        <div style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px' }}>
+        <div className="landing-section" style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px' }}>
           <SectionLabel n="06" label="Uma plataforma, duas perspetivas" />
-          <h2 style={{ fontSize:30, fontWeight:700, letterSpacing:'-.02em', margin:'0 0 30px', maxWidth:640, lineHeight:1.18 }}>Cada role vê exatamente o que precisa</h2>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:0, border:'1px solid var(--line-2)', borderRadius:10, overflow:'hidden' }}>
-            <div style={{ padding:'26px 26px', borderRight:'1px solid var(--line-2)' }}>
+          <h2 style={{ fontSize:'clamp(22px, 5vw, 30px)', fontWeight:700, letterSpacing:'-.02em', margin:'0 0 30px', maxWidth:640, lineHeight:1.18 }}>Cada role vê exatamente o que precisa</h2>
+          <div className="responsive-grid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:0, border:'1px solid var(--line-2)', borderRadius:10, overflow:'hidden' }}>
+            <div className="responsive-border-bottom" style={{ padding:'26px 26px', borderRight:'1px solid var(--line-2)' }}>
               <div style={{ display:'flex', alignItems:'center', gap:9, marginBottom:18 }}>
                 <span className="mono" style={{ fontSize:10, color:'#8fbcf7', border:'1px solid rgba(91,157,240,.35)', borderRadius:5, padding:'2px 8px' }}>DEVELOPER</span>
                 <span className="mono" style={{ fontSize:10, color:'var(--text-3)' }}>/ Tech Lead</span>
@@ -296,9 +296,9 @@ spec:
 
       {/* ARQUITETURA */}
       <section style={{ maxWidth:1180, margin:'0 auto', padding:'0 26px' }}>
-        <div style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px', background:'var(--panel-2)' }}>
+        <div className="landing-section" style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px', background:'var(--panel-2)' }}>
           <SectionLabel n="07" label="Arquitetura completa" />
-          <h2 style={{ fontSize:30, fontWeight:700, letterSpacing:'-.02em', margin:0, maxWidth:640, lineHeight:1.18 }}>A ponte entre quem escreve código e o cluster que o corre</h2>
+          <h2 style={{ fontSize:'clamp(22px, 5vw, 30px)', fontWeight:700, letterSpacing:'-.02em', margin:0, maxWidth:640, lineHeight:1.18 }}>A ponte entre quem escreve código e o cluster que o corre</h2>
           <figure style={{ margin:'30px 0 0', border:'1px solid var(--line-2)', borderRadius:10, overflow:'hidden', background:'var(--panel)' }}>
             <figcaption className="mono" style={{ display:'flex', alignItems:'center', gap:10, fontSize:10.5, color:'var(--text-3)', padding:'9px 14px', borderBottom:'1px solid var(--line)' }}>
               <span style={{ color:'var(--teal)' }}>FIG.02</span><span>devship_em_acao.png</span><span style={{ marginLeft:'auto', color:'var(--text-2)' }}>abstração sem perda de controlo</span>
@@ -310,7 +310,7 @@ spec:
 
       {/* CTA */}
       <section style={{ maxWidth:1180, margin:'0 auto', padding:'0 26px 70px' }}>
-        <div style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:30, flexWrap:'wrap' }}>
+        <div className="landing-section" style={{ border:'1px solid var(--line-2)', borderTop:'none', padding:'54px 44px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:30, flexWrap:'wrap' }}>
           <div>
             <h2 style={{ fontSize:26, fontWeight:700, letterSpacing:'-.02em', margin:0, lineHeight:1.2 }}>Pronto para deixar de ser o gargalo?</h2>
             <p className="mono" style={{ fontSize:12, color:'var(--text-3)', margin:'12px 0 0' }}>login como Cloud Engineer · Tech Lead · Developer — a vista adapta-se</p>

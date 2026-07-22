@@ -68,7 +68,8 @@ export default function AppDetail() {
         )}
       </div>
 
-      <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', overflow: 'hidden' }}>
+      <div className="responsive-table-grid" style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', overflow: 'hidden' }}>
+        <div style={{ minWidth: 560 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '160px 130px 1fr 200px', gap: 12, padding: '13px 20px', borderBottom: '1px solid var(--border)', fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
           <span>Environment</span><span>Estado</span><span></span><span style={{ textAlign: 'right' }}>Ações</span>
         </div>
@@ -118,6 +119,7 @@ export default function AppDetail() {
             </div>
           );
         })}
+        </div>
       </div>
     </div>
   );

@@ -169,7 +169,7 @@ export default function Approval() {
       <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 20px' }}>Pedido de Aprovação de Deploy</h1>
 
       <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '20px 22px', marginBottom: 14 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '13px 28px', fontSize: 13 }}>
+        <div className="responsive-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '13px 28px', fontSize: 13 }}>
           {([
             ['Aplicação', appLabel],
             ['Ambiente', envLabel],

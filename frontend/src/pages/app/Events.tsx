@@ -70,7 +70,8 @@ export default function Events() {
           A carregar eventos…
         </div>
       ) : (
-        <div style={{ border:'1px solid var(--border)', borderRadius:14, background:'var(--surface)', overflow:'hidden' }}>
+        <div className="responsive-table-grid" style={{ border:'1px solid var(--border)', borderRadius:14, background:'var(--surface)', overflow:'hidden' }}>
+          <div style={{ minWidth:680 }}>
           <div style={{ display:'grid', gridTemplateColumns:'70px 110px 220px 1fr 50px', gap:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:10.5, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-3)' }}>
             <span>Tipo</span><span>Motivo</span><span>Objeto</span><span>Mensagem</span><span style={{ textAlign:'right' }}>Idade</span>
           </div>
@@ -86,6 +87,7 @@ export default function Events() {
           {events.length === 0 && !loading && (
             <div style={{ padding:'28px 18px', textAlign:'center', color:'var(--text-3)', fontSize:12.5 }}>Sem eventos recentes.</div>
           )}
+          </div>
         </div>
       )}
     </div>

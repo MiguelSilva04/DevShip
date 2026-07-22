@@ -83,7 +83,8 @@ export default function Pods() {
             </div>
           )}
 
-          <div style={{ border:'1px solid var(--border)', borderRadius:14, background:'var(--surface)', overflow:'hidden', marginBottom:16 }}>
+          <div className="responsive-table-grid" style={{ border:'1px solid var(--border)', borderRadius:14, background:'var(--surface)', overflow:'hidden', marginBottom:16 }}>
+            <div style={{ minWidth:640 }}>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 90px 60px 70px 70px 70px 40px 80px', gap:12, padding:'11px 20px', borderBottom:'1px solid var(--border)', fontSize:10.5, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-3)' }}>
               <span>Nome</span><span>Status</span><span>Ready</span><span>CPU</span><span>Memória</span><span>Restarts</span><span>Idade</span><span>Node</span>
             </div>
@@ -114,6 +115,7 @@ export default function Pods() {
             {pods.length === 0 && !loading && (
               <div style={{ padding:'28px 18px', textAlign:'center', color:'var(--text-3)', fontSize:12.5 }}>Sem pods neste momento.</div>
             )}
+            </div>
           </div>
 
           <div style={{ display:'flex', gap:16, fontSize:12, color:'var(--text-3)' }}>

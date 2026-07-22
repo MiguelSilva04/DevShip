@@ -66,7 +66,7 @@ export default function Environments() {
                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#34C759' }}></span>{count} aplicaç{count !== 1 ? 'ões' : 'ão'}
                   </span>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '13px 22px', fontSize: 12.5 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '13px 22px', fontSize: 12.5 }}>
                   <InfoRow label="Namespace" value={env.namespace} mono />
                   <InfoRow label="Caminho GitOps" value={env.git_ops_base_path} mono />
                   <InfoRow label="Branch" value={env.gitops_branch || env.source_branch} mono />

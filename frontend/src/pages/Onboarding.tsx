@@ -1082,7 +1082,7 @@ export function OnboardingEnvironments() {
                     {r.validation.overall_status === 'VALID' ? '✓ válido' : '⚠ avisos'}
                   </span>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10, fontSize: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10, fontSize: 12 }}>
                   <div><span style={{ color: 'var(--text-3)' }}>Namespace</span><div style={{ marginTop: 4 }}><ValBadge status={r.validation.namespace_status} error={r.validation.namespace_error} /></div></div>
                   <div>
                     <span className="ds-tooltip" style={{ position: 'relative', color: 'var(--text-3)', cursor: 'default', borderBottom: '1px dotted var(--text-3)' }}>
@@ -1123,7 +1123,7 @@ export function OnboardingEnvironments() {
                   <input value={env.display_name} onChange={e => update(env.key, 'display_name', e.target.value)} className="input-base" style={{ flex: 1, fontSize: 13 }} placeholder="Nome de apresentação" />
                   <button onClick={() => remove(env.key)} style={{ border: 'none', background: 'transparent', color: 'var(--text-3)', fontSize: 12, cursor: 'pointer' }} className="hover-teal">Remover</button>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 15 }}>
+                <div className="responsive-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 15 }}>
                   <FormField label="Namespace">
                     <input className="input-base input-mono" value={env.namespace} onChange={e => update(env.key, 'namespace', e.target.value)} placeholder="app-dev" />
                     {rowErrors[env.key]?.namespace && (
