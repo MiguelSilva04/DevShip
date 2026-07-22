@@ -218,12 +218,15 @@ textarea {
     border-bottom: none;
   }
 
+  /* z-index abaixo de 100 de propósito — todos os modais/popovers da app (Settings, Team,
+     Onboarding, GithubIdentityPrompt, o popover de conta aqui no próprio AppLayout) usam
+     zIndex:100. O drawer da sidebar nunca deve tapar um modal já aberto por cima dele. */
   .app-sidebar {
     position: fixed !important;
     left: 0;
     top: 0;
     height: 100vh;
-    z-index: 200;
+    z-index: 90;
     transform: translateX(-100%);
     transition: transform .18s ease;
     box-shadow: 4px 0 24px rgba(0,0,0,.4);
@@ -236,7 +239,7 @@ textarea {
     position: fixed;
     inset: 0;
     background: rgba(0,0,0,.55);
-    z-index: 199;
+    z-index: 89;
   }
   .app-hamburger {
     display: inline-flex !important;
