@@ -202,10 +202,20 @@ textarea {
     grid-template-columns: 1fr !important;
   }
   /* Tabelas construídas com grid (colunas fixas em px) viram lista scrollável
-     horizontalmente em vez de espremer/cortar texto — mais legível a 375px
-     do que forçar 1 coluna nestas (perderiam o alinhamento cabeçalho/linha). */
+     horizontalmente em vez de espremer/cortar texto — mais legível a 375px do
+     que forçar 1 coluna nestas (perderiam o alinhamento cabeçalho/linha). */
   .responsive-table-grid {
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* A barra de scroll nativa fica sempre visível (em vez de só aparecer ao
+     tocar) — é o único sinal de que a tabela tem mais colunas para o lado;
+     sem isto, uma tabela cortada não dá nenhuma pista de que se pode arrastar. */
+  .responsive-table-grid::-webkit-scrollbar {
+    height: 6px;
+  }
+  .responsive-table-grid {
+    scrollbar-width: thin;
   }
   /* Cards de um grid de N colunas que usam borderRight para separar entre si — ao
      colapsar para 1 coluna essa borda lateral fica órfã (no meio de cada card
@@ -250,6 +260,9 @@ textarea {
   .app-topbar-actions {
     display: none !important;
   }
+  .responsive-table-hint {
+    display: block !important;
+  }
   .landing-section {
     padding: 36px 20px !important;
   }
@@ -259,5 +272,12 @@ textarea {
 }
 
 .app-hamburger {
+  display: none;
+}
+
+/* Dica "desliza para o lado" para tabelas em grid com scroll horizontal — só existe
+   em mobile (a tabela nunca tem overflow em desktop, ver .responsive-table-grid acima).
+   Sem isto, uma tabela cortada não dá nenhum sinal de que há mais colunas a arrastar. */
+.responsive-table-hint {
   display: none;
 }

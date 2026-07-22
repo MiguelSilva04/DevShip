@@ -68,6 +68,7 @@ export default function AppDetail() {
         )}
       </div>
 
+      <div className="responsive-table-hint" style={{ fontSize: 11.5, color: 'var(--text-3)', marginBottom: 6 }}>↔ desliza para o lado para ver todas as colunas</div>
       <div className="responsive-table-grid" style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', overflow: 'hidden' }}>
         <div style={{ minWidth: 560 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '160px 130px 1fr 200px', gap: 12, padding: '13px 20px', borderBottom: '1px solid var(--border)', fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--text-3)' }}>

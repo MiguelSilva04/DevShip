@@ -70,6 +70,8 @@ export default function Events() {
           A carregar eventos…
         </div>
       ) : (
+        <>
+        <div className="responsive-table-hint" style={{ fontSize:11.5, color:'var(--text-3)', marginBottom:6 }}>↔ desliza para o lado para ver todas as colunas</div>
         <div className="responsive-table-grid" style={{ border:'1px solid var(--border)', borderRadius:14, background:'var(--surface)', overflow:'hidden' }}>
           <div style={{ minWidth:680 }}>
           <div style={{ display:'grid', gridTemplateColumns:'70px 110px 220px 1fr 50px', gap:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:10.5, letterSpacing:'.06em', textTransform:'uppercase', color:'var(--text-3)' }}>
@@ -89,6 +91,7 @@ export default function Events() {
           )}
           </div>
         </div>
+        </>
       )}
     </div>
   );

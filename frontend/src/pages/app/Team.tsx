@@ -320,6 +320,8 @@ export default function Team() {
 
       {/* Members table */}
       {members.length > 0 && (
+        <>
+        <div className="responsive-table-hint" style={{ fontSize: 11.5, color: 'var(--text-3)', marginBottom: 6 }}>↔ desliza para o lado para ver todas as colunas</div>
         <div className="responsive-table-grid" style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', overflow: 'hidden', marginBottom: 24 }}>
           <div style={{ minWidth: 560 }}>
           <div style={{ display: 'grid', gridTemplateColumns: memberGridColumns, gap: 12, padding: '12px 20px', borderBottom: '1px solid var(--border)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
@@ -388,6 +390,7 @@ export default function Team() {
           })}
           </div>
         </div>
+        </>
       )}
 
       {/* Remove member confirmation modal */}

@@ -49,6 +49,8 @@ export default function History() {
       {versions.length === 0 ? (
         <div style={{ fontSize: 13, color: 'var(--text-3)', padding: '20px 0' }}>Sem deploys registados.</div>
       ) : (
+        <>
+        <div className="responsive-table-hint" style={{ fontSize: 11.5, color: 'var(--text-3)', marginBottom: 6 }}>↔ desliza para o lado para ver todas as colunas</div>
         <div className="responsive-table-grid" style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', overflow: 'hidden' }}>
           <div style={{ minWidth: 620 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '110px 110px 90px 1fr 140px', gap: 12, padding: '12px 20px', borderBottom: '1px solid var(--border)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
@@ -75,6 +77,7 @@ export default function History() {
           })}
           </div>
         </div>
+        </>
       )}
     </div>
   );
