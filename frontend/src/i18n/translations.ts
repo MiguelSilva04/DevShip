@@ -32,6 +32,10 @@ export const translations = {
       upToDate: 'Atualizado',
       outdated: 'Desatualizado',
       upToDateUnknown: 'Desconhecido',
+      roleCloudEngineer: 'Cloud Engineer',
+      roleTechLead: 'Tech Lead',
+      roleDeveloper: 'Developer',
+      user: 'Utilizador',
     },
 
     // AppLayout — sidebar e topbar
@@ -967,6 +971,20 @@ export const translations = {
       running: 'Em execução:',
     },
 
+    // GithubIdentityPrompt (componente partilhado)
+    githubIdentityPrompt: {
+      change: 'Alterar',
+      configure: 'Configurar',
+      title: 'Identidade GitHub',
+      subtitle: 'Necessária para fazer deploy ou rollback — usada para confirmar que és colaborador do repositório.',
+      usernameLabel: 'Username GitHub',
+      emailLabel: 'Email associado ao GitHub',
+      errSave: 'Erro ao guardar identidade GitHub.',
+      saving: 'A guardar…',
+      save: 'Guardar',
+      cancel: 'Cancelar',
+    },
+
     // Lobby
     lobby: {
       welcome: 'Bem-vindo',
@@ -1029,6 +1047,10 @@ export const translations = {
       upToDate: 'Up to date',
       outdated: 'Outdated',
       upToDateUnknown: 'Unknown',
+      roleCloudEngineer: 'Cloud Engineer',
+      roleTechLead: 'Tech Lead',
+      roleDeveloper: 'Developer',
+      user: 'User',
     },
 
     appLayout: {
@@ -1930,6 +1952,19 @@ export const translations = {
       noPodsNow: 'No pods right now.',
       total: 'Total:',
       running: 'Running:',
+    },
+
+    githubIdentityPrompt: {
+      change: 'Change',
+      configure: 'Configure',
+      title: 'GitHub identity',
+      subtitle: 'Required to deploy or roll back — used to confirm you are a collaborator on the repository.',
+      usernameLabel: 'GitHub username',
+      emailLabel: 'Email associated with GitHub',
+      errSave: 'Error saving GitHub identity.',
+      saving: 'Saving…',
+      save: 'Save',
+      cancel: 'Cancel',
     },
 
     lobby: {

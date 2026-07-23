@@ -7,7 +7,6 @@ export interface User {
   name: string;
   email: string;
   initials: string;
-  roleLabel: string;
   // A CE founding a 2nd+ Team of an existing Company maps to role: 'cloud' but has no
   // real privileges until another Team's confirmed CE approves — kept as a sibling flag
   // instead of a 4th Role value so RoleRoute/AppLayout don't need to know about it.
@@ -24,15 +23,9 @@ function initialsFrom(name: string) {
   return name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 }
 
-function roleLabelFrom(role: Role) {
-  if (role === 'cloud') return 'Cloud Engineer';
-  if (role === 'tech') return 'Tech Lead';
-  return 'Developer';
-}
-
 export function userFromBackend(name: string, email: string, backendRole?: string | null, pendingConfirmation = false): User {
   const role = backendRole ? roleFromBackend(backendRole) : null;
-  return { role, name, email, initials: initialsFrom(name), roleLabel: role ? roleLabelFrom(role) : '', pendingConfirmation };
+  return { role, name, email, initials: initialsFrom(name), pendingConfirmation };
 }
 
 interface UserCtx {

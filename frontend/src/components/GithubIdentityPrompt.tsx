@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { apiFetch } from '../api/client';
+import { useLanguage } from '../context/LanguageContext';
 
+// Sentinel de correspondência exata com a mensagem que o backend devolve (deploy.py) —
+// nunca mostrado ao utilizador diretamente, por isso não é traduzido.
 export const GITHUB_IDENTITY_ERROR = 'Configura a tua identidade GitHub antes de continuar.';
 
 interface Props {
@@ -11,6 +14,7 @@ interface Props {
 }
 
 export default function GithubIdentityPrompt({ onConfigured, configured, currentUsername, currentEmail }: Props) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [username, setUsername] = useState(currentUsername ?? '');
   const [email, setEmail] = useState(currentEmail ?? '');
@@ -27,7 +31,7 @@ export default function GithubIdentityPrompt({ onConfigured, configured, current
       setOpen(false);
       onConfigured();
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Erro ao guardar identidade GitHub.');
+      setErr(e instanceof Error ? e.message : t('githubIdentityPrompt.errSave'));
     } finally { setSaving(false); }
   }
 
@@ -39,7 +43,7 @@ export default function GithubIdentityPrompt({ onConfigured, configured, current
           ? { fontSize: 12, padding: '5px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer', flex: 'none', marginLeft: 10 }
           : { fontSize: 12, padding: '5px 12px', borderRadius: 7, border: '1px solid rgba(241,85,108,.4)', background: 'transparent', color: 'var(--red)', cursor: 'pointer', flex: 'none', marginLeft: 10 }}
       >
-        {configured ? 'Alterar' : 'Configurar'}
+        {configured ? t('githubIdentityPrompt.change') : t('githubIdentityPrompt.configure')}
       </button>
 
       {open && (
@@ -48,19 +52,19 @@ export default function GithubIdentityPrompt({ onConfigured, configured, current
             style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: '28px 30px', maxWidth: 420, width: '100%', margin: '0 16px' }}
             onClick={e => e.stopPropagation()}
           >
-            <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 6px' }}>Identidade GitHub</h2>
+            <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 6px' }}>{t('githubIdentityPrompt.title')}</h2>
             <p style={{ fontSize: 12.5, color: 'var(--text-2)', margin: '0 0 18px', lineHeight: 1.6 }}>
-              Necessária para fazer deploy ou rollback — usada para confirmar que és colaborador do repositório.
+              {t('githubIdentityPrompt.subtitle')}
             </p>
             {err && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 10 }}>{err}</div>}
-            <label style={{ fontSize: 12.5, color: 'var(--text-2)', display: 'block', marginBottom: 7 }}>Username GitHub</label>
+            <label style={{ fontSize: 12.5, color: 'var(--text-2)', display: 'block', marginBottom: 7 }}>{t('githubIdentityPrompt.usernameLabel')}</label>
             <input
               value={username}
               onChange={e => setUsername(e.target.value)}
               placeholder="ex: octocat"
               style={{ width: '100%', background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 13px', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 14 }}
             />
-            <label style={{ fontSize: 12.5, color: 'var(--text-2)', display: 'block', marginBottom: 7 }}>Email associado ao GitHub</label>
+            <label style={{ fontSize: 12.5, color: 'var(--text-2)', display: 'block', marginBottom: 7 }}>{t('githubIdentityPrompt.emailLabel')}</label>
             <input
               value={email}
               onChange={e => setEmail(e.target.value)}
@@ -74,9 +78,9 @@ export default function GithubIdentityPrompt({ onConfigured, configured, current
                 className="btn-primary hover-bright"
                 style={{ fontSize: 13, padding: '10px 18px', borderRadius: 9, fontWeight: 600, opacity: (saving || !username.trim() || !email.trim()) ? .6 : 1 }}
               >
-                {saving ? 'A guardar…' : 'Guardar'}
+                {saving ? t('githubIdentityPrompt.saving') : t('githubIdentityPrompt.save')}
               </button>
-              <button onClick={() => setOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>Cancelar</button>
+              <button onClick={() => setOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>{t('githubIdentityPrompt.cancel')}</button>
             </div>
           </div>
         </div>

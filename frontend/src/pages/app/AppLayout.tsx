@@ -4,11 +4,19 @@ import { apiFetch } from '../../api/client';
 import { useUser, userFromBackend } from '../../context/UserContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useLanguage } from '../../context/LanguageContext';
+import type { TranslationKey } from '../../context/LanguageContext';
 import { OB_TEAM_ID } from '../Onboarding';
 import GithubIdentityPrompt from '../../components/GithubIdentityPrompt';
 
 interface TeamEntry { team_id: string; role: 'CLOUD_ENGINEER' | 'TECH_LEAD' | 'DEVELOPER'; }
 interface MeInfo { github_username: string | null; github_email: string | null; }
+
+function roleLabel(role: 'cloud' | 'tech' | 'dev' | null | undefined, t: (key: TranslationKey) => string): string {
+  if (role === 'cloud') return t('common.roleCloudEngineer');
+  if (role === 'tech') return t('common.roleTechLead');
+  if (role === 'dev') return t('common.roleDeveloper');
+  return '';
+}
 
 export default function AppLayout() {
   const nav = useNavigate();
@@ -146,8 +154,8 @@ export default function AppLayout() {
             {user?.initials ?? '?'}
           </div>
           <div style={{ minWidth:0 }}>
-            <div style={{ fontSize:12, fontWeight:500, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{user?.name ?? 'Utilizador'}</div>
-            <div style={{ fontSize:10, color:'var(--text-3)' }}>{user?.roleLabel ?? ''}</div>
+            <div style={{ fontSize:12, fontWeight:500, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{user?.name ?? t('common.user')}</div>
+            <div style={{ fontSize:10, color:'var(--text-3)' }}>{roleLabel(user?.role, t)}</div>
           </div>
         </button>
       </aside>
@@ -164,8 +172,8 @@ export default function AppLayout() {
                 {user?.initials ?? '?'}
               </div>
               <div style={{ minWidth:0 }}>
-                <div style={{ fontSize:13.5, fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{user?.name ?? 'Utilizador'}</div>
-                <div style={{ fontSize:11, color:'var(--text-3)' }}>{user?.roleLabel ?? ''}</div>
+                <div style={{ fontSize:13.5, fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{user?.name ?? t('common.user')}</div>
+                <div style={{ fontSize:11, color:'var(--text-3)' }}>{roleLabel(user?.role, t)}</div>
               </div>
             </div>
 
