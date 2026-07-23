@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { useUser } from '../../context/UserContext';
+import { useLanguage } from '../../context/LanguageContext';
 import { OB_PROJ_NAME, OB_PROJECT_ID, OB_TEAM_ID, OB_MODE, GitOpsPathPreviewButton } from '../Onboarding';
 import { parseCollisionDetail } from '../../utils/collisionError';
 
@@ -98,6 +99,7 @@ function formatDate(iso: string) {
 
 export default function Settings() {
   const { user } = useUser();
+  const { t } = useLanguage();
   const nav = useNavigate();
   const projectId = localStorage.getItem(OB_PROJECT_ID);
   const projName = localStorage.getItem(OB_PROJ_NAME) ?? 'my-project';
@@ -175,7 +177,7 @@ export default function Settings() {
     if (!projectId) return;
     apiFetch(`/projects/${projectId}`)
       .then(setProject)
-      .catch(() => setLoadErr(prev => prev || 'Erro ao carregar informação do projecto.'));
+      .catch(() => setLoadErr(prev => prev || t('settings.errLoadProject')));
     apiFetch(`/projects/${projectId}/cluster`)
       .then((c: Cluster) => {
         setCluster(c); setClusterArn(c.cluster_arn); setArgocdNamespace(c.argocd_namespace);
@@ -189,13 +191,14 @@ export default function Settings() {
             apiFetch(`/projects/${projectId}/cluster`).then(setCluster).catch(() => {});
           });
       })
-      .catch((e: unknown) => setClusterErr(e instanceof Error ? e.message : 'Erro ao carregar cluster.'));
+      .catch((e: unknown) => setClusterErr(e instanceof Error ? e.message : t('settings.errLoadCluster')));
     apiFetch(`/projects/${projectId}/environments`)
       .then(setEnvs)
-      .catch(() => setLoadErr(prev => prev || 'Erro ao carregar ambientes.'));
+      .catch(() => setLoadErr(prev => prev || t('settings.errLoadEnvironments')));
     apiFetch(`/projects/${projectId}/applications`)
       .then(setApps)
-      .catch(() => setLoadErr(prev => prev || 'Erro ao carregar applications.'));
+      .catch(() => setLoadErr(prev => prev || t('settings.errLoadApplications')));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   function openEditEnv(env: EnvItem) {
@@ -229,13 +232,13 @@ export default function Settings() {
       if (e instanceof Error) {
         try {
           const parsed = JSON.parse(e.message) as ValidationResult;
-          if (parsed.overall_status) { setEnvValidation(parsed); setEnvErr('A configuração não passou na validação — corrige os campos assinalados.'); return; }
+          if (parsed.overall_status) { setEnvValidation(parsed); setEnvErr(t('settings.errValidationFailed')); return; }
         } catch { /* not a validation payload */ }
         const collision = collisionDetailToValidation(e.message);
-        if (collision) { setEnvValidation(collision); setEnvErr('Conflito de configuração — corrige o campo assinalado.'); return; }
+        if (collision) { setEnvValidation(collision); setEnvErr(t('settings.errConflict')); return; }
         setEnvErr(e.message);
       } else {
-        setEnvErr('Erro ao guardar environment.');
+        setEnvErr(t('settings.errSaveEnv'));
       }
     } finally { setSavingEnv(false); }
   }
@@ -262,7 +265,7 @@ export default function Settings() {
       setApps(prev => prev.map(a => a.id === updated.id ? { ...a, ...appForm, id: updated.id } as AppItem : a));
       setEditApp(null);
     } catch (e: unknown) {
-      setAppErr(e instanceof Error ? e.message : 'Erro ao guardar application.');
+      setAppErr(e instanceof Error ? e.message : t('settings.errSaveApp'));
     } finally { setSavingApp(false); }
   }
 
@@ -285,7 +288,7 @@ export default function Settings() {
       setProject(updated);
       setShowEditProject(false);
     } catch (e: unknown) {
-      setProjectErr(e instanceof Error ? e.message : 'Erro ao guardar projecto.');
+      setProjectErr(e instanceof Error ? e.message : t('settings.errSaveProject'));
     } finally { setSavingProject(false); }
   }
 
@@ -296,10 +299,10 @@ export default function Settings() {
       const c: Cluster = await apiFetch(`/projects/${projectId}/cluster/revalidate`, { method: 'POST' });
       setCluster(c);
       setClusterConnected(true);
-      setRevalidateMsg('Ligação validada com sucesso.');
+      setRevalidateMsg(t('settings.revalidateSuccess'));
     } catch (e: unknown) {
       setClusterConnected(false);
-      setRevalidateMsg(e instanceof Error ? e.message : 'Falha ao revalidar ligação.');
+      setRevalidateMsg(e instanceof Error ? e.message : t('settings.revalidateFailure'));
       // A tentativa falhada ainda atualiza last_validated_at no servidor — recarrega o
       // cluster para essa data aparecer, em vez de ficar presa à última tentativa com sucesso.
       apiFetch(`/projects/${projectId}/cluster`).then(setCluster).catch(() => {});
@@ -318,7 +321,7 @@ export default function Settings() {
       setClusterConnected(true);
       setShowEditCreds(false);
     } catch (e: unknown) {
-      setCredsErr(e instanceof Error ? e.message : 'Erro ao guardar credenciais.');
+      setCredsErr(e instanceof Error ? e.message : t('settings.errSaveCredentials'));
     } finally { setSavingCreds(false); }
   }
 
@@ -333,26 +336,26 @@ export default function Settings() {
       setShowArchiveConfirm(false);
       setArchiveConfirmText('');
     } catch (e: unknown) {
-      setArchiveErr(e instanceof Error ? e.message : 'Erro ao arquivar projeto.');
+      setArchiveErr(e instanceof Error ? e.message : t('settings.errArchive'));
     } finally { setArchiving(false); }
   }
 
   return (
     <div style={{ maxWidth: 720 }}>
-      <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 6px' }}>Definições</h1>
-      <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 28px' }}>Configurações do projecto. Só o Cloud Engineer pode editar estas definições.</p>
+      <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 6px' }}>{t('settings.title')}</h1>
+      <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 28px' }}>{t('settings.subtitle')}</p>
 
       {loadErr && (
         <div style={{ display: 'flex', gap: 9, border: '1px solid rgba(241,85,108,.3)', background: 'rgba(241,85,108,.08)', borderRadius: 9, padding: '10px 13px', marginBottom: 20 }}>
-          <span style={{ color: '#ff8497' }}>✕</span>
-          <span style={{ fontSize: 12, color: '#ff9aaa' }}>{loadErr}</span>
+          <span style={{ color: 'var(--red)' }}>✕</span>
+          <span style={{ fontSize: 12, color: 'var(--red)' }}>{loadErr}</span>
         </div>
       )}
 
       {isArchived && (
         <div style={{ display: 'flex', gap: 9, border: '1px solid rgba(236,194,107,.35)', background: 'rgba(236,194,107,.08)', borderRadius: 9, padding: '10px 13px', marginBottom: 20 }}>
-          <span style={{ color: '#ecc26b' }}>ⓘ</span>
-          <span style={{ fontSize: 12, color: 'var(--text-2)' }}>Este projecto está arquivado. O histórico operacional continua disponível.</span>
+          <span style={{ color: 'var(--amber)' }}>ⓘ</span>
+          <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{t('settings.archivedNotice')}</span>
         </div>
       )}
 
@@ -361,7 +364,7 @@ export default function Settings() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
           {teamProjects.length > 1 && (
             <>
-              <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>Projeto ativo</span>
+              <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{t('settings.activeProject')}</span>
               <select
                 value={projectId ?? ''}
                 onChange={e => {
@@ -377,7 +380,7 @@ export default function Settings() {
             </>
           )}
           <button onClick={startNewProject} style={{ marginLeft: teamProjects.length > 1 ? 0 : 'auto', fontSize: 12, padding: '6px 13px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer' }}>
-            + Criar novo projeto
+            {t('settings.createNewProject')}
           </button>
         </div>
       )}
@@ -385,43 +388,43 @@ export default function Settings() {
       {/* Project identity */}
       <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '18px 20px', marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <span style={{ fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>Projeto</span>
+          <span style={{ fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>{t('settings.projectLabel')}</span>
           <button onClick={openEditProject} style={{ fontSize: 12, padding: '6px 13px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer' }}>
-            Editar informações
+            {t('settings.editInfo')}
           </button>
         </div>
         <div style={{ display: 'flex', gap: 40, marginBottom: 10 }}>
           <div>
-            <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>Projeto</div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>{t('settings.projectLabel')}</div>
             <div className="mono" style={{ fontSize: 13.5, fontWeight: 600, marginTop: 3 }}>{project?.name ?? projName}</div>
           </div>
         </div>
-        <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginBottom: 3 }}>Descrição</div>
-        <div style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{project?.description || 'Sem descrição.'}</div>
+        <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginBottom: 3 }}>{t('settings.description')}</div>
+        <div style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{project?.description || t('settings.noDescription')}</div>
       </div>
 
       {/* Edit project modal */}
       {showEditProject && (
         <Modal onClose={() => setShowEditProject(false)}>
-          <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 14px' }}>Editar informações do projecto</h2>
-          {projectErr && <div style={{ fontSize: 12, color: '#ff9aaa', marginBottom: 10 }}>{projectErr}</div>}
-          <Field label="Nome do projecto">
+          <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 14px' }}>{t('settings.editProjectTitle')}</h2>
+          {projectErr && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 10 }}>{projectErr}</div>}
+          <Field label={t('settings.projectNameLabel')}>
             <input value={editName} onChange={e => setEditName(e.target.value)} style={inputStyle} />
           </Field>
           <div style={{ height: 12 }} />
-          <Field label="Descrição">
+          <Field label={t('settings.descriptionLabel')}>
             <textarea value={editDescription} onChange={e => setEditDescription(e.target.value)} rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
           </Field>
           <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
             <button onClick={saveProject} disabled={savingProject || !editName.trim()} className="btn-primary hover-bright" style={{ fontSize: 13, padding: '10px 18px', borderRadius: 9, fontWeight: 600, opacity: (savingProject || !editName.trim()) ? .6 : 1 }}>
-              {savingProject ? 'A guardar…' : 'Guardar'}
+              {savingProject ? t('settings.saving') : t('settings.save')}
             </button>
-            <button onClick={() => setShowEditProject(false)} style={btnGhost}>Cancelar</button>
+            <button onClick={() => setShowEditProject(false)} style={btnGhost}>{t('settings.cancel')}</button>
           </div>
         </Modal>
       )}
 
-      <Section title="Cluster">
+      <Section title={t('settings.clusterSection')}>
         {clusterErr && <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>{clusterErr}</div>}
         {cluster && (
           <>
@@ -429,37 +432,37 @@ export default function Settings() {
               <div className="mono" style={{ flex: 1, fontSize: 12.5, background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 13px', overflowX: 'auto', whiteSpace: 'nowrap' }}>
                 {cluster.cluster_arn}
               </div>
-              <button onClick={() => navigator.clipboard.writeText(cluster.cluster_arn)} style={btnSecondary}>Copiar</button>
+              <button onClick={() => navigator.clipboard.writeText(cluster.cluster_arn)} style={btnSecondary}>{t('settings.copy')}</button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 14, fontSize: 12.5 }}>
               <div>
-                <div style={{ color: 'var(--text-3)' }}>Região</div>
+                <div style={{ color: 'var(--text-3)' }}>{t('settings.region')}</div>
                 <div className="mono" style={{ marginTop: 3 }}>{cluster.region}</div>
               </div>
               <div>
-                <div style={{ color: 'var(--text-3)' }}>Estado</div>
+                <div style={{ color: 'var(--text-3)' }}>{t('settings.status')}</div>
                 <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{
                     width: 6, height: 6, borderRadius: '50%',
-                    background: clusterConnected === null ? '#ecc26b' : clusterConnected ? '#34C759' : '#ff5c5c',
+                    background: clusterConnected === null ? 'var(--amber)' : clusterConnected ? 'var(--green)' : 'var(--red)',
                   }} />
-                  {clusterConnected === null ? 'A verificar…' : clusterConnected ? 'Ligado' : 'Inacessível'}
+                  {clusterConnected === null ? t('settings.checking') : clusterConnected ? t('settings.connected') : t('settings.unreachable')}
                 </div>
               </div>
               <div>
-                <div style={{ color: 'var(--text-3)' }}>ArgoCD namespace</div>
+                <div style={{ color: 'var(--text-3)' }}>{t('settings.argocdNamespace')}</div>
                 <div className="mono" style={{ marginTop: 3 }}>{cluster.argocd_namespace}</div>
               </div>
               <div>
-                <div style={{ color: 'var(--text-3)' }}>Última validação</div>
+                <div style={{ color: 'var(--text-3)' }}>{t('settings.lastValidation')}</div>
                 <div className="mono" style={{ marginTop: 3 }}>{cluster.last_validated_at ? formatDate(cluster.last_validated_at) : '—'}</div>
               </div>
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
               <button onClick={revalidate} disabled={revalidating} style={{ ...btnSecondary, opacity: revalidating ? .6 : 1 }}>
-                {revalidating ? 'A revalidar…' : 'Revalidar ligação'}
+                {revalidating ? t('settings.revalidating') : t('settings.revalidateConnection')}
               </button>
-              <button onClick={() => { setCredsErr(''); setShowEditCreds(true); }} style={btnSecondary}>Editar credenciais</button>
+              <button onClick={() => { setCredsErr(''); setShowEditCreds(true); }} style={btnSecondary}>{t('settings.editCredentials')}</button>
             </div>
             {revalidateMsg && <div style={{ fontSize: 12, color: 'var(--text-2)' }}>{revalidateMsg}</div>}
           </>
@@ -467,17 +470,17 @@ export default function Settings() {
       </Section>
 
       {envs.length > 0 && (
-        <Section title="Ambientes">
+        <Section title={t('settings.environmentsSection')}>
           {envs.map(env => (
             <div key={env.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid var(--border-soft)' }}>
               <span className="mono" style={{ fontSize: 12.5, fontWeight: 600 }}>{(env.display_name || env.name).toUpperCase()}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 12, color: env.requires_approval ? '#ecc26b' : 'var(--text-3)' }}>
+                <span style={{ fontSize: 12, color: env.requires_approval ? 'var(--amber)' : 'var(--text-3)' }}>
                   {env.requires_approval
-                    ? `aprovação por ${env.approval_required_role ? ROLE_LABEL[env.approval_required_role] ?? env.approval_required_role : '—'}`
-                    : 'sem aprovação'}
+                    ? `${t('settings.approvalBy')} ${env.approval_required_role ? ROLE_LABEL[env.approval_required_role] ?? env.approval_required_role : '—'}`
+                    : t('settings.noApproval')}
                 </span>
-                <button onClick={() => openEditEnv(env)} style={{ ...btnSecondary, padding: '5px 11px', fontSize: 11.5 }}>Editar</button>
+                <button onClick={() => openEditEnv(env)} style={{ ...btnSecondary, padding: '5px 11px', fontSize: 11.5 }}>{t('settings.edit')}</button>
               </div>
             </div>
           ))}
@@ -485,14 +488,14 @@ export default function Settings() {
       )}
 
       {apps.length > 0 && (
-        <Section title="Aplicações">
+        <Section title={t('settings.applicationsSection')}>
           {apps.map(app => (
             <div key={app.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid var(--border-soft)' }}>
               <div>
                 <span style={{ fontSize: 12.5, fontWeight: 600 }}>{app.name}</span>
                 <div className="mono" style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{app.source_repository}</div>
               </div>
-              <button onClick={() => openEditApp(app)} style={{ ...btnSecondary, padding: '5px 11px', fontSize: 11.5 }}>Editar</button>
+              <button onClick={() => openEditApp(app)} style={{ ...btnSecondary, padding: '5px 11px', fontSize: 11.5 }}>{t('settings.edit')}</button>
             </div>
           ))}
         </Section>
@@ -501,24 +504,24 @@ export default function Settings() {
       {/* Edit credentials modal */}
       {showEditCreds && (
         <Modal onClose={() => setShowEditCreds(false)}>
-          <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 14px' }}>Editar credenciais do cluster</h2>
-          {credsErr && <div style={{ fontSize: 12, color: '#ff9aaa', marginBottom: 10 }}>{credsErr}</div>}
-          <Field label="Cluster ARN">
+          <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 14px' }}>{t('settings.editCredentialsTitle')}</h2>
+          {credsErr && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 10 }}>{credsErr}</div>}
+          <Field label={t('settings.clusterArnLabel')}>
             <input value={clusterArn} onChange={e => setClusterArn(e.target.value)} style={inputStyle} className="mono" />
           </Field>
           <div style={{ height: 12 }} />
-          <Field label="IAM Role ARN">
+          <Field label={t('settings.iamRoleArnLabel')}>
             <input value={iamRoleArn} onChange={e => setIamRoleArn(e.target.value)} style={inputStyle} className="mono" />
           </Field>
           <div style={{ height: 12 }} />
-          <Field label="ArgoCD namespace">
+          <Field label={t('settings.argocdNamespaceLabel')}>
             <input value={argocdNamespace} onChange={e => setArgocdNamespace(e.target.value)} style={inputStyle} className="mono" placeholder="argocd" />
           </Field>
           <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
             <button onClick={saveCredentials} disabled={savingCreds} className="btn-primary hover-bright" style={{ fontSize: 13, padding: '10px 18px', borderRadius: 9, fontWeight: 600, opacity: savingCreds ? .6 : 1 }}>
-              {savingCreds ? 'A validar…' : 'Guardar e revalidar'}
+              {savingCreds ? t('settings.validating') : t('settings.saveAndRevalidate')}
             </button>
-            <button onClick={() => setShowEditCreds(false)} style={btnGhost}>Cancelar</button>
+            <button onClick={() => setShowEditCreds(false)} style={btnGhost}>{t('settings.cancel')}</button>
           </div>
         </Modal>
       )}
@@ -526,26 +529,26 @@ export default function Settings() {
       {/* Edit environment modal */}
       {editEnv && (
         <Modal onClose={() => setEditEnv(null)}>
-          <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 4px' }}>Editar {editEnv.display_name || editEnv.name}</h2>
-          <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 16px' }}>Guardar revalida namespace, branch e caminho GitOps antes de aplicar.</p>
-          {envErr && <div style={{ fontSize: 12, color: '#ff9aaa', marginBottom: 10 }}>{envErr}</div>}
+          <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 4px' }}>{t('settings.editEnvTitle')} {editEnv.display_name || editEnv.name}</h2>
+          <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 16px' }}>{t('settings.editEnvSub')}</p>
+          {envErr && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 10 }}>{envErr}</div>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 360, overflowY: 'auto', paddingRight: 2 }}>
-            <Field label="Nome a mostrar">
+            <Field label={t('settings.displayNameLabel')}>
               <input value={envForm.display_name ?? ''} onChange={e => setEnvForm(f => ({ ...f, display_name: e.target.value }))} style={inputStyle} />
             </Field>
-            <Field label="Namespace">
+            <Field label={t('settings.namespaceLabel')}>
               <input value={envForm.namespace ?? ''} onChange={e => setEnvForm(f => ({ ...f, namespace: e.target.value }))} style={inputStyle} className="mono" />
               {envValidation && envValidation.namespace_status === 'INVALID' && (
-                <div style={{ fontSize: 11.5, color: '#ff9aaa', marginTop: 5 }}>{envValidation.namespace_error}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--red)', marginTop: 5 }}>{envValidation.namespace_error}</div>
               )}
             </Field>
-            <Field label="GitOps branch">
+            <Field label={t('settings.gitopsBranchLabel')}>
               <input value={envForm.gitops_branch ?? ''} onChange={e => setEnvForm(f => ({ ...f, gitops_branch: e.target.value }))} style={inputStyle} className="mono" />
               {envValidation && envValidation.branch_status === 'INVALID' && (
-                <div style={{ fontSize: 11.5, color: '#ff9aaa', marginTop: 5 }}>{envValidation.branch_error}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--red)', marginTop: 5 }}>{envValidation.branch_error}</div>
               )}
             </Field>
-            <Field label="GitOps path">
+            <Field label={t('settings.gitopsPathLabel')}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input value={envForm.git_ops_base_path ?? ''} onChange={e => setEnvForm(f => ({ ...f, git_ops_base_path: e.target.value }))} style={{ ...inputStyle, flex: 1 }} className="mono" />
                 {project?.git_ops_repository_url && envForm.git_ops_base_path && (
@@ -553,28 +556,28 @@ export default function Settings() {
                 )}
               </div>
               {envValidation && envValidation.git_ops_path_status === 'INVALID' && (
-                <div style={{ fontSize: 11.5, color: '#ff9aaa', marginTop: 5 }}>{envValidation.git_ops_path_error}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--red)', marginTop: 5 }}>{envValidation.git_ops_path_error}</div>
               )}
             </Field>
-            <Field label="Source branch">
+            <Field label={t('settings.sourceBranchLabel')}>
               <input value={envForm.source_branch ?? ''} onChange={e => setEnvForm(f => ({ ...f, source_branch: e.target.value }))} style={inputStyle} className="mono" />
-              <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 5 }}>Não é validado — depende do repositório de código de cada Application, não do GitOps.</div>
+              <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 5 }}>{t('settings.sourceBranchNote')}</div>
             </Field>
-            <Field label="ArgoCD application">
+            <Field label={t('settings.argocdAppLabel')}>
               <input value={envForm.argocd_application_name ?? ''} onChange={e => setEnvForm(f => ({ ...f, argocd_application_name: e.target.value }))} style={inputStyle} className="mono" placeholder="demo-app-dev" />
               {envValidation && envValidation.argocd_status === 'INVALID' && (
-                <div style={{ fontSize: 11.5, color: '#ff9aaa', marginTop: 5 }}>{envValidation.argocd_error}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--red)', marginTop: 5 }}>{envValidation.argocd_error}</div>
               )}
             </Field>
-            <Field label="Deployment order">
+            <Field label={t('settings.deploymentOrderLabel')}>
               <input type="number" value={envForm.deployment_order ?? 0} onChange={e => setEnvForm(f => ({ ...f, deployment_order: Number(e.target.value) }))} style={inputStyle} />
             </Field>
             <label style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 12.5, color: 'var(--text-2)' }}>
               <input type="checkbox" checked={envForm.requires_approval ?? false} onChange={e => setEnvForm(f => ({ ...f, requires_approval: e.target.checked }))} style={{ accentColor: 'var(--teal)' }} />
-              Requer aprovação
+              {t('settings.requiresApproval')}
             </label>
             {envForm.requires_approval && (
-              <Field label="Role que aprova">
+              <Field label={t('settings.approverRoleLabel')}>
                 <select
                   value={envForm.approval_required_role ?? ''}
                   onChange={e => setEnvForm(f => ({ ...f, approval_required_role: e.target.value || null }))}
@@ -589,9 +592,9 @@ export default function Settings() {
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
             <button onClick={saveEnv} disabled={savingEnv} className="btn-primary hover-bright" style={{ fontSize: 13, padding: '10px 18px', borderRadius: 9, fontWeight: 600, opacity: savingEnv ? .6 : 1 }}>
-              {savingEnv ? 'A validar…' : 'Guardar e validar'}
+              {savingEnv ? t('settings.validating') : t('settings.saveAndValidate')}
             </button>
-            <button onClick={() => setEditEnv(null)} style={btnGhost}>Cancelar</button>
+            <button onClick={() => setEditEnv(null)} style={btnGhost}>{t('settings.cancel')}</button>
           </div>
         </Modal>
       )}
@@ -599,28 +602,28 @@ export default function Settings() {
       {/* Edit application modal */}
       {editApp && (
         <Modal onClose={() => setEditApp(null)}>
-          <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 4px' }}>Editar {editApp.name}</h2>
-          <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 16px' }}>Se o repositório mudar, é confirmado no GitHub antes de aplicar.</p>
-          {appErr && <div style={{ fontSize: 12, color: '#ff9aaa', marginBottom: 10 }}>{appErr}</div>}
+          <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 4px' }}>{t('settings.editAppTitle')} {editApp.name}</h2>
+          <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 16px' }}>{t('settings.editAppSub')}</p>
+          {appErr && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 10 }}>{appErr}</div>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <Field label="Nome">
+            <Field label={t('settings.nameLabel')}>
               <input value={appForm.name ?? ''} onChange={e => setAppForm(f => ({ ...f, name: e.target.value }))} style={inputStyle} />
             </Field>
-            <Field label="Descrição">
+            <Field label={t('settings.descriptionLabel')}>
               <textarea value={appForm.description ?? ''} onChange={e => setAppForm(f => ({ ...f, description: e.target.value }))} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
             </Field>
-            <Field label="Repositório (source)">
+            <Field label={t('settings.repoLabel')}>
               <input value={appForm.source_repository ?? ''} onChange={e => setAppForm(f => ({ ...f, source_repository: e.target.value }))} style={inputStyle} className="mono" />
             </Field>
-            <Field label="CI workflow file">
+            <Field label={t('settings.ciWorkflowLabel')}>
               <input value={appForm.ci_workflow_file ?? ''} onChange={e => setAppForm(f => ({ ...f, ci_workflow_file: e.target.value }))} style={inputStyle} className="mono" />
             </Field>
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
             <button onClick={saveApp} disabled={savingApp} className="btn-primary hover-bright" style={{ fontSize: 13, padding: '10px 18px', borderRadius: 9, fontWeight: 600, opacity: savingApp ? .6 : 1 }}>
-              {savingApp ? 'A validar…' : 'Guardar'}
+              {savingApp ? t('settings.validating') : t('settings.save')}
             </button>
-            <button onClick={() => setEditApp(null)} style={btnGhost}>Cancelar</button>
+            <button onClick={() => setEditApp(null)} style={btnGhost}>{t('settings.cancel')}</button>
           </div>
         </Modal>
       )}
@@ -628,16 +631,16 @@ export default function Settings() {
       {/* Archive zone */}
       {!isArchived && (
         <div style={{ border: '1px solid rgba(236,194,107,.35)', borderRadius: 13, background: 'rgba(236,194,107,.05)', padding: '20px 22px', marginTop: 24 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: '#ecc26b', margin: '0 0 12px' }}>Arquivar projeto</h3>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--amber)', margin: '0 0 12px' }}>{t('settings.archiveTitle')}</h3>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
             <div>
-              <div style={{ fontSize: 13.5 }}>O projeto deixa de estar ativo, mas o histórico operacional (deploys, eventos e versões) é preservado. Podes reativá-lo mais tarde.</div>
+              <div style={{ fontSize: 13.5 }}>{t('settings.archiveBody')}</div>
             </div>
             <button
               onClick={() => setShowArchiveConfirm(true)}
-              style={{ fontSize: 12.5, padding: '8px 16px', borderRadius: 9, background: 'transparent', border: '1px solid rgba(236,194,107,.5)', color: '#ecc26b', cursor: 'pointer', flex: 'none' }}
+              style={{ fontSize: 12.5, padding: '8px 16px', borderRadius: 9, background: 'transparent', border: '1px solid rgba(236,194,107,.5)', color: 'var(--amber)', cursor: 'pointer', flex: 'none' }}
             >
-              Arquivar projeto
+              {t('settings.archiveButton')}
             </button>
           </div>
         </div>
@@ -646,11 +649,11 @@ export default function Settings() {
       {/* Archive confirmation modal */}
       {showArchiveConfirm && (
         <Modal onClose={() => { setShowArchiveConfirm(false); setArchiveConfirmText(''); }}>
-          <h2 style={{ fontSize: 17, fontWeight: 600, color: '#ecc26b', margin: '0 0 10px' }}>Confirmar arquivamento</h2>
+          <h2 style={{ fontSize: 17, fontWeight: 600, color: 'var(--amber)', margin: '0 0 10px' }}>{t('settings.confirmArchiveTitle')}</h2>
           <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 18px', lineHeight: 1.6 }}>
-            O projecto deixa de estar ativo. Para confirmar, escreve o nome do projeto abaixo:
+            {t('settings.confirmArchiveBody')}
           </p>
-          {archiveErr && <div style={{ fontSize: 12, color: '#ff9aaa', marginBottom: 10 }}>{archiveErr}</div>}
+          {archiveErr && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 10 }}>{archiveErr}</div>}
           <div className="mono" style={{ fontSize: 13, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', marginBottom: 12, color: 'var(--text)' }}>
             {projName}
           </div>
@@ -665,11 +668,11 @@ export default function Settings() {
             <button
               onClick={archive}
               disabled={!canArchive || archiving}
-              style={{ fontSize: 13, padding: '10px 18px', borderRadius: 9, background: canArchive ? 'rgba(236,194,107,.9)' : 'rgba(236,194,107,.2)', border: 'none', color: canArchive ? '#1a1200' : '#ecc26b', cursor: canArchive ? 'pointer' : 'default', fontWeight: 600, opacity: canArchive ? 1 : .7 }}
+              style={{ fontSize: 13, padding: '10px 18px', borderRadius: 9, background: canArchive ? 'rgba(236,194,107,.9)' : 'rgba(236,194,107,.2)', border: 'none', color: canArchive ? '#1a1200' : 'var(--amber)', cursor: canArchive ? 'pointer' : 'default', fontWeight: 600, opacity: canArchive ? 1 : .7 }}
             >
-              {archiving ? 'A arquivar…' : 'Arquivar projeto'}
+              {archiving ? t('settings.archiving') : t('settings.archiveButton')}
             </button>
-            <button onClick={() => { setShowArchiveConfirm(false); setArchiveConfirmText(''); }} style={btnGhost}>Cancelar</button>
+            <button onClick={() => { setShowArchiveConfirm(false); setArchiveConfirmText(''); }} style={btnGhost}>{t('settings.cancel')}</button>
           </div>
         </Modal>
       )}

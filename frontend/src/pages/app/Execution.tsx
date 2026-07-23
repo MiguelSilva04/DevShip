@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
 import Breadcrumb from '../../components/Breadcrumb';
+import { useLanguage } from '../../context/LanguageContext';
+import type { TranslationKey } from '../../context/LanguageContext';
 
 type RequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
 type Severity = 'INFO' | 'WARNING' | 'ERROR';
@@ -33,44 +35,42 @@ interface RequestWithEvents {
 const TERMINAL: RequestStatus[] = ['SUCCESS', 'FAILED', 'CANCELLED'];
 
 function severityColor(s: Severity) {
-  if (s === 'ERROR') return '#ff8497';
-  if (s === 'WARNING') return '#ecc26b';
+  if (s === 'ERROR') return 'var(--red)';
+  if (s === 'WARNING') return 'var(--amber)';
   return 'var(--text-3)';
 }
 
 function statusStyle(s: RequestStatus) {
-  if (s === 'SUCCESS') return { bg: 'rgba(52,199,89,.12)', col: '#5dd57b', bord: 'rgba(52,199,89,.28)', dot: '#34C759', anim: false };
-  if (s === 'FAILED' || s === 'CANCELLED') return { bg: 'rgba(241,85,108,.12)', col: '#ff8497', bord: 'rgba(241,85,108,.28)', dot: '#F1556C', anim: false };
-  return { bg: 'rgba(224,169,59,.12)', col: '#ecc26b', bord: 'rgba(224,169,59,.28)', dot: '#E0A93B', anim: true };
+  if (s === 'SUCCESS') return { bg: 'rgba(52,199,89,.12)', col: 'var(--green)', bord: 'rgba(52,199,89,.28)', dot: 'var(--green)', anim: false };
+  if (s === 'FAILED' || s === 'CANCELLED') return { bg: 'rgba(241,85,108,.12)', col: 'var(--red)', bord: 'rgba(241,85,108,.28)', dot: 'var(--red)', anim: false };
+  return { bg: 'rgba(224,169,59,.12)', col: 'var(--amber)', bord: 'rgba(224,169,59,.28)', dot: 'var(--amber)', anim: true };
 }
 
-function statusLabel(s: RequestStatus) {
+function statusLabel(s: RequestStatus, t: (key: TranslationKey) => string) {
   const map: Record<RequestStatus, string> = {
-    PENDING: 'Pendente', APPROVED: 'Aprovado', REJECTED: 'Rejeitado',
-    RUNNING: 'Em curso', SUCCESS: 'Concluído', FAILED: 'Falhou', CANCELLED: 'Cancelado',
+    PENDING: t('execution.statusPending'), APPROVED: t('execution.statusApproved'), REJECTED: t('execution.statusRejected'),
+    RUNNING: t('execution.statusRunning'), SUCCESS: t('execution.statusSuccess'), FAILED: t('execution.statusFailed'), CANCELLED: t('execution.statusCancelled'),
   };
   return map[s] ?? s;
 }
 
-const EVENT_TYPE_LABEL: Record<string, string> = {
-  WORKFLOW_STARTED: 'Workflow iniciado',
-  BUILD_COMPLETED: 'Build concluído',
-  IMAGE_BUILD_FAILED: 'Falha ao construir a imagem',
-  IMAGE_PUSHED: 'Imagem publicada',
-  GITOPS_UPDATED: 'Repositório GitOps atualizado',
-  SYNC_STARTED: 'Sincronização iniciada',
-  SYNC_COMPLETED: 'Sincronização concluída',
-  SYNC_FAILED: 'Falha na sincronização',
-  ROLLOUT_STARTED: 'Rollout iniciado',
-  ROLLOUT_COMPLETED: 'Rollout concluído',
-  POD_CREATED: 'Pod criado',
-  READINESS_PASSED: 'Pod pronto',
-  READINESS_FAILED: 'Pod não ficou pronto',
-  CRASH_LOOP_BACKOFF: 'Pod em crash loop',
-};
-
-function eventTypeLabel(t: string): string {
-  return EVENT_TYPE_LABEL[t] ?? t;
+function eventTypeLabelMap(t: (key: TranslationKey) => string): Record<string, string> {
+  return {
+    WORKFLOW_STARTED: t('execution.evtWorkflowStarted'),
+    BUILD_COMPLETED: t('execution.evtBuildCompleted'),
+    IMAGE_BUILD_FAILED: t('execution.evtImageBuildFailed'),
+    IMAGE_PUSHED: t('execution.evtImagePushed'),
+    GITOPS_UPDATED: t('execution.evtGitopsUpdated'),
+    SYNC_STARTED: t('execution.evtSyncStarted'),
+    SYNC_COMPLETED: t('execution.evtSyncCompleted'),
+    SYNC_FAILED: t('execution.evtSyncFailed'),
+    ROLLOUT_STARTED: t('execution.evtRolloutStarted'),
+    ROLLOUT_COMPLETED: t('execution.evtRolloutCompleted'),
+    POD_CREATED: t('execution.evtPodCreated'),
+    READINESS_PASSED: t('execution.evtReadinessPassed'),
+    READINESS_FAILED: t('execution.evtReadinessFailed'),
+    CRASH_LOOP_BACKOFF: t('execution.evtCrashLoopBackoff'),
+  };
 }
 
 // ─── Pipeline stages ─────────────────────────────────────────────────────────
@@ -88,21 +88,23 @@ interface Stage {
   failTypes: string[];
 }
 
-const STAGES: Stage[] = [
-  { key: 'build',   label: 'Build (GitHub Actions)', icon: '⚙',  startTypes: ['WORKFLOW_STARTED'], doneTypes: ['BUILD_COMPLETED', 'IMAGE_PUSHED'], failTypes: ['IMAGE_BUILD_FAILED'] },
-  { key: 'sync',     label: 'Sync (ArgoCD / GitOps)', icon: '🔄', startTypes: ['GITOPS_UPDATED', 'SYNC_STARTED'], doneTypes: ['SYNC_COMPLETED'], failTypes: ['SYNC_FAILED'] },
-  { key: 'rollout',  label: 'Rollout (Kubernetes)',   icon: '🚀', startTypes: ['ROLLOUT_STARTED'], doneTypes: ['ROLLOUT_COMPLETED'], failTypes: [] },
-  { key: 'pods',     label: 'Pods prontos',           icon: '✓',  startTypes: ['POD_CREATED'], doneTypes: ['READINESS_PASSED'], failTypes: ['READINESS_FAILED', 'CRASH_LOOP_BACKOFF'] },
-];
+function stages(t: (key: TranslationKey) => string): Stage[] {
+  return [
+    { key: 'build',   label: t('execution.stageBuild'), icon: '⚙',  startTypes: ['WORKFLOW_STARTED'], doneTypes: ['BUILD_COMPLETED', 'IMAGE_PUSHED'], failTypes: ['IMAGE_BUILD_FAILED'] },
+    { key: 'sync',     label: t('execution.stageSync'), icon: '🔄', startTypes: ['GITOPS_UPDATED', 'SYNC_STARTED'], doneTypes: ['SYNC_COMPLETED'], failTypes: ['SYNC_FAILED'] },
+    { key: 'rollout',  label: t('execution.stageRollout'),   icon: '🚀', startTypes: ['ROLLOUT_STARTED'], doneTypes: ['ROLLOUT_COMPLETED'], failTypes: [] },
+    { key: 'pods',     label: t('execution.stagePods'),           icon: '✓',  startTypes: ['POD_CREATED'], doneTypes: ['READINESS_PASSED'], failTypes: ['READINESS_FAILED', 'CRASH_LOOP_BACKOFF'] },
+  ];
+}
 
-function computeStageStates(events: DeploymentEvent[], requestStatus: RequestStatus): Record<string, { state: StageState; events: DeploymentEvent[] }> {
+function computeStageStates(events: DeploymentEvent[], requestStatus: RequestStatus, stageList: Stage[]): Record<string, { state: StageState; events: DeploymentEvent[] }> {
   const result: Record<string, { state: StageState; events: DeploymentEvent[] }> = {};
   const seenTypes = new Set(events.map(e => e.event_type));
   const anyFailed = requestStatus === 'FAILED' || requestStatus === 'CANCELLED';
   const isTerminal = TERMINAL.includes(requestStatus);
 
   let priorStageDone = true;
-  for (const stage of STAGES) {
+  for (const stage of stageList) {
     const stageEvents = events.filter(e =>
       stage.startTypes.includes(e.event_type) || stage.doneTypes.includes(e.event_type) || stage.failTypes.includes(e.event_type)
     );
@@ -134,21 +136,21 @@ function StageIcon({ state, icon }: { state: StageState; icon: string }) {
   if (state === 'done') {
     return (
       <div style={{ width: size, height: size, borderRadius: '50%', background: 'rgba(52,199,89,.15)', border: '1.5px solid rgba(52,199,89,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12.5L10 17.5L19 7" stroke="#5dd57b" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M5 12.5L10 17.5L19 7" stroke="var(--green)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /></svg>
       </div>
     );
   }
   if (state === 'failed') {
     return (
       <div style={{ width: size, height: size, borderRadius: '50%', background: 'rgba(241,85,108,.15)', border: '1.5px solid rgba(241,85,108,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M6 6L18 18M18 6L6 18" stroke="#ff8497" strokeWidth="3" strokeLinecap="round" /></svg>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M6 6L18 18M18 6L6 18" stroke="var(--red)" strokeWidth="3" strokeLinecap="round" /></svg>
       </div>
     );
   }
   if (state === 'active') {
     return (
       <div style={{ width: size, height: size, borderRadius: '50%', background: 'rgba(224,169,59,.15)', border: '1.5px solid rgba(224,169,59,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none', position: 'relative' }}>
-        <span style={{ position: 'absolute', inset: -1.5, borderRadius: '50%', border: '1.5px solid transparent', borderTopColor: '#ecc26b', animation: 'ds-spin 1s linear infinite' }} />
+        <span style={{ position: 'absolute', inset: -1.5, borderRadius: '50%', border: '1.5px solid transparent', borderTopColor: 'var(--amber)', animation: 'ds-spin 1s linear infinite' }} />
         <span style={{ fontSize: 13 }}>{icon}</span>
       </div>
     );
@@ -161,8 +163,10 @@ function StageIcon({ state, icon }: { state: StageState; icon: string }) {
 }
 
 function StageRow({ stage, state, events, isLast }: { stage: Stage; state: StageState; events: DeploymentEvent[]; isLast: boolean }) {
+  const { t } = useLanguage();
+  const eventTypeLabel = eventTypeLabelMap(t);
   const [open, setOpen] = useState(false);
-  const labelColor = state === 'done' ? 'var(--text)' : state === 'failed' ? '#ff8497' : state === 'active' ? '#ecc26b' : 'var(--text-3)';
+  const labelColor = state === 'done' ? 'var(--text)' : state === 'failed' ? 'var(--red)' : state === 'active' ? 'var(--amber)' : 'var(--text-3)';
   const lineColor = state === 'done' ? 'rgba(52,199,89,.35)' : state === 'failed' ? 'rgba(241,85,108,.35)' : 'var(--border)';
   // A seta (e a possibilidade de expandir) tem de estar disponível assim que o stage está
   // "active" — a decorrer, mesmo sem nenhum evento ainda — e não só depois de já ter
@@ -182,14 +186,14 @@ function StageRow({ stage, state, events, isLast }: { stage: Stage; state: Stage
           style={{ background: 'transparent', border: 'none', padding: 0, cursor: expandable ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left' }}
         >
           <span style={{ fontSize: 13.5, fontWeight: 600, color: labelColor }}>{stage.label}</span>
-          {state === 'active' && <span style={{ fontSize: 11, color: '#ecc26b', animation: 'ds-pulse 1.4s infinite' }}>a decorrer…</span>}
+          {state === 'active' && <span style={{ fontSize: 11, color: 'var(--amber)', animation: 'ds-pulse 1.4s infinite' }}>{t('execution.inProgress')}</span>}
           {expandable && (
             <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--text-3)', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>▶</span>
           )}
         </button>
         {open && events.length === 0 && (
           <div className="mono" style={{ marginTop: 8, padding: '10px 12px', borderRadius: 8, background: 'var(--bg-2)', fontSize: 11, color: 'var(--text-3)' }}>
-            A aguardar o primeiro evento deste stage…
+            {t('execution.waitingFirstEvent')}
           </div>
         )}
         {open && events.length > 0 && (
@@ -198,7 +202,7 @@ function StageRow({ stage, state, events, isLast }: { stage: Stage; state: Stage
               <div key={ev.id}>
                 <span style={{ color: 'var(--text-3)', marginRight: 10 }}>{new Date(ev.event_timestamp).toLocaleTimeString()}</span>
                 <span style={{ color: ev.severity !== 'INFO' ? severityColor(ev.severity) : 'var(--text-2)' }}>
-                  {eventTypeLabel(ev.event_type)}{ev.message ? ` — ${ev.message}` : ''}
+                  {eventTypeLabel[ev.event_type] ?? ev.event_type}{ev.message ? ` — ${ev.message}` : ''}
                 </span>
               </div>
             ))}
@@ -213,6 +217,8 @@ export default function Execution() {
   const { appId, aeId, reqId } = useParams<{ appId: string; aeId: string; reqId: string }>();
   const { appLabel, envLabel, appId: resolvedAppId } = useAppEnvBreadcrumb(appId, aeId);
   const nav = useNavigate();
+  const { t } = useLanguage();
+  const STAGES = stages(t);
   const [data, setData] = useState<RequestWithEvents | null>(null);
   const [error, setError] = useState('');
 
@@ -238,38 +244,38 @@ export default function Execution() {
     return () => clearInterval(id);
   }, [reqId]);
 
-  if (error) return <div style={{ color: '#ff8497', fontSize: 13, padding: '40px 0' }}>{error}</div>;
+  if (error) return <div style={{ color: 'var(--red)', fontSize: 13, padding: '40px 0' }}>{error}</div>;
   if (!data) return <Spinner />;
 
   const { request, events } = data;
   const st = statusStyle(request.status);
   const isTerminal = TERMINAL.includes(request.status);
-  const stageStates = computeStageStates(events, request.status);
+  const stageStates = computeStageStates(events, request.status, STAGES);
 
   return (
     <div>
       <Breadcrumb segments={[
         { label: appLabel, to: resolvedAppId ? `/app/${resolvedAppId}` : undefined },
         { label: envLabel, to: (resolvedAppId && aeId) ? `/app/${resolvedAppId}/${aeId}` : undefined },
-        { label: 'execução' },
+        { label: t('execution.breadcrumbExecution') },
       ]} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 22 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>Execução do Deploy</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{t('execution.pageTitle')}</h1>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 12px', borderRadius: 999, fontSize: 12, background: st.bg, color: st.col, border: `1px solid ${st.bord}` }}>
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: st.dot, animation: st.anim ? 'ds-pulse 1.4s infinite' : 'none' }} />
-          {statusLabel(request.status)}
+          {statusLabel(request.status, t)}
         </span>
       </div>
 
       {request.status === 'FAILED' && request.failure_reason && (
-        <div style={{ marginBottom: 18, padding: '12px 16px', borderRadius: 10, background: 'rgba(241,85,108,.08)', border: '1px solid rgba(241,85,108,.3)', fontSize: 13, color: '#ff8497' }}>
-          <strong>Falha:</strong> {request.failure_reason}
+        <div style={{ marginBottom: 18, padding: '12px 16px', borderRadius: 10, background: 'rgba(241,85,108,.08)', border: '1px solid rgba(241,85,108,.3)', fontSize: 13, color: 'var(--red)' }}>
+          <strong>{t('execution.failure')}</strong> {request.failure_reason}
         </div>
       )}
 
       {request.source_commit_sha && (
         <div style={{ marginBottom: 18 }} className="mono">
-          <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>Commit: </span>
+          <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{t('execution.commit')} </span>
           <span style={{ fontSize: 12, color: 'var(--teal)' }}>{request.source_commit_sha.slice(0, 7)}</span>
         </div>
       )}
@@ -277,8 +283,8 @@ export default function Execution() {
       {/* Pipeline stepper */}
       <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '22px 22px 6px', marginBottom: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-          <span style={{ fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>Pipeline</span>
-          {!isTerminal && <span style={{ fontSize: 11, color: 'var(--teal)', animation: 'ds-pulse 1.4s infinite' }}>● ao vivo</span>}
+          <span style={{ fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>{t('execution.pipeline')}</span>
+          {!isTerminal && <span style={{ fontSize: 11, color: 'var(--teal)', animation: 'ds-pulse 1.4s infinite' }}>{t('execution.live')}</span>}
         </div>
         {STAGES.map((stage, i) => (
           <StageRow
@@ -301,7 +307,7 @@ export default function Execution() {
               : { background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)', fontSize: 12.5, padding: '9px 16px', borderRadius: 9, cursor: 'pointer' }
           }
         >
-          Voltar
+          {t('execution.back')}
         </button>
       </div>
     </div>
@@ -309,5 +315,6 @@ export default function Execution() {
 }
 
 function Spinner() {
-  return <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-3)', fontSize: 13, padding: '40px 0' }}><span style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--teal)', animation: 'ds-spin .9s linear infinite', display: 'inline-block' }} />A carregar…</div>;
+  const { t } = useLanguage();
+  return <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-3)', fontSize: 13, padding: '40px 0' }}><span style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--teal)', animation: 'ds-spin .9s linear infinite', display: 'inline-block' }} />{t('execution.loading')}</div>;
 }

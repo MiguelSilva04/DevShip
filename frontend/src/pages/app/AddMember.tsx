@@ -3,16 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { OB_TEAM_ID, OB_PROJECT_ID } from '../Onboarding';
 import { useUser } from '../../context/UserContext';
+import { useLanguage } from '../../context/LanguageContext';
 
 interface Candidate { user_id: string; name: string; email: string; }
 interface AppItem { id: string; name: string; source_repository: string; }
 
 type AllowedRole = 'DEVELOPER' | 'TECH_LEAD';
-
-const ROLES: { id: AllowedRole; label: string; desc: string }[] = [
-  { id: 'DEVELOPER', label: 'Developer',  desc: 'Pode fazer deploy para DEV e STAGING. Pede aprovação para PROD.' },
-  { id: 'TECH_LEAD', label: 'Tech Lead',  desc: 'Pode aprovar deploys para PROD e fazer deploy em todos os environments.' },
-];
 
 function initials(name: string) {
   return name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
@@ -21,6 +17,11 @@ function initials(name: string) {
 export default function AddMember() {
   const nav = useNavigate();
   const { user } = useUser();
+  const { t } = useLanguage();
+  const ROLES: { id: AllowedRole; label: string; desc: string }[] = [
+    { id: 'DEVELOPER', label: t('addMember.developerLabel'), desc: t('addMember.developerDesc') },
+    { id: 'TECH_LEAD', label: t('addMember.techLeadLabel'), desc: t('addMember.techLeadDesc') },
+  ];
   const isTechLead = user?.role === 'tech';
   const availableRoles = isTechLead ? ROLES.filter(r => r.id === 'DEVELOPER') : ROLES;
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -43,12 +44,13 @@ export default function AddMember() {
         setCandidates(c);
         setHasCloudEngineer(members.some(m => m.role === 'CLOUD_ENGINEER'));
       })
-      .catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Erro ao carregar candidatos.'));
+      .catch((e: unknown) => setErr(e instanceof Error ? e.message : t('addMember.errLoadCandidates')));
     if (projectId) {
       apiFetch(`/projects/${projectId}/applications`)
         .then(setApps)
-        .catch((e: unknown) => setAppsErr(e instanceof Error ? e.message : 'Erro ao carregar applications.'));
+        .catch((e: unknown) => setAppsErr(e instanceof Error ? e.message : t('addMember.errLoadApplications')));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamId]);
 
   function toggleApp(appId: string) {
@@ -56,8 +58,8 @@ export default function AddMember() {
   }
 
   async function submit() {
-    if (!selected) { setErr('Seleciona um utilizador.'); return; }
-    if (!teamId) { setErr('Team não encontrada.'); return; }
+    if (!selected) { setErr(t('addMember.errSelectUser')); return; }
+    if (!teamId) { setErr(t('addMember.errTeamNotFound')); return; }
     setLoading(true); setErr('');
     try {
       const member: { team_member_id: string } = await apiFetch(`/teams/${teamId}/members`, {
@@ -70,42 +72,42 @@ export default function AddMember() {
       window.dispatchEvent(new CustomEvent('devship:team-changed'));
       nav('/app/team', { state: newDeveloperId ? { newDeveloperId } : undefined });
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Erro ao adicionar membro.');
+      setErr(e instanceof Error ? e.message : t('addMember.errAddMember'));
     } finally { setLoading(false); }
   }
 
   return (
     <div style={{ maxWidth: 540 }}>
-      <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 6px' }}>Adicionar membro</h1>
+      <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 6px' }}>{t('addMember.title')}</h1>
       <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 24px', lineHeight: 1.6 }}>
-        Utilizadores registados com o mesmo domínio de email que ainda não pertencem a nenhuma team.
+        {t('addMember.subtitle')}
       </p>
 
       {hasCloudEngineer && (
         <div style={{ display: 'flex', gap: 10, border: '1px solid rgba(77,156,246,.28)', background: 'rgba(77,156,246,.08)', borderRadius: 11, padding: '12px 15px', marginBottom: 20 }}>
-          <span style={{ color: '#7fb6f9' }}>ⓘ</span>
+          <span style={{ color: 'var(--blue)' }}>ⓘ</span>
           <span style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6 }}>
-            Neste MVP cada team tem um único Cloud Engineer. Só podes adicionar <strong>Developer</strong> ou <strong>Tech Lead</strong>.
+            {t('addMember.singleCloudEngineerNotice')}
           </span>
         </div>
       )}
 
       {err && (
         <div style={{ display: 'flex', gap: 9, border: '1px solid rgba(241,85,108,.3)', background: 'rgba(241,85,108,.08)', borderRadius: 9, padding: '10px 13px', marginBottom: 16 }}>
-          <span style={{ color: '#ff8497' }}>✕</span>
-          <span style={{ fontSize: 12, color: '#ff9aaa' }}>{err}</span>
+          <span style={{ color: 'var(--red)' }}>✕</span>
+          <span style={{ fontSize: 12, color: 'var(--red)' }}>{err}</span>
         </div>
       )}
 
       {candidates.length === 0 && !err && (
         <div style={{ border: '1px dashed var(--border)', borderRadius: 13, padding: '28px 22px', textAlign: 'center', color: 'var(--text-3)', fontSize: 13, marginBottom: 20 }}>
-          Nenhum candidato disponível — todos os utilizadores do domínio já pertencem a uma team.
+          {t('addMember.noCandidates')}
         </div>
       )}
 
       {candidates.length > 0 && (
         <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 10 }}>Utilizador</div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 10 }}>{t('addMember.userLabel')}</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {candidates.map(c => (
               <label key={c.user_id} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '13px 16px', border: `1px solid ${selected === c.user_id ? 'rgba(43,199,180,.4)' : 'var(--border)'}`, borderRadius: 11, cursor: 'pointer', background: selected === c.user_id ? 'rgba(43,199,180,.05)' : 'var(--surface)' }}>
@@ -122,7 +124,7 @@ export default function AddMember() {
       )}
 
       <div style={{ marginBottom: 24 }}>
-        <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 10 }}>Role</div>
+        <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 10 }}>{t('addMember.roleLabel')}</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
           {availableRoles.map(r => (
             <label key={r.id} htmlFor={`role-${r.id}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 13, padding: '14px 16px', border: `1px solid ${role === r.id ? 'rgba(43,199,180,.4)' : 'var(--border)'}`, borderRadius: 11, cursor: 'pointer', background: role === r.id ? 'rgba(43,199,180,.05)' : 'var(--surface)' }}>
@@ -138,14 +140,14 @@ export default function AddMember() {
 
       {role === 'DEVELOPER' && (
         <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 10 }}>Applications</div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 10 }}>{t('addMember.applicationsLabel')}</div>
           {appsErr ? (
             <div style={{ display: 'flex', gap: 9, border: '1px solid rgba(241,85,108,.3)', background: 'rgba(241,85,108,.08)', borderRadius: 9, padding: '10px 13px' }}>
-              <span style={{ color: '#ff8497' }}>✕</span>
-              <span style={{ fontSize: 12, color: '#ff9aaa' }}>{appsErr}</span>
+              <span style={{ color: 'var(--red)' }}>✕</span>
+              <span style={{ fontSize: 12, color: 'var(--red)' }}>{appsErr}</span>
             </div>
           ) : apps.length === 0 ? (
-            <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>Nenhuma application neste projeto ainda — podes atribuir mais tarde em Team.</div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>{t('addMember.noApplicationsYet')}</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {apps.map(a => (
@@ -169,9 +171,9 @@ export default function AddMember() {
           className="btn-primary hover-bright"
           style={{ fontSize: 13, padding: '10px 20px', borderRadius: 9, fontWeight: 600, opacity: (!selected || loading) ? .6 : 1 }}
         >
-          {loading ? 'A adicionar…' : 'Adicionar membro'}
+          {loading ? t('addMember.adding') : t('addMember.submit')}
         </button>
-        <button onClick={() => nav('/app/team')} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>Cancelar</button>
+        <button onClick={() => nav('/app/team')} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>{t('addMember.cancel')}</button>
       </div>
     </div>
   );

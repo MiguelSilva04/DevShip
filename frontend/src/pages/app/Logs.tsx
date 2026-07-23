@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
 import Breadcrumb from '../../components/Breadcrumb';
+import { useLanguage } from '../../context/LanguageContext';
 
 interface LogLine {
   timestamp: string | null;
@@ -15,17 +16,18 @@ type Level = 'ALL' | 'INFO' | 'WARN' | 'WARNING' | 'ERROR' | 'DEBUG' | 'RAW';
 const levelColor: Record<string,string> = {
   INFO: 'var(--text-2)',
   DEBUG: 'var(--text-3)',
-  WARN: '#ecc26b',
-  WARNING: '#ecc26b',
-  ERROR: '#ff8497',
-  CRITICAL: '#ff8497',
-  FATAL: '#ff8497',
+  WARN: 'var(--amber)',
+  WARNING: 'var(--amber)',
+  ERROR: 'var(--red)',
+  CRITICAL: 'var(--red)',
+  FATAL: 'var(--red)',
   RAW: 'var(--text-3)',
 };
 
 export default function Logs() {
   const { appId, aeId } = useParams<{ appId: string; aeId: string }>();
   const { appLabel, envLabel, appId: resolvedAppId } = useAppEnvBreadcrumb(appId, aeId);
+  const { t } = useLanguage();
   const [pods, setPods] = useState<string[] | null>(null);
   const [pod, setPod] = useState('');
   const [lines, setLines] = useState<LogLine[]>([]);
@@ -70,28 +72,28 @@ export default function Logs() {
       <Breadcrumb segments={[
         { label: appLabel, to: resolvedAppId ? `/app/${resolvedAppId}` : undefined },
         { label: envLabel, to: (resolvedAppId && aeId) ? `/app/${resolvedAppId}/${aeId}` : undefined },
-        { label: 'logs' },
+        { label: t('logs.breadcrumbLogs') },
       ]} />
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18 }}>
-        <h1 style={{ fontSize:22, fontWeight:600, margin:0 }}>Logs</h1>
+        <h1 style={{ fontSize:22, fontWeight:600, margin:0 }}>{t('logs.title')}</h1>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           {loading && lines.length > 0 && (
             <div style={{ width:14, height:14, borderRadius:'50%', border:'2px solid var(--border)', borderTopColor:'var(--teal)', animation:'ds-spin .7s linear infinite' }} />
           )}
           <button onClick={load} disabled={loading || podsLoading || !pod} className="btn-ghost" style={{ fontSize:12, padding:'7px 14px', borderRadius:8, border:'1px solid var(--border)', cursor: (loading || podsLoading) ? 'not-allowed' : 'pointer' }}>
-            Atualizar ↻
+            {t('logs.refresh')}
           </button>
         </div>
       </div>
 
       {error && (
-        <div style={{ marginBottom:14, padding:'10px 14px', borderRadius:9, background:'rgba(241,85,108,.08)', border:'1px solid rgba(241,85,108,.3)', fontSize:12.5, color:'#ff8497' }}>{error}</div>
+        <div style={{ marginBottom:14, padding:'10px 14px', borderRadius:9, background:'rgba(241,85,108,.08)', border:'1px solid rgba(241,85,108,.3)', fontSize:12.5, color:'var(--red)' }}>{error}</div>
       )}
 
       {initialLoading ? (
         <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12, padding:'60px 0', color:'var(--text-3)', fontSize:13 }}>
           <div style={{ width:22, height:22, borderRadius:'50%', border:'2.5px solid var(--border)', borderTopColor:'var(--teal)', animation:'ds-spin .7s linear infinite' }} />
-          {podsLoading ? 'A carregar pods' : 'A carregar logs…'}
+          {podsLoading ? t('logs.loadingPods') : t('logs.loadingLogs')}
         </div>
       ) : (
         <>
@@ -105,8 +107,8 @@ export default function Logs() {
                 <button key={l} onClick={() => setFilter(l)} className="mono" style={{ fontSize:11.5, padding:'6px 12px', borderRadius:8, cursor:'pointer', border: filter===l ? '1px solid var(--teal)' : '1px solid var(--border)', background: filter===l ? 'rgba(43,199,180,.1)' : 'var(--bg-2)', color: filter===l ? 'var(--teal)' : 'var(--text-2)' }}>{l}</button>
               ))}
             </div>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filtrar mensagens…" style={{ flex:1, minWidth:180, background:'var(--bg-2)', border:'1px solid var(--border)', borderRadius:9, padding:'7px 13px', color:'var(--text)', fontSize:12.5, fontFamily:'inherit' }} />
-            <span style={{ fontSize:11.5, color:'var(--text-3)', marginLeft:'auto' }}>{visible.length} linhas</span>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('logs.filterPlaceholder')} style={{ flex:1, minWidth:180, background:'var(--bg-2)', border:'1px solid var(--border)', borderRadius:9, padding:'7px 13px', color:'var(--text)', fontSize:12.5, fontFamily:'inherit' }} />
+            <span style={{ fontSize:11.5, color:'var(--text-3)', marginLeft:'auto' }}>{visible.length} {t('logs.lines')}</span>
           </div>
 
           {/* Log output */}
@@ -121,7 +123,7 @@ export default function Logs() {
               ))}
               {visible.length === 0 && (
                 <div style={{ padding:'28px 18px', textAlign:'center', color:'var(--text-3)', fontSize:12.5 }}>
-                  {pod ? 'Nenhuma linha encontrada com os filtros actuais.' : 'Sem pods disponíveis para consultar logs.'}
+                  {pod ? t('logs.noLinesFound') : t('logs.noPodsAvailable')}
                 </div>
               )}
             </div>

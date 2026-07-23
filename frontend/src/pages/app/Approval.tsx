@@ -4,18 +4,22 @@ import { useUser } from '../../context/UserContext';
 import { apiFetch } from '../../api/client';
 import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
 import Breadcrumb from '../../components/Breadcrumb';
+import { useLanguage } from '../../context/LanguageContext';
+import type { TranslationKey } from '../../context/LanguageContext';
 
 type RequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
 
-const STATUS_LABEL: Record<RequestStatus, string> = {
-  PENDING: 'Pendente',
-  APPROVED: 'Aprovado',
-  REJECTED: 'Rejeitado',
-  RUNNING: 'Em curso',
-  SUCCESS: 'Concluído',
-  FAILED: 'Falhou',
-  CANCELLED: 'Cancelado',
-};
+function statusLabels(t: (key: TranslationKey) => string): Record<RequestStatus, string> {
+  return {
+    PENDING: t('approval.statusPending'),
+    APPROVED: t('approval.statusApproved'),
+    REJECTED: t('approval.statusRejected'),
+    RUNNING: t('approval.statusRunning'),
+    SUCCESS: t('approval.statusSuccess'),
+    FAILED: t('approval.statusFailed'),
+    CANCELLED: t('approval.statusCancelled'),
+  };
+}
 
 interface DeploymentRequest {
   id: string;
@@ -42,6 +46,8 @@ export default function Approval() {
   const { reqId } = useParams<{ reqId: string }>();
   const nav = useNavigate();
   const { user } = useUser();
+  const { t } = useLanguage();
+  const STATUS_LABEL = statusLabels(t);
   const canDecide = user?.role === 'tech' || user?.role === 'cloud';
 
   const [req, setReq] = useState<DeploymentRequest | null>(null);
@@ -103,7 +109,7 @@ export default function Approval() {
   }
 
   if (loading) return <Spinner />;
-  if (error) return <div style={{ color: '#ff8497', fontSize: 13, padding: '40px 0' }}>{error}</div>;
+  if (error) return <div style={{ color: 'var(--red)', fontSize: 13, padding: '40px 0' }}>{error}</div>;
   if (!req) return null;
 
   // Aprovar transiciona logo PENDING → APPROVED → RUNNING na mesma chamada (trigger_deploy
@@ -116,17 +122,17 @@ export default function Approval() {
     const approved = req.status !== 'REJECTED' && req.status !== 'CANCELLED';
     const inProgress = req.status === 'RUNNING' || req.status === 'SUCCESS' || req.status === 'FAILED';
     const icon = req.status === 'REJECTED' || req.status === 'CANCELLED' || req.status === 'FAILED' ? '✕' : '✓';
-    const color = req.status === 'REJECTED' || req.status === 'CANCELLED' || req.status === 'FAILED' ? '#ff8497' : '#5dd57b';
+    const color = req.status === 'REJECTED' || req.status === 'CANCELLED' || req.status === 'FAILED' ? 'var(--red)' : 'var(--green)';
     const bg = req.status === 'REJECTED' || req.status === 'CANCELLED' || req.status === 'FAILED' ? 'rgba(241,85,108,.14)' : 'rgba(52,199,89,.14)';
 
     const message: Record<RequestStatus, string> = {
       PENDING: '',
-      APPROVED: 'O deploy foi aprovado e entrará em execução.',
-      REJECTED: 'O deploy foi rejeitado. O Developer será notificado.',
-      RUNNING: 'O deploy foi aprovado e está em execução.',
-      SUCCESS: 'O deploy foi aprovado e concluiu com sucesso.',
-      FAILED: 'O deploy foi aprovado, mas falhou durante a execução.',
-      CANCELLED: 'O pedido foi cancelado.',
+      APPROVED: t('approval.msgApproved'),
+      REJECTED: t('approval.msgRejected'),
+      RUNNING: t('approval.msgRunning'),
+      SUCCESS: t('approval.msgSuccess'),
+      FAILED: t('approval.msgFailed'),
+      CANCELLED: t('approval.msgCancelled'),
     };
 
     return (
@@ -135,12 +141,12 @@ export default function Approval() {
           {icon}
         </div>
         <h2 style={{ fontSize: 20, fontWeight: 600, margin: '0 0 10px', color }}>
-          Deploy {STATUS_LABEL[req.status].toLowerCase()}
+          {t('approval.deployStatusPrefix')} {STATUS_LABEL[req.status].toLowerCase()}
         </h2>
         <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6, margin: '0 0 22px' }}>
           {message[req.status]}
           {req.approved_by_email && (
-            <><br />{approved ? 'Aprovado' : 'Rejeitado'} por <strong>{req.approved_by_email}</strong>.</>
+            <><br />{approved ? t('approval.approvedBy') : t('approval.rejectedBy')} {t('approval.by')} <strong>{req.approved_by_email}</strong>.</>
           )}
         </p>
         <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
@@ -150,10 +156,10 @@ export default function Approval() {
               className="btn-primary hover-bright"
               style={{ fontSize: 13, padding: '9px 18px', borderRadius: 9, fontWeight: 600 }}
             >
-              Ver execução →
+              {t('approval.viewExecution')}
             </button>
           )}
-          <button onClick={() => nav('/app/approvals')} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)', fontSize: 13, padding: '9px 18px', borderRadius: 9, cursor: 'pointer' }}>Voltar às aprovações</button>
+          <button onClick={() => nav('/app/approvals')} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)', fontSize: 13, padding: '9px 18px', borderRadius: 9, cursor: 'pointer' }}>{t('approval.backToApprovals')}</button>
         </div>
       </div>
     );
@@ -162,25 +168,25 @@ export default function Approval() {
   return (
     <div style={{ maxWidth: 660 }}>
       <Breadcrumb segments={[
-        { label: 'aprovações', to: '/app/approvals' },
+        { label: t('approval.breadcrumbApprovals'), to: '/app/approvals' },
         { label: appLabel, to: appId ? `/app/${appId}` : undefined },
         { label: envLabel, to: (appId && aeId) ? `/app/${appId}/${aeId}` : undefined },
       ]} />
-      <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 20px' }}>Pedido de Aprovação de Deploy</h1>
+      <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 20px' }}>{t('approval.pageTitle')}</h1>
 
       <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '20px 22px', marginBottom: 14 }}>
         <div className="responsive-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '13px 28px', fontSize: 13 }}>
           {([
-            ['Aplicação', appLabel],
-            ['Ambiente', envLabel],
-            ['Estado', STATUS_LABEL[req.status]],
-            ['Commit', req.source_commit_sha
+            [t('approval.application'), appLabel],
+            [t('approval.environment'), envLabel],
+            [t('approval.state'), STATUS_LABEL[req.status]],
+            [t('approval.commit'), req.source_commit_sha
               ? req.source_commit_sha.slice(0, 7)
               : pending?.head_sha
-              ? `${pending.head_sha.slice(0, 7)} (a aguardar aprovação)`
+              ? `${pending.head_sha.slice(0, 7)} ${t('approval.awaitingApproval')}`
               : '—'],
-            ['Pedido por', req.requested_by_email ?? '—'],
-            ['Pedido em', new Date(req.requested_at).toLocaleString()],
+            [t('approval.requestedByLabel'), req.requested_by_email ?? '—'],
+            [t('approval.requestedAtLabel'), new Date(req.requested_at).toLocaleString()],
           ] as [string, string][]).map(([k, v]) => (
             <div key={k}>
               <span style={{ color: 'var(--text-3)', fontSize: 12 }}>{k}</span>
@@ -192,13 +198,13 @@ export default function Approval() {
 
       {req.justification && (
         <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '18px 22px', marginBottom: 14 }}>
-          <div style={{ fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 10 }}>Nota do Developer</div>
+          <div style={{ fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 10 }}>{t('approval.developerNote')}</div>
           <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6, margin: 0 }}>{req.justification}</p>
         </div>
       )}
 
       {actionError && (
-        <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 9, background: 'rgba(241,85,108,.08)', border: '1px solid rgba(241,85,108,.3)', fontSize: 12.5, color: '#ff8497' }}>{actionError}</div>
+        <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 9, background: 'rgba(241,85,108,.08)', border: '1px solid rgba(241,85,108,.3)', fontSize: 12.5, color: 'var(--red)' }}>{actionError}</div>
       )}
 
       {canDecide ? (
@@ -206,12 +212,12 @@ export default function Approval() {
           {showReject ? (
             <div style={{ marginBottom: 14 }}>
               <label style={{ fontSize: 12.5, color: 'var(--text-2)', display: 'block', marginBottom: 7 }}>
-                Motivo da rejeição <span style={{ color: '#ff8497' }}>*</span>
+                {t('approval.rejectionReasonLabel')} <span style={{ color: 'var(--red)' }}>*</span>
               </label>
               <textarea
                 value={rejectNote}
                 onChange={e => setRejectNote(e.target.value)}
-                placeholder="Descreve o motivo da rejeição…"
+                placeholder={t('approval.rejectionPlaceholder')}
                 rows={3}
                 style={{ width: '100%', background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '11px 14px', color: 'var(--text)', fontSize: 13, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
               />
@@ -219,31 +225,31 @@ export default function Approval() {
                 <button
                   onClick={reject}
                   disabled={acting || !rejectNote.trim()}
-                  style={{ background: 'rgba(241,85,108,.1)', border: '1px solid rgba(241,85,108,.3)', color: '#ff8497', fontSize: 13, padding: '10px 20px', borderRadius: 9, cursor: acting || !rejectNote.trim() ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: acting || !rejectNote.trim() ? 0.6 : 1 }}
+                  style={{ background: 'rgba(241,85,108,.1)', border: '1px solid rgba(241,85,108,.3)', color: 'var(--red)', fontSize: 13, padding: '10px 20px', borderRadius: 9, cursor: acting || !rejectNote.trim() ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: acting || !rejectNote.trim() ? 0.6 : 1 }}
                 >
-                  {acting ? 'A rejeitar…' : 'Confirmar rejeição'}
+                  {acting ? t('approval.rejecting') : t('approval.confirmRejection')}
                 </button>
-                <button onClick={() => setShowReject(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>Cancelar</button>
+                <button onClick={() => setShowReject(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>{t('approval.cancel')}</button>
               </div>
             </div>
           ) : (
             <div style={{ display: 'flex', gap: 10 }}>
               <button className="btn-primary hover-bright" onClick={approve} disabled={acting} style={{ fontSize: 13, padding: '10px 20px', borderRadius: 9, fontWeight: 600, opacity: acting ? 0.7 : 1, cursor: acting ? 'not-allowed' : 'pointer' }}>
-                {acting ? 'A aprovar…' : 'Aprovar deploy'}
+                {acting ? t('approval.approving') : t('approval.approveDeploy')}
               </button>
               <button
                 onClick={() => setShowReject(true)}
-                style={{ background: 'rgba(241,85,108,.1)', border: '1px solid rgba(241,85,108,.3)', color: '#ff8497', fontSize: 13, padding: '10px 20px', borderRadius: 9, cursor: 'pointer', fontWeight: 600 }}
+                style={{ background: 'rgba(241,85,108,.1)', border: '1px solid rgba(241,85,108,.3)', color: 'var(--red)', fontSize: 13, padding: '10px 20px', borderRadius: 9, cursor: 'pointer', fontWeight: 600 }}
               >
-                Rejeitar
+                {t('approval.reject')}
               </button>
             </div>
           )}
         </>
       ) : (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', border: '1px solid rgba(224,169,59,.3)', borderRadius: 12, background: 'rgba(224,169,59,.06)', fontSize: 13, color: '#ecc26b' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', border: '1px solid rgba(224,169,59,.3)', borderRadius: 12, background: 'rgba(224,169,59,.06)', fontSize: 13, color: 'var(--amber)' }}>
           <span>⏳</span>
-          <span>A aguardar aprovação de um <strong>Tech Lead</strong>.</span>
+          <span>{t('approval.waitingTechLeadApproval')}</span>
         </div>
       )}
     </div>
@@ -251,5 +257,6 @@ export default function Approval() {
 }
 
 function Spinner() {
-  return <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-3)', fontSize: 13, padding: '40px 0' }}><span style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--teal)', animation: 'ds-spin .9s linear infinite', display: 'inline-block' }} />A carregar…</div>;
+  const { t } = useLanguage();
+  return <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-3)', fontSize: 13, padding: '40px 0' }}><span style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--teal)', animation: 'ds-spin .9s linear infinite', display: 'inline-block' }} />{t('common.loading')}</div>;
 }

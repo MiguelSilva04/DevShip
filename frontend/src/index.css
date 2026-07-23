@@ -1,9 +1,7 @@
 /* Tema escuro — omissão. O atributo data-theme no <html> (ThemeContext.tsx) escolhe qual
-   bloco se aplica; --teal/--green/--amber/--red/--gray/--blue mantêm-se iguais nos dois
-   temas (são cores de estado/marca, não de superfície) — só as cores de fundo/texto/borda
-   mudam. As centenas de cores hardcoded fora de var(--...) espalhadas pelas páginas NÃO
-   reagem a este toggle — só os elementos que já usam var(--...) mudam de tema; migrar
-   essas cores hardcoded é trabalho incremental por página, não desta mudança. */
+   bloco se aplica. --teal/--green/--amber/--red/--gray/--blue têm valores DIFERENTES
+   (mais escuros/saturados) no bloco light, para manter contraste WCAG sobre fundo claro —
+   nunca hardcoded #hex nas páginas para estas cores de estado, sempre var(--...). */
 :root,
 :root[data-theme="dark"] {
   --bg: #0F1117;
@@ -27,6 +25,7 @@
   --panel-2: #0D1015;
   --line: rgba(255,255,255,.07);
   --line-2: rgba(255,255,255,.12);
+  --topbar-bg: rgba(15,17,23,.85);
 }
 
 :root[data-theme="light"] {
@@ -51,6 +50,7 @@
   --panel-2: #F5F6F8;
   --line: rgba(0,0,0,.07);
   --line-2: rgba(0,0,0,.12);
+  --topbar-bg: rgba(255,255,255,.85);
 }
 
 html, body {
@@ -206,7 +206,7 @@ textarea {
 
 /* Landing grid background */
 .landing-bg {
-  background: #0A0C10;
+  background: var(--bg-2);
   background-image: linear-gradient(var(--line) 1px, transparent 1px),
                     linear-gradient(90deg, var(--line) 1px, transparent 1px);
   background-size: 34px 34px;

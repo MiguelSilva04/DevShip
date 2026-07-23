@@ -3,6 +3,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { OB_TEAM_ID, OB_PROJECT_ID } from '../Onboarding';
 import { useUser } from '../../context/UserContext';
+import { useLanguage } from '../../context/LanguageContext';
+import type { TranslationKey } from '../../context/LanguageContext';
 
 interface Member { team_member_id: string; user_id: string; name: string; email: string; role: string; joined_at: string; application_ids: string[]; }
 interface Candidate { user_id: string; name: string; email: string; }
@@ -15,11 +17,13 @@ const ROLE_LABEL: Record<string, string> = {
   DEVELOPER: 'Developer',
 };
 
-const ROLE_PERMISSIONS: Record<string, string[]> = {
-  CLOUD_ENGINEER: ['Gerir cluster', 'Team & settings', 'Deploy', 'Rollback', 'Aprovar'],
-  TECH_LEAD: ['Deploy', 'Rollback', 'Aprovar pedidos', 'Consultar'],
-  DEVELOPER: ['Deploy dev/staging', 'Rollback dev/staging', 'Solicitar p/ produção'],
-};
+function rolePermissions(t: (key: TranslationKey) => string): Record<string, string> {
+  return {
+    CLOUD_ENGINEER: t('team.permCloudEngineer'),
+    TECH_LEAD: t('team.permTechLead'),
+    DEVELOPER: t('team.permDeveloper'),
+  };
+}
 
 function initials(name: string) {
   return name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
@@ -50,6 +54,7 @@ function HighlightTooltip({ anchor, children }: { anchor: HTMLElement; children:
 }
 
 function MemberAccessButton({ m, isBusy, highlighted, onOpen }: { m: Member; isBusy: boolean; highlighted: boolean; onOpen: () => void }) {
+  const { t } = useLanguage();
   const btnRef = useRef<HTMLButtonElement>(null);
   // No primeiro render depois de o membro passar de candidato a membro, a ref ainda é
   // null (só fica preenchida depois do commit ao DOM) — sem este estado, a condição
@@ -72,7 +77,7 @@ function MemberAccessButton({ m, isBusy, highlighted, onOpen }: { m: Member; isB
       </button>
       {highlighted && btnRef.current && (
         <HighlightTooltip anchor={btnRef.current}>
-          Próximo passo: escolhe as aplicações a que {m.name.split(' ')[0]} vai ter acesso.
+          {t('team.highlightNextStep')} {m.name.split(' ')[0]} {t('team.highlightNextStepEnd')}
         </HighlightTooltip>
       )}
     </div>
@@ -85,6 +90,8 @@ export default function Team() {
   const nav = useNavigate();
   const location = useLocation();
   const { user } = useUser();
+  const { t } = useLanguage();
+  const ROLE_PERMISSIONS = rolePermissions(t);
   const [members, setMembers] = useState<Member[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [candidateRoles, setCandidateRoles] = useState<Record<string, AllowedRole>>({});
@@ -117,13 +124,13 @@ export default function Team() {
   const projectId = localStorage.getItem(OB_PROJECT_ID);
 
   function load() {
-    if (!teamId) { setErr('Team não encontrada.'); return; }
+    if (!teamId) { setErr(t('team.errTeamNotFound')); return; }
     apiFetch(`/teams/${teamId}/members`)
       .then(({ members: m, candidates: c }: { members: Member[]; candidates: Candidate[] }) => {
         setMembers(m);
         setCandidates(c);
       })
-      .catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Erro ao carregar team.'));
+      .catch((e: unknown) => setErr(e instanceof Error ? e.message : t('team.errLoadTeam')));
     apiFetch(`/teams/${teamId}`).then(setTeam).catch(() => setTeam(null));
     if (projectId) {
       apiFetch(`/projects/${projectId}/applications`).then(setApps).catch(() => setApps([]));
@@ -153,7 +160,7 @@ export default function Team() {
       setMembers(prev => prev.map(x => x.team_member_id === updated.team_member_id ? updated : x));
       setAccessMember(null);
     } catch (e: unknown) {
-      setAccessErr(e instanceof Error ? e.message : 'Erro ao guardar acessos.');
+      setAccessErr(e instanceof Error ? e.message : t('team.errSaveAccess'));
     } finally { setSavingAccess(false); }
   }
 
@@ -175,7 +182,7 @@ export default function Team() {
       setTeam(updated);
       setShowEditTeam(false);
     } catch (e: unknown) {
-      setTeamErr(e instanceof Error ? e.message : 'Erro ao guardar equipa.');
+      setTeamErr(e instanceof Error ? e.message : t('team.errSaveTeam'));
     } finally { setSavingTeam(false); }
   }
 
@@ -193,7 +200,7 @@ export default function Team() {
       if (role === 'DEVELOPER') setHighlightMemberId(member.team_member_id);
       window.dispatchEvent(new CustomEvent('devship:team-changed'));
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Erro ao adicionar membro.');
+      setErr(e instanceof Error ? e.message : t('team.errAddMember'));
     } finally { setBusy(null); }
   }
 
@@ -217,7 +224,7 @@ export default function Team() {
       setConfirmRemove(null);
       window.dispatchEvent(new CustomEvent('devship:team-changed'));
     } catch (e: unknown) {
-      setRemovingErr(e instanceof Error ? e.message : 'Erro ao remover membro.');
+      setRemovingErr(e instanceof Error ? e.message : t('team.errRemoveMember'));
     } finally { setBusy(null); }
   }
 
@@ -231,7 +238,7 @@ export default function Team() {
       });
       setMembers(prev => prev.map(x => x.team_member_id === m.team_member_id ? updated : x));
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Erro ao alterar role.');
+      setErr(e instanceof Error ? e.message : t('team.errChangeRole'));
     } finally { setBusy(null); }
   }
 
@@ -244,22 +251,22 @@ export default function Team() {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 4px' }}>Equipa</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 4px' }}>{t('team.title')}</h1>
           <p style={{ fontSize: 13, color: 'var(--text-2)', margin: 0 }}>
-            {readOnly ? 'Membros da equipa.' : 'Membros da equipa e candidatos descobertos automaticamente.'}
+            {readOnly ? t('team.subtitleReadOnly') : t('team.subtitleFull')}
           </p>
         </div>
         {canAddMembers && (
           <button onClick={() => nav('/app/team/add')} className="btn-primary hover-bright" style={{ fontSize: 12.5, padding: '9px 16px', borderRadius: 9, display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-            <span>+</span> Adicionar membro
+            <span>+</span> {t('team.addMemberLabel')}
           </button>
         )}
       </div>
 
       {err && (
         <div style={{ display: 'flex', gap: 9, border: '1px solid rgba(241,85,108,.3)', background: 'rgba(241,85,108,.08)', borderRadius: 9, padding: '10px 13px', marginBottom: 16 }}>
-          <span style={{ color: '#ff8497' }}>✕</span>
-          <span style={{ fontSize: 12, color: '#ff9aaa' }}>{err}</span>
+          <span style={{ color: 'var(--red)' }}>✕</span>
+          <span style={{ fontSize: 12, color: 'var(--red)' }}>{err}</span>
         </div>
       )}
 
@@ -267,10 +274,10 @@ export default function Team() {
       {team && (
         <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '18px 20px', marginBottom: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <span style={{ fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>Identidade da equipa</span>
+            <span style={{ fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>{t('team.teamIdentity')}</span>
             {user?.role === 'cloud' && (
               <button onClick={openEditTeam} style={{ fontSize: 12, padding: '6px 13px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer' }}>
-                Editar equipa
+                {t('team.editTeam')}
               </button>
             )}
           </div>
@@ -278,7 +285,7 @@ export default function Team() {
             <div style={{ width: 44, height: 44, borderRadius: 11, background: 'var(--surface-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 600, flex: 'none' }}>{initials(team.name)}</div>
             <div>
               <div style={{ fontSize: 14.5, fontWeight: 600 }}>{team.name}</div>
-              <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 2 }}>{team.description || 'Sem descrição.'}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 2 }}>{team.description || t('team.noDescription')}</div>
             </div>
           </div>
         </div>
@@ -288,15 +295,15 @@ export default function Team() {
       {showEditTeam && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setShowEditTeam(false)}>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: '28px 30px', maxWidth: 440, width: '100%', margin: '0 16px' }} onClick={e => e.stopPropagation()}>
-            <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 14px' }}>Editar equipa</h2>
-            {teamErr && <div style={{ fontSize: 12, color: '#ff9aaa', marginBottom: 10 }}>{teamErr}</div>}
-            <label style={{ fontSize: 12.5, color: 'var(--text-2)', display: 'block', marginBottom: 7 }}>Nome</label>
+            <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 14px' }}>{t('team.editTeam')}</h2>
+            {teamErr && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 10 }}>{teamErr}</div>}
+            <label style={{ fontSize: 12.5, color: 'var(--text-2)', display: 'block', marginBottom: 7 }}>{t('team.nameLabel')}</label>
             <input
               value={editName}
               onChange={e => setEditName(e.target.value)}
               style={{ width: '100%', background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 13px', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 14 }}
             />
-            <label style={{ fontSize: 12.5, color: 'var(--text-2)', display: 'block', marginBottom: 7 }}>Descrição</label>
+            <label style={{ fontSize: 12.5, color: 'var(--text-2)', display: 'block', marginBottom: 7 }}>{t('team.descriptionLabel')}</label>
             <textarea
               value={editDescription}
               onChange={e => setEditDescription(e.target.value)}
@@ -310,9 +317,9 @@ export default function Team() {
                 className="btn-primary hover-bright"
                 style={{ fontSize: 13, padding: '10px 18px', borderRadius: 9, fontWeight: 600, opacity: (savingTeam || !editName.trim()) ? .6 : 1 }}
               >
-                {savingTeam ? 'A guardar…' : 'Guardar'}
+                {savingTeam ? t('team.saving') : t('team.save')}
               </button>
-              <button onClick={() => setShowEditTeam(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>Cancelar</button>
+              <button onClick={() => setShowEditTeam(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>{t('team.cancel')}</button>
             </div>
           </div>
         </div>
@@ -325,7 +332,7 @@ export default function Team() {
         <div className="responsive-table-grid" style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', marginBottom: 24 }}>
           <div style={{ minWidth: 560, borderRadius: 14, overflow: 'hidden' }}>
           <div style={{ display: 'grid', gridTemplateColumns: memberGridColumns, gap: 12, padding: '12px 20px', borderBottom: '1px solid var(--border)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
-            <span>Membros</span><span>Role</span><span>Aplicações</span><span>Desde</span>{anyManageable && <span style={{ textAlign: 'right' }}>Ação</span>}
+            <span>{t('team.membersCol')}</span><span>{t('team.roleCol')}</span><span>{t('team.applicationsCol')}</span><span>{t('team.sinceCol')}</span>{anyManageable && <span style={{ textAlign: 'right' }}>{t('team.actionCol')}</span>}
           </div>
           {members.map((m, i) => {
             const isOwner = m.role === 'CLOUD_ENGINEER';
@@ -338,7 +345,7 @@ export default function Team() {
                   <div>
                     <div style={{ fontSize: 13.5, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 7 }}>
                       {m.name}
-                      {isOwner && <span style={{ fontSize: 9.5, padding: '1px 6px', borderRadius: 5, background: 'rgba(43,199,180,.12)', color: 'var(--teal)', border: '1px solid rgba(43,199,180,.28)', fontWeight: 600 }}>Proprietário</span>}
+                      {isOwner && <span style={{ fontSize: 9.5, padding: '1px 6px', borderRadius: 5, background: 'rgba(43,199,180,.12)', color: 'var(--teal)', border: '1px solid rgba(43,199,180,.28)', fontWeight: 600 }}>{t('team.owner')}</span>}
                     </div>
                     <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{m.email}</div>
                   </div>
@@ -380,7 +387,7 @@ export default function Team() {
                         disabled={isBusy}
                         style={{ fontSize: 11.5, padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-3)', cursor: isBusy ? 'default' : 'pointer', opacity: isBusy ? .6 : 1 }}
                       >
-                        Remover
+                        {t('team.remove')}
                       </button>
                     )}
                   </div>
@@ -397,20 +404,20 @@ export default function Team() {
       {confirmRemove && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setConfirmRemove(null)}>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: '28px 30px', maxWidth: 420, width: '100%', margin: '0 16px' }} onClick={e => e.stopPropagation()}>
-            <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 6px' }}>Remover membro</h2>
+            <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 6px' }}>{t('team.removeMemberTitle')}</h2>
             <p style={{ fontSize: 12.5, color: 'var(--text-2)', margin: '0 0 18px', lineHeight: 1.6 }}>
-              Tens a certeza que queres remover <strong>{confirmRemove.name}</strong> da equipa? Perde acesso imediato a todas as applications.
+              {t('team.removeMemberConfirm')} <strong>{confirmRemove.name}</strong> {t('team.removeMemberConsequence')}
             </p>
-            {removingErr && <div style={{ fontSize: 12, color: '#ff9aaa', marginBottom: 10 }}>{removingErr}</div>}
+            {removingErr && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 10 }}>{removingErr}</div>}
             <div style={{ display: 'flex', gap: 10 }}>
               <button
                 onClick={() => removeMember(confirmRemove)}
                 disabled={busy === confirmRemove.team_member_id}
-                style={{ background: 'rgba(241,85,108,.15)', border: '1px solid rgba(241,85,108,.35)', color: '#ff8497', fontSize: 13, padding: '10px 20px', borderRadius: 9, cursor: busy === confirmRemove.team_member_id ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: busy === confirmRemove.team_member_id ? .6 : 1 }}
+                style={{ background: 'rgba(241,85,108,.15)', border: '1px solid rgba(241,85,108,.35)', color: 'var(--red)', fontSize: 13, padding: '10px 20px', borderRadius: 9, cursor: busy === confirmRemove.team_member_id ? 'not-allowed' : 'pointer', fontWeight: 600, opacity: busy === confirmRemove.team_member_id ? .6 : 1 }}
               >
-                {busy === confirmRemove.team_member_id ? 'A remover…' : 'Remover'}
+                {busy === confirmRemove.team_member_id ? t('team.removing') : t('team.remove')}
               </button>
-              <button onClick={() => setConfirmRemove(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>Cancelar</button>
+              <button onClick={() => setConfirmRemove(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>{t('team.cancel')}</button>
             </div>
           </div>
         </div>
@@ -420,13 +427,13 @@ export default function Team() {
       {accessMember && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setAccessMember(null)}>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: '28px 30px', maxWidth: 440, width: '100%', margin: '0 16px' }} onClick={e => e.stopPropagation()}>
-            <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 6px' }}>Aplicações de {accessMember.name}</h2>
+            <h2 style={{ fontSize: 17, fontWeight: 600, margin: '0 0 6px' }}>{t('team.appsOf')} {accessMember.name}</h2>
             <p style={{ fontSize: 12.5, color: 'var(--text-2)', margin: '0 0 18px', lineHeight: 1.6 }}>
-              Um Developer só vê e faz deploy nas aplicações selecionadas.
+              {t('team.appsAccessNote')}
             </p>
-            {accessErr && <div style={{ fontSize: 12, color: '#ff9aaa', marginBottom: 10 }}>{accessErr}</div>}
+            {accessErr && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 10 }}>{accessErr}</div>}
             {apps.length === 0 ? (
-              <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>Nenhuma aplicação neste projeto ainda.</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>{t('team.noAppsYet')}</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
                 {apps.map(a => (
@@ -447,9 +454,9 @@ export default function Team() {
                 className="btn-primary hover-bright"
                 style={{ fontSize: 13, padding: '10px 18px', borderRadius: 9, fontWeight: 600, opacity: savingAccess ? .6 : 1 }}
               >
-                {savingAccess ? 'A guardar…' : 'Guardar'}
+                {savingAccess ? t('team.saving') : t('team.save')}
               </button>
-              <button onClick={() => setAccessMember(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>Cancelar</button>
+              <button onClick={() => setAccessMember(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>{t('team.cancel')}</button>
             </div>
           </div>
         </div>
@@ -462,14 +469,14 @@ export default function Team() {
           style={{ background: 'transparent', border: 'none', color: 'var(--text-2)', fontSize: 12.5, cursor: 'pointer', padding: '4px 0', display: 'flex', alignItems: 'center', gap: 6 }}
         >
           <span style={{ transform: showPermissions ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform .15s' }}>›</span>
-          Ver permissões por role
+          {t('team.viewPermissions')}
         </button>
         {showPermissions && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 22, marginTop: 14, padding: '18px 20px', border: '1px solid var(--border)', borderRadius: 12, background: 'var(--surface)' }}>
             {(['CLOUD_ENGINEER', 'TECH_LEAD', 'DEVELOPER'] as const).map(role => (
               <div key={role}>
-                <div style={{ fontSize: 12.5, fontWeight: 600, color: role === 'CLOUD_ENGINEER' ? 'var(--teal)' : role === 'TECH_LEAD' ? '#7fb6f9' : 'var(--text)', marginBottom: 6 }}>{ROLE_LABEL[role]}</div>
-                <div style={{ fontSize: 11.5, color: 'var(--text-3)', lineHeight: 1.7 }}>{ROLE_PERMISSIONS[role].join(' · ')}</div>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: role === 'CLOUD_ENGINEER' ? 'var(--teal)' : role === 'TECH_LEAD' ? 'var(--blue)' : 'var(--text)', marginBottom: 6 }}>{ROLE_LABEL[role]}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-3)', lineHeight: 1.7 }}>{ROLE_PERMISSIONS[role]}</div>
               </div>
             ))}
           </div>
@@ -479,7 +486,7 @@ export default function Team() {
       {/* Candidates — only visible to whoever can act on them (CE, Tech Lead) */}
       {canAddMembers && candidates.length > 0 && (
         <div>
-          <div className="mono" style={{ fontSize: 10.5, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 13 }}>Candidatos do mesmo domínio</div>
+          <div className="mono" style={{ fontSize: 10.5, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 13 }}>{t('team.candidatesHeader')}</div>
           <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', overflow: 'hidden' }}>
             {candidates.map((c, i) => (
               <div key={c.user_id} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '14px 20px', borderBottom: i < candidates.length - 1 ? '1px solid var(--border-soft)' : 'none' }}>
@@ -493,7 +500,7 @@ export default function Team() {
                   onChange={e => setCandidateRoles(prev => ({ ...prev, [c.user_id]: e.target.value as AllowedRole }))}
                   className="select-base"
                   disabled={busy === c.user_id || user?.role === 'tech'}
-                  title={user?.role === 'tech' ? 'Um Tech Lead só pode adicionar Developers.' : undefined}
+                  title={user?.role === 'tech' ? t('team.techLeadRestriction') : undefined}
                 >
                   <option value="DEVELOPER">Developer</option>
                   {user?.role === 'cloud' && <option value="TECH_LEAD">Tech Lead</option>}
@@ -504,14 +511,14 @@ export default function Team() {
                   className="btn-primary hover-bright"
                   style={{ fontSize: 12, padding: '7px 14px', borderRadius: 8, opacity: busy === c.user_id ? .6 : 1 }}
                 >
-                  {busy === c.user_id ? 'A adicionar…' : 'Adicionar'}
+                  {busy === c.user_id ? t('team.adding') : t('team.add')}
                 </button>
               </div>
             ))}
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 10, lineHeight: 1.6 }}>
-            Candidatos são utilizadores registados com o mesmo domínio de email que ainda não pertencem a nenhuma team.
-            São adicionados como <strong>Developer</strong> — altera a role em "Adicionar membro" se necessário.
+            {t('team.candidatesNote1')}{' '}
+            {t('team.candidatesNote2')}
           </div>
         </div>
       )}

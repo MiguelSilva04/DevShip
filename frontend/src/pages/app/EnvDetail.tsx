@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { type LifecycleStatus, type UpToDateStatus, lifecycleColor, LIFECYCLE_LABEL, UP_TO_DATE_LABEL } from '../../lib/lifecycle';
 import Breadcrumb from '../../components/Breadcrumb';
+import { useLanguage } from '../../context/LanguageContext';
 
 interface UpToDateResult {
   status: UpToDateStatus;
@@ -16,8 +17,8 @@ interface UpToDateResult {
 
 function upToDatePill(s: UpToDateStatus) {
   const map: Record<UpToDateStatus, { bg: string; col: string; bord: string; label: string }> = {
-    UpToDate: { bg: 'rgba(52,199,89,.13)',  col: '#5dd57b', bord: 'rgba(52,199,89,.24)',  label: UP_TO_DATE_LABEL.UpToDate },
-    Outdated: { bg: 'rgba(224,169,59,.13)', col: '#ecc26b', bord: 'rgba(224,169,59,.26)', label: UP_TO_DATE_LABEL.Outdated },
+    UpToDate: { bg: 'rgba(52,199,89,.13)',  col: 'var(--green)', bord: 'rgba(52,199,89,.24)',  label: UP_TO_DATE_LABEL.UpToDate },
+    Outdated: { bg: 'rgba(224,169,59,.13)', col: 'var(--amber)', bord: 'rgba(224,169,59,.26)', label: UP_TO_DATE_LABEL.Outdated },
     Unknown:  { bg: 'var(--surface)',       col: 'var(--text-3)', bord: 'var(--border)',  label: UP_TO_DATE_LABEL.Unknown },
   };
   return map[s];
@@ -51,6 +52,7 @@ function statusPill(s: LifecycleStatus | null) {
 export default function EnvDetail() {
   const { appId, aeId } = useParams<{ appId: string; aeId: string }>();
   const nav = useNavigate();
+  const { t } = useLanguage();
   const [data, setData] = useState<AEDetail | null>(null);
   const [envName, setEnvName] = useState('');
   const [appName, setAppName] = useState('');
@@ -113,7 +115,7 @@ export default function EnvDetail() {
       .catch(e => setError(e.message));
   }, [aeId]);
 
-  if (error) return <div style={{ color: '#ff8497', fontSize: 13, padding: '40px 0' }}>{error}</div>;
+  if (error) return <div style={{ color: 'var(--red)', fontSize: 13, padding: '40px 0' }}>{error}</div>;
   if (!data) return <Spinner />;
 
   const cv = data.current_version;
@@ -124,7 +126,7 @@ export default function EnvDetail() {
   return (
     <div>
       <Breadcrumb segments={[
-        { label: 'aplicações', to: '/app/home' },
+        { label: t('envDetail.breadcrumbApps'), to: '/app/home' },
         { label: appName || appId || '', to: (appId) ? `/app/${appId}` : undefined },
         { label },
       ]} />
@@ -137,10 +139,10 @@ export default function EnvDetail() {
           style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 12px', borderRadius: 999, fontSize: 12, background: p.bg, color: p.col, border: `1px solid ${p.bord}` }}
         >
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.dot, animation: status === 'Deploying' ? 'ds-pulse 1.4s infinite' : 'none' }} />
-          {status ? LIFECYCLE_LABEL[status] : 'Desconhecido'}
+          {status ? LIFECYCLE_LABEL[status] : t('envDetail.unknown')}
           {status === null && (
             <span className="ds-tooltip-bubble">
-              A aplicação "{appName || appId}" ainda não foi <em>deployada</em> em {label} através da DevShip — o estado fica Desconhecido até ao primeiro deploy.
+              {t('envDetail.notDeployedTooltip1')} "{appName || appId}" {t('envDetail.notDeployedTooltip2')} <em>{t('envDetail.notDeployedTooltip2Emphasis')}</em> {t('envDetail.notDeployedTooltip3')} {label} {t('envDetail.notDeployedTooltip4')}
             </span>
           )}
         </span>
@@ -153,7 +155,7 @@ export default function EnvDetail() {
             className="btn-primary hover-bright"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, padding: '9px 16px', borderRadius: 8 }}
           >
-            Ver pedido pendente →
+            {t('envDetail.viewPendingRequest')}
           </button>
         ) : status === 'Deploying' && cv?.deployment_request_id ? (
           <button
@@ -161,18 +163,18 @@ export default function EnvDetail() {
             className="btn-primary hover-bright"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, padding: '9px 16px', borderRadius: 8 }}
           >
-            Ver execução em curso →
+            {t('envDetail.viewRunningExecution')}
           </button>
         ) : utdLoading && !upToDate ? (
           <button disabled className="btn-ghost" style={{ fontSize: 12.5, padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)', cursor: 'default', opacity: .7 }}>
-            A verificar…
+            {t('envDetail.checking')}
           </button>
         ) : upToDate?.status === 'UpToDate' ? (() => {
           const u = upToDatePill(upToDate.status);
           return (
             <button
               disabled
-              title="Já está tudo deployado — sem commits novos desde o último deploy."
+              title={t('envDetail.alreadyDeployedTitle')}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, padding: '9px 14px', borderRadius: 8, background: u.bg, color: u.col, border: `1px solid ${u.bord}`, cursor: 'default', opacity: .85 }}
             >
               {u.label}
@@ -184,26 +186,26 @@ export default function EnvDetail() {
             className="btn-primary hover-bright"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, padding: '9px 16px', borderRadius: 8 }}
           >
-            <UpArrow /> {requiresApproval ? 'Solicitar deploy' : 'Deploy'}
+            <UpArrow /> {requiresApproval ? t('envDetail.requestDeploy') : t('envDetail.deploy')}
           </button>
         )}
-        <button onClick={() => nav(`/app/${appId}/${aeId}/rollback`)} className="btn-ghost" style={{ fontSize: 12.5, padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)' }}>Rollback</button>
-        <button onClick={() => nav(`/app/${appId}/${aeId}/history`)} className="btn-ghost" style={{ fontSize: 12.5, padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)' }}>Histórico</button>
+        <button onClick={() => nav(`/app/${appId}/${aeId}/rollback`)} className="btn-ghost" style={{ fontSize: 12.5, padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)' }}>{t('envDetail.rollback')}</button>
+        <button onClick={() => nav(`/app/${appId}/${aeId}/history`)} className="btn-ghost" style={{ fontSize: 12.5, padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)' }}>{t('envDetail.history')}</button>
         <button onClick={() => setTechOpen(v => !v)} className="btn-ghost" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)' }}>
-          <span style={{ color: 'var(--text-3)', fontSize: 10 }}>{techOpen ? '▼' : '▶'}</span> Ver detalhes técnicos
+          <span style={{ color: 'var(--text-3)', fontSize: 10 }}>{techOpen ? '▼' : '▶'}</span> {t('envDetail.viewTechDetails')}
         </button>
       </div>
 
       {upToDate?.gitops_drift_status === 'Outdated' && (
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 13px', border: '1px solid rgba(224,169,59,.35)', borderRadius: 9, background: 'rgba(224,169,59,.07)', fontSize: 12, color: '#ecc26b', marginBottom: 22 }}>
-          <span>⚠</span> O manifesto no GitOps foi alterado fora da DevShip desde o último deploy desta app.
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 13px', border: '1px solid rgba(224,169,59,.35)', borderRadius: 9, background: 'rgba(224,169,59,.07)', fontSize: 12, color: 'var(--amber)', marginBottom: 22 }}>
+          <span>⚠</span> {t('envDetail.gitopsDriftWarning')}
         </div>
       )}
 
       {techOpen && (
         <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap', margin: '-8px 0 22px', padding: '14px 16px', border: '1px solid var(--border-soft)', borderRadius: 12, background: 'var(--bg-2)' }}>
-          <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-3)', alignSelf: 'center', marginRight: 4 }}>debug ·</span>
-          {([['Eventos', `/app/${appId}/${aeId}/events`], ['Logs', `/app/${appId}/${aeId}/logs`], ['Health Details', `/app/${appId}/${aeId}/health`], ['Pods', `/app/${appId}/${aeId}/pods`]] as [string, string][]).map(([l, path]) => (
+          <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-3)', alignSelf: 'center', marginRight: 4 }}>{t('envDetail.debugLabel')}</span>
+          {([[t('envDetail.events'), `/app/${appId}/${aeId}/events`], [t('envDetail.logs'), `/app/${appId}/${aeId}/logs`], [t('envDetail.healthDetails'), `/app/${appId}/${aeId}/health`], [t('envDetail.pods'), `/app/${appId}/${aeId}/pods`]] as [string, string][]).map(([l, path]) => (
             <button key={l} onClick={() => nav(path)} className="btn-secondary" style={{ fontSize: 12, padding: '7px 14px', borderRadius: 8 }}>{l}</button>
           ))}
         </div>
@@ -211,14 +213,14 @@ export default function EnvDetail() {
 
       <div className="responsive-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '20px 22px' }}>
-          <div style={{ fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 14 }}>Versão atual</div>
+          <div style={{ fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 14 }}>{t('envDetail.currentVersion')}</div>
           {cv ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 11, fontSize: 12.5 }}>
               {([
-                ['Commit desta versão', cv.source_commit_sha ? cv.source_commit_sha.slice(0, 7) : '—', 'var(--teal)'],
-                ['HEAD do repositório', upToDate?.source_head_sha ? upToDate.source_head_sha.slice(0, 7) : '—', ''],
-                ['Started', cv.deployed_at ? new Date(cv.deployed_at).toLocaleString() : '—', ''],
-                ['Autor', cv.requested_by_email ?? '—', ''],
+                [t('envDetail.commitOfVersion'), cv.source_commit_sha ? cv.source_commit_sha.slice(0, 7) : '—', 'var(--teal)'],
+                [t('envDetail.repoHead'), upToDate?.source_head_sha ? upToDate.source_head_sha.slice(0, 7) : '—', ''],
+                [t('envDetail.started'), cv.deployed_at ? new Date(cv.deployed_at).toLocaleString() : '—', ''],
+                [t('envDetail.author'), cv.requested_by_email ?? '—', ''],
               ] as [string, string, string][]).map(([k, v, c]) => (
                 <div key={k} style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ color: 'var(--text-3)' }}>{k}</span>
@@ -227,32 +229,32 @@ export default function EnvDetail() {
               ))}
             </div>
           ) : (
-            <div style={{ fontSize: 13, color: 'var(--text-3)' }}>Sem deploys ainda.</div>
+            <div style={{ fontSize: 13, color: 'var(--text-3)' }}>{t('envDetail.noDeploysYet')}</div>
           )}
         </div>
 
         <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '20px 22px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <span style={{ fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--text-3)' }}>Health</span>
-            <span onClick={() => nav(`/app/${appId}/${aeId}/health`)} style={{ fontSize: 11.5, color: 'var(--teal)', cursor: 'pointer' }}>Ver health details →</span>
+            <span style={{ fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--text-3)' }}>{t('envDetail.health')}</span>
+            <span onClick={() => nav(`/app/${appId}/${aeId}/health`)} style={{ fontSize: 11.5, color: 'var(--teal)', cursor: 'pointer' }}>{t('envDetail.viewHealthDetails')}</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, fontSize: 12.5 }}>
             {status === 'Deploying' ? (
               <>
-                <ProbeRow label="Startup probe" state="checking" />
-                <ProbeRow label="Readiness probe" state="waiting" />
-                <ProbeRow label="Liveness probe" state="pending" />
-                <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 14, borderTop: '1px solid var(--border-soft)', paddingTop: 12 }}>O novo pod ainda está a arrancar.</div>
+                <ProbeRow label={t('envDetail.startupProbe')} state="checking" />
+                <ProbeRow label={t('envDetail.readinessProbe')} state="waiting" />
+                <ProbeRow label={t('envDetail.livenessProbe')} state="pending" />
+                <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 14, borderTop: '1px solid var(--border-soft)', paddingTop: 12 }}>{t('envDetail.podStillStarting')}</div>
               </>
             ) : status === 'Healthy' ? (
               <>
-                <ProbeRow label="Startup probe" state="passing" />
-                <ProbeRow label="Readiness probe" state="passing" />
-                <ProbeRow label="Liveness probe" state="passing" />
-                <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 14, borderTop: '1px solid var(--border-soft)', paddingTop: 12 }}>Sem erros recentes.</div>
+                <ProbeRow label={t('envDetail.startupProbe')} state="passing" />
+                <ProbeRow label={t('envDetail.readinessProbe')} state="passing" />
+                <ProbeRow label={t('envDetail.livenessProbe')} state="passing" />
+                <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginTop: 14, borderTop: '1px solid var(--border-soft)', paddingTop: 12 }}>{t('envDetail.noRecentErrors')}</div>
               </>
             ) : (
-              <div style={{ fontSize: 13, color: 'var(--text-3)' }}>Estado: {status ? LIFECYCLE_LABEL[status] : 'Desconhecido'}. Ver Health Details para mais info.</div>
+              <div style={{ fontSize: 13, color: 'var(--text-3)' }}>{t('envDetail.stateLabel')} {status ? LIFECYCLE_LABEL[status] : t('envDetail.unknown')}. {t('envDetail.seeHealthForMore')}</div>
             )}
           </div>
         </div>
@@ -262,16 +264,17 @@ export default function EnvDetail() {
 }
 
 function ProbeRow({ label, state }: { label: string; state: 'passing' | 'checking' | 'waiting' | 'pending' }) {
+  const { t } = useLanguage();
   const icon = state === 'passing'
-    ? <span style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(52,199,89,.16)', border: '1.5px solid #34C759', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#5dd57b', fontSize: 10, flex: 'none' }}>✓</span>
+    ? <span style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(52,199,89,.16)', border: '1.5px solid var(--green)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--green)', fontSize: 10, flex: 'none' }}>✓</span>
     : state === 'checking'
     ? <span style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--amber)', animation: 'ds-spin .9s linear infinite', flex: 'none' }} />
     : state === 'waiting'
     ? <span style={{ width: 18, height: 18, borderRadius: '50%', border: '1.5px solid var(--border)', flex: 'none' }} />
     : <span style={{ width: 18, height: 18, borderRadius: '50%', border: '1.5px dashed var(--border)', flex: 'none' }} />;
 
-  const statusCol = state === 'passing' ? '#5dd57b' : state === 'checking' ? '#ecc26b' : 'var(--text-3)';
-  const statusLabel = state === 'passing' ? 'A passar' : state === 'checking' ? 'A verificar…' : state === 'waiting' ? 'À espera' : '–';
+  const statusCol = state === 'passing' ? 'var(--green)' : state === 'checking' ? 'var(--amber)' : 'var(--text-3)';
+  const statusLabel = state === 'passing' ? t('envDetail.probePassing') : state === 'checking' ? t('envDetail.probeChecking') : state === 'waiting' ? t('envDetail.probeWaiting') : '–';
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -283,7 +286,8 @@ function ProbeRow({ label, state }: { label: string; state: 'passing' | 'checkin
 }
 
 function Spinner() {
-  return <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-3)', fontSize: 13, padding: '40px 0' }}><span style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--teal)', animation: 'ds-spin .9s linear infinite', display: 'inline-block' }} />A carregar…</div>;
+  const { t } = useLanguage();
+  return <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-3)', fontSize: 13, padding: '40px 0' }}><span style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--teal)', animation: 'ds-spin .9s linear infinite', display: 'inline-block' }} />{t('common.loading')}</div>;
 }
 
 function UpArrow() {

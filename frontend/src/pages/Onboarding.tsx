@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { apiFetch } from '../api/client';
 import { parseCollisionDetail } from '../utils/collisionError';
+import { useLanguage } from '../context/LanguageContext';
 
 // ─── Shared storage keys ────────────────────────────────────────────────────
 export const OB_TEAM_ID    = 'ob_team_id';
@@ -40,6 +41,7 @@ function stepIndex(pathname: string) {
 
 export default function OnboardingLayout() {
   const loc = useLocation();
+  const { t } = useLanguage();
   const idx = stepIndex(loc.pathname);
   const showBar = idx >= 0;
   const totalSteps = currentMode() === 'new_project' ? STEP_PATHS_NEW_PROJECT.length : STEP_PATHS_NEW_TEAM.length;
@@ -47,13 +49,13 @@ export default function OnboardingLayout() {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)' }}>
       {/* Header */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 40, background: 'rgba(15,17,23,.85)', backdropFilter: 'blur(14px)', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 40, background: 'var(--topbar-bg)', backdropFilter: 'blur(14px)', borderBottom: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 26px' }}>
           <img src="/devship-logo.png" alt="DevShip" style={{ width: 28, height: 28 }} />
           <span style={{ fontSize: 15, fontWeight: 600 }}>DevShip</span>
           <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
-          <span style={{ fontSize: 13, color: 'var(--text-2)' }}>Onboarding</span>
-          {showBar && <span className="mono" style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)' }}>Passo {idx + 1} de {totalSteps}</span>}
+          <span style={{ fontSize: 13, color: 'var(--text-2)' }}>{t('onboarding.headerLabel')}</span>
+          {showBar && <span className="mono" style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-3)' }}>{t('onboarding.stepOf')} {idx + 1} {t('onboarding.of')} {totalSteps}</span>}
         </div>
         {showBar && (
           <div style={{ display: 'flex', gap: 5, padding: '0 26px 12px' }}>
@@ -77,12 +79,13 @@ export function StepLabel({ n, label, sub }: { n: number; label: string; sub?: s
   // n é sempre o número absoluto no fluxo new_team (1=Team..7=Applications). Em modo
   // new_project o passo Team não existe, então tanto o número mostrado como o total
   // descem 1 — sem obrigar cada StepLabel a saber em que modo está.
+  const { t } = useLanguage();
   const isNewProject = currentMode() === 'new_project';
   const shownN = isNewProject ? n - 1 : n;
   const shownTotal = isNewProject ? STEP_PATHS_NEW_PROJECT.length : STEP_PATHS_NEW_TEAM.length;
   return (
     <>
-      <div className="mono" style={{ fontSize: 11, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--teal)' }}>Passo {shownN} de {shownTotal}</div>
+      <div className="mono" style={{ fontSize: 11, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--teal)' }}>{t('onboarding.stepOf')} {shownN} {t('onboarding.of')} {shownTotal}</div>
       <h1 style={{ fontSize: 23, fontWeight: 600, margin: '8px 0 6px' }}>{label}</h1>
       {sub && <p style={{ fontSize: 13.5, color: 'var(--text-2)', margin: '0 0 26px' }}>{sub}</p>}
     </>
@@ -102,16 +105,17 @@ export function FormField({ label, children }: { label: string; children: React.
   );
 }
 
-export function NavRow({ onBack, onNext, nextLabel = 'Continuar →', nextDisabled = false, loading = false }: {
+export function NavRow({ onBack, onNext, nextLabel, nextDisabled = false, loading = false }: {
   onBack?: () => void; onNext: () => void; nextLabel?: string; nextDisabled?: boolean; loading?: boolean;
 }) {
+  const { t } = useLanguage();
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, marginTop: 30 }}>
       {onBack
-        ? <button onClick={onBack} className="btn-secondary" style={{ fontSize: 13.5, padding: '12px 22px', borderRadius: 10 }}>← Voltar</button>
+        ? <button onClick={onBack} className="btn-secondary" style={{ fontSize: 13.5, padding: '12px 22px', borderRadius: 10 }}>{t('onboarding.back')}</button>
         : <span />}
       <button onClick={onNext} disabled={nextDisabled || loading} className="btn-primary hover-bright" style={{ fontSize: 13.5, padding: '12px 24px', borderRadius: 10, opacity: (nextDisabled || loading) ? .6 : 1 }}>
-        {loading ? 'A processar…' : nextLabel}
+        {loading ? t('onboarding.processing') : (nextLabel ?? t('onboarding.continue'))}
       </button>
     </div>
   );
@@ -121,8 +125,8 @@ export function ErrBanner({ msg }: { msg: string }) {
   if (!msg) return null;
   return (
     <div style={{ display: 'flex', gap: 9, border: '1px solid rgba(241,85,108,.3)', background: 'rgba(241,85,108,.08)', borderRadius: 9, padding: '10px 13px', marginTop: 14 }}>
-      <span style={{ color: '#ff8497' }}>✕</span>
-      <span style={{ fontSize: 12, color: '#ff9aaa' }}>{msg}</span>
+      <span style={{ color: 'var(--red)' }}>✕</span>
+      <span style={{ fontSize: 12, color: 'var(--red)' }}>{msg}</span>
     </div>
   );
 }
@@ -139,6 +143,7 @@ function FilePreviewButton({ repoUrl, path, branch, projectId, envOptions }: {
   // o preview ficava preso ao primeiro environment descoberto.
   envOptions?: EnvPreviewOption[];
 }) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [activeEnv, setActiveEnv] = useState<string | null>(null);
   const [content, setContent] = useState<string | null>(null);
@@ -184,14 +189,14 @@ function FilePreviewButton({ repoUrl, path, branch, projectId, envOptions }: {
   return (
     <>
       <button type="button" onClick={handleOpen} className="btn-ghost" style={{ fontSize: 11.5, padding: '4px 10px', borderRadius: 6 }}>
-        Preview
+        {t('onboarding.preview')}
       </button>
       {open && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setOpen(false)}>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: '20px 22px', maxWidth: 640, width: '100%', margin: '0 16px', maxHeight: '70vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <span className="mono" style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{effectivePath}</span>
-              <button onClick={() => setOpen(false)} className="btn-ghost" style={{ fontSize: 12 }}>Fechar</button>
+              <button onClick={() => setOpen(false)} className="btn-ghost" style={{ fontSize: 12 }}>{t('onboarding.close')}</button>
             </div>
             {envOptions && envOptions.length > 1 && (
               <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
@@ -212,8 +217,8 @@ function FilePreviewButton({ repoUrl, path, branch, projectId, envOptions }: {
                 ))}
               </div>
             )}
-            {loading && <div style={{ fontSize: 13, color: 'var(--text-3)' }}>A carregar…</div>}
-            {error && <div style={{ fontSize: 13, color: '#ff8497' }}>{error}</div>}
+            {loading && <div style={{ fontSize: 13, color: 'var(--text-3)' }}>{t('onboarding.loading')}</div>}
+            {error && <div style={{ fontSize: 13, color: 'var(--red)' }}>{error}</div>}
             {!loading && content !== null && (
               <pre className="mono" style={{ fontSize: 12, color: 'var(--text)', overflow: 'auto', margin: 0, whiteSpace: 'pre-wrap' }}>{content}</pre>
             )}
@@ -228,6 +233,7 @@ function FilePreviewButton({ repoUrl, path, branch, projectId, envOptions }: {
 interface DirEntry { name: string; type: 'file' | 'dir'; }
 
 export function GitOpsPathPreviewButton({ repoUrl, basePath, projectId }: { repoUrl: string; basePath: string; projectId: string }) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [currentPath, setCurrentPath] = useState(basePath);
   const [entries, setEntries] = useState<DirEntry[] | null>(null);
@@ -264,26 +270,26 @@ export function GitOpsPathPreviewButton({ repoUrl, basePath, projectId }: { repo
   return (
     <>
       <button type="button" onClick={handleOpen} className="btn-ghost" style={{ fontSize: 11.5, padding: '4px 10px', borderRadius: 6 }}>
-        Preview
+        {t('onboarding.preview')}
       </button>
       {open && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={() => setOpen(false)}>
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: '20px 22px', maxWidth: 640, width: '100%', margin: '0 16px', maxHeight: '70vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 10 }}>
               <span className="mono" style={{ fontSize: 12.5, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentPath}</span>
-              <button onClick={() => setOpen(false)} className="btn-ghost" style={{ fontSize: 12, flex: 'none' }}>Fechar</button>
+              <button onClick={() => setOpen(false)} className="btn-ghost" style={{ fontSize: 12, flex: 'none' }}>{t('onboarding.close')}</button>
             </div>
-            {loading && <div style={{ fontSize: 13, color: 'var(--text-3)' }}>A carregar…</div>}
-            {error && <div style={{ fontSize: 13, color: '#ff8497' }}>{error}</div>}
+            {loading && <div style={{ fontSize: 13, color: 'var(--text-3)' }}>{t('onboarding.loading')}</div>}
+            {error && <div style={{ fontSize: 13, color: 'var(--red)' }}>{error}</div>}
             {!loading && !error && fileContent !== null && (
               <>
-                <button onClick={() => { setFileContent(null); loadDir(currentPath.split('/').slice(0, -1).join('/')); }} className="btn-ghost" style={{ fontSize: 11.5, alignSelf: 'flex-start', marginBottom: 8 }}>← Voltar à pasta</button>
+                <button onClick={() => { setFileContent(null); loadDir(currentPath.split('/').slice(0, -1).join('/')); }} className="btn-ghost" style={{ fontSize: 11.5, alignSelf: 'flex-start', marginBottom: 8 }}>{t('onboarding.backToFolder')}</button>
                 <pre className="mono" style={{ fontSize: 12, color: 'var(--text)', overflow: 'auto', margin: 0, whiteSpace: 'pre-wrap' }}>{fileContent}</pre>
               </>
             )}
             {!loading && !error && fileContent === null && entries !== null && (
               entries.length === 0 ? (
-                <div style={{ fontSize: 13, color: 'var(--text-3)' }}>Pasta vazia ou ainda não existe no repositório.</div>
+                <div style={{ fontSize: 13, color: 'var(--text-3)' }}>{t('onboarding.emptyFolder')}</div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, overflow: 'auto' }}>
                   {entries.map(e => (
@@ -309,19 +315,21 @@ export function GitOpsPathPreviewButton({ repoUrl, basePath, projectId }: { repo
 
 // ─── Validation result badge ────────────────────────────────────────────────
 function ValBadge({ status, error }: { status: string; error?: string | null }) {
+  const { t } = useLanguage();
   const ok = status === 'VALID';
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: ok ? '#5dd57b' : '#ff9aaa' }}>
-      {ok ? '✓ válido' : `✕ ${error ?? 'inválido'}`}
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: ok ? 'var(--green)' : 'var(--red)' }}>
+      {ok ? `✓ ${t('common.valid')}` : `✕ ${error ?? t('common.invalid')}`}
     </span>
   );
 }
 
 // ─── Copy button ─────────────────────────────────────────────────────────────
 function CopyBtn({ text, copyKey, copied, onCopy }: { text: string; copyKey: string; copied: string | null; onCopy: (k: string, t: string) => void }) {
+  const { t } = useLanguage();
   return (
     <button onClick={() => onCopy(copyKey, text)} className="btn-secondary" style={{ fontSize: 11.5, padding: '6px 12px', borderRadius: 7, flex: 'none' }}>
-      {copied === copyKey ? 'Copiado ✓' : 'Copiar'}
+      {copied === copyKey ? t('onboarding.copied') : t('onboarding.copy')}
     </button>
   );
 }
@@ -332,6 +340,7 @@ function CodeBlock({ title, desc, filename, code, copyKey, copied, onCopy, why }
   copyKey: string; copied: string | null; onCopy: (k: string, t: string) => void;
   why?: { title: string; body: string };
 }) {
+  const { t } = useLanguage();
   const [whyOpen, setWhyOpen] = useState(false);
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '20px 22px' }}>
@@ -347,7 +356,7 @@ function CodeBlock({ title, desc, filename, code, copyKey, copied, onCopy, why }
       {why && (
         <>
           <button onClick={() => setWhyOpen(v => !v)} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', cursor: 'pointer', padding: '10px 0 0', color: 'var(--teal)', fontSize: 12 }}>
-            {whyOpen ? '▼' : '▶'} Porque é que preciso de criar isto?
+            {whyOpen ? '▼' : '▶'} {t('onboarding.why')}
           </button>
           {whyOpen && (
             <div style={{ marginTop: 10, border: '1px solid rgba(43,199,180,.2)', background: 'rgba(43,199,180,.05)', borderRadius: 10, padding: '14px 16px' }}>
@@ -364,29 +373,32 @@ function CodeBlock({ title, desc, filename, code, copyKey, copied, onCopy, why }
 // ═══════════════════════════════════════════════════════════════════════════════
 // INTRO
 // ═══════════════════════════════════════════════════════════════════════════════
-const STEP_LABELS = ['Criar Team', 'Criar Project', 'Preparar AWS / EKS', 'Configurar Cluster', 'Configurar ArgoCD e Metrics', 'Configurar Environments', 'Importar Applications'];
-
 export function OnboardingIntro() {
   const nav = useNavigate();
+  const { t } = useLanguage();
+  const stepLabels = [
+    t('onboarding.stepLabel1'), t('onboarding.stepLabel2'), t('onboarding.stepLabel3'),
+    t('onboarding.stepLabel4'), t('onboarding.stepLabel5'), t('onboarding.stepLabel6'), t('onboarding.stepLabel7'),
+  ];
   return (
     <>
       <div style={{ textAlign: 'center' }}>
         <img src="/devship-logo.png" alt="DevShip" style={{ width: 50, height: 50, display: 'block', margin: '0 auto 18px' }} />
-        <h1 style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-.02em', margin: 0 }}>Vamos configurar o teu projeto</h1>
+        <h1 style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-.02em', margin: 0 }}>{t('onboarding.introTitle')}</h1>
         <p style={{ fontSize: 13.5, color: 'var(--text-2)', lineHeight: 1.7, maxWidth: 520, margin: '12px auto 0' }}>
-          A DevShip liga-se ao teu cluster AWS EKS e importa as applications a partir do GitOps. Este onboarding é executado pelo <span style={{ color: 'var(--text)' }}>Cloud Engineer</span>.
+          {t('onboarding.introBody')}
         </p>
       </div>
       <div style={{ border: '1px solid var(--border)', borderRadius: 16, background: 'var(--surface)', padding: 8, marginTop: 28 }}>
-        {STEP_LABELS.map((label, i) => (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderBottom: i < STEP_LABELS.length - 1 ? '1px solid var(--border-soft)' : 'none' }}>
+        {stepLabels.map((label, i) => (
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderBottom: i < stepLabels.length - 1 ? '1px solid var(--border-soft)' : 'none' }}>
             <span style={{ width: 26, height: 26, borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Geist Mono,monospace', fontSize: 12, color: 'var(--text-2)', flex: 'none' }}>{i + 1}</span>
             <span style={{ fontSize: 14, fontWeight: 500 }}>{label}</span>
           </div>
         ))}
       </div>
       <button onClick={() => nav('/onboarding/team')} className="btn-primary hover-bright" style={{ width: '100%', fontSize: 14.5, padding: 14, borderRadius: 11, marginTop: 24 }}>
-        Começar onboarding →
+        {t('onboarding.introStart')}
       </button>
     </>
   );
@@ -397,6 +409,7 @@ export function OnboardingIntro() {
 // ═══════════════════════════════════════════════════════════════════════════════
 export function OnboardingTeam() {
   const nav = useNavigate();
+  const { t } = useLanguage();
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
   const [err, setErr] = useState('');
@@ -424,7 +437,7 @@ export function OnboardingTeam() {
   }, []);
 
   async function submit() {
-    if (!name.trim()) { setErr('O nome da equipa é obrigatório.'); return; }
+    if (!name.trim()) { setErr(t('onboarding.errTeamNameRequired')); return; }
     setLoading(true); setErr('');
     // If a team is already stored, confirm it's still the caller's before reusing it —
     // never trust a cached id as authorization.
@@ -454,19 +467,19 @@ export function OnboardingTeam() {
       if (team.member_status === 'PENDING_CONFIRMATION') { nav('/lobby', { replace: true }); return; }
       nav('/onboarding/project');
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Erro ao criar equipa.');
+      setErr(e instanceof Error ? e.message : t('onboarding.errTeamGeneric'));
     } finally { setLoading(false); }
   }
 
   return (
     <>
-      <StepLabel n={1} label="Criar Team" sub="Uma Team agrupa pessoas e projetos do mesmo domínio de email. Serás o Cloud Engineer desta equipa." />
+      <StepLabel n={1} label={t('onboarding.teamTitle')} sub={t('onboarding.teamSub')} />
       <FormCard>
-        <FormField label="Nome da equipa *">
-          <input className="input-base input-mono" value={name} onChange={e => setName(e.target.value)} placeholder="engineering-team" />
+        <FormField label={t('onboarding.teamNameLabel')}>
+          <input className="input-base input-mono" value={name} onChange={e => setName(e.target.value)} placeholder={t('onboarding.teamNamePlaceholder')} />
         </FormField>
-        <FormField label="Descrição (opcional)">
-          <textarea className="input-base" value={desc} onChange={e => setDesc(e.target.value)} placeholder="Equipa de engenharia da plataforma" rows={3} />
+        <FormField label={t('onboarding.teamDescLabel')}>
+          <textarea className="input-base" value={desc} onChange={e => setDesc(e.target.value)} placeholder={t('onboarding.teamDescPlaceholder')} rows={3} />
         </FormField>
         <ErrBanner msg={err} />
       </FormCard>
@@ -480,6 +493,7 @@ export function OnboardingTeam() {
 // ═══════════════════════════════════════════════════════════════════════════════
 export function OnboardingProject() {
   const nav = useNavigate();
+  const { t } = useLanguage();
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
   const [gitops, setGitops] = useState('');
@@ -505,8 +519,8 @@ export function OnboardingProject() {
   }, []);
 
   async function submit() {
-    if (!name.trim()) { setErr('O nome do projeto é obrigatório.'); return; }
-    if (!teamId) { setErr('Team não encontrada — volta ao passo 1.'); return; }
+    if (!name.trim()) { setErr(t('onboarding.errProjectNameRequired')); return; }
+    if (!teamId) { setErr(t('onboarding.errTeamNotFound')); return; }
     setLoading(true); setErr('');
     try {
       const project = await apiFetch(`/teams/${teamId}/projects`, {
@@ -519,21 +533,21 @@ export function OnboardingProject() {
       nav('/onboarding/aws-setup');
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '';
-      setErr(msg || 'Erro ao criar projeto.');
+      setErr(msg || t('onboarding.errProjectGeneric'));
     } finally { setLoading(false); }
   }
 
   return (
     <>
-      <StepLabel n={2} label="Criar Project" sub="Um Project liga-se a um cluster e contém as applications." />
+      <StepLabel n={2} label={t('onboarding.projectTitle')} sub={t('onboarding.projectSub')} />
       <FormCard>
-        <FormField label="Nome *">
-          <input className="input-base input-mono" value={name} onChange={e => setName(e.target.value)} placeholder="my-project" />
+        <FormField label={t('onboarding.projectNameLabel')}>
+          <input className="input-base input-mono" value={name} onChange={e => setName(e.target.value)} placeholder={t('onboarding.projectNamePlaceholder')} />
         </FormField>
-        <FormField label="Descrição (opcional)">
-          <textarea className="input-base" value={desc} onChange={e => setDesc(e.target.value)} placeholder="Aplicação principal" rows={3} />
+        <FormField label={t('onboarding.projectDescLabel')}>
+          <textarea className="input-base" value={desc} onChange={e => setDesc(e.target.value)} placeholder={t('onboarding.projectDescPlaceholder')} rows={3} />
         </FormField>
-        <FormField label="GitOps Repository URL">
+        <FormField label={t('onboarding.gitopsUrlLabel')}>
           <input className="input-base input-mono" value={gitops} onChange={e => setGitops(e.target.value)} placeholder="https://github.com/company/gitops-config" />
         </FormField>
         <ErrBanner msg={err} />
@@ -556,6 +570,7 @@ interface ClusterSetupInfo {
 
 export function OnboardingAwsSetup() {
   const nav = useNavigate();
+  const { t } = useLanguage();
   const [info, setInfo] = useState<ClusterSetupInfo | null>(null);
   const [err, setErr] = useState('');
   const [copied, setCopied] = useState<string | null>(null);
@@ -563,10 +578,11 @@ export function OnboardingAwsSetup() {
   const projectId = localStorage.getItem(OB_PROJECT_ID);
 
   useEffect(() => {
-    if (!projectId) { setErr('Projeto não encontrado — volta ao passo 2.'); return; }
+    if (!projectId) { setErr(t('onboarding.errProjectNotFoundStep2')); return; }
     apiFetch(`/projects/${projectId}/cluster-setup-info`)
       .then(setInfo)
-      .catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Erro ao carregar dados.'));
+      .catch((e: unknown) => setErr(e instanceof Error ? e.message : t('onboarding.errLoadData')));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   function copy(key: string, text: string) {
@@ -581,28 +597,28 @@ export function OnboardingAwsSetup() {
 
   return (
     <>
-      <StepLabel n={3} label="Preparar AWS / EKS" sub="Cria uma IAM Role para a DevShip aceder ao cluster e configura as permissões necessárias." />
+      <StepLabel n={3} label={t('onboarding.awsTitle')} sub={t('onboarding.awsSub')} />
       <ErrBanner msg={err} />
-      {!info && !err && <div style={{ color: 'var(--text-3)', fontSize: 13 }}>A carregar…</div>}
+      {!info && !err && <div style={{ color: 'var(--text-3)', fontSize: 13 }}>{t('onboarding.loading')}</div>}
       {info && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
           {/* Passo 1 — Criar a IAM Role */}
           <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '20px 22px' }}>
-            <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 10 }}>1 · Criar a IAM Role</div>
+            <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 10 }}>{t('onboarding.awsStep1Title')}</div>
             <p style={{ fontSize: 12.5, color: 'var(--text-2)', margin: '0 0 12px', lineHeight: 1.6 }}>
-              Na consola AWS, vai a <strong>IAM → Roles → Create role</strong>. Escolhe <em>Custom trust policy</em> como tipo de entidade confiável — não seleciones nenhum serviço AWS.
+              {t('onboarding.awsStep1Body')}
             </p>
             <div style={{ fontSize: 12, color: 'var(--text-3)', padding: '10px 14px', borderRadius: 9, background: 'var(--bg-2)', border: '1px solid var(--border-soft)', lineHeight: 1.6 }}>
-              Dá um nome reconhecível à role, por exemplo <code className="mono">DevShipAccess</code>. Vai precisar do ARN desta role no passo 4.
+              {t('onboarding.awsStep1Hint')}
             </div>
           </div>
 
           {/* Passo 2 — ExternalId */}
           <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '20px 22px' }}>
-            <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 13 }}>2 · ExternalId</div>
+            <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 13 }}>{t('onboarding.awsStep2Title')}</div>
             <p style={{ fontSize: 12.5, color: 'var(--text-2)', margin: '0 0 12px', lineHeight: 1.6 }}>
-              Este ID é único para o teu projeto. Vai ser necessário na Trust Policy abaixo.
+              {t('onboarding.awsStep2Body')}
             </p>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 9, padding: '9px 9px 9px 14px' }}>
               <code className="mono" style={{ fontSize: 13, color: 'var(--teal)', flex: 1 }}>{info.external_id}</code>
@@ -612,32 +628,32 @@ export function OnboardingAwsSetup() {
 
           {/* Passo 3 — Trust Policy */}
           <CodeBlock
-            title="3 · Trust Policy"
-            desc={`Cola este JSON na Trust Policy da role. A conta AWS da DevShip é ${info.devship_account_id}.`}
+            title={t('onboarding.awsStep3Title')}
+            desc={`${t('onboarding.awsStep3Desc')} ${info.devship_account_id}.`}
             filename="trust-policy.json"
             code={trustJson}
             copyKey="trust" copied={copied} onCopy={copy}
-            why={{ title: 'Trust Policy — o quê e porquê', body: 'Define quem pode assumir esta IAM Role. O ExternalId protege contra o ataque confused deputy — só a DevShip, com o ID correto, consegue assumir a role.' }}
+            why={{ title: t('onboarding.awsStep3WhyTitle'), body: t('onboarding.awsStep3WhyBody') }}
           />
 
           {/* Passo 4 — Permission Policy */}
           <CodeBlock
-            title="4 · Permission Policy"
-            desc="Na aba Permissions da role, cria uma política inline com este JSON. Dá apenas as permissões mínimas que a DevShip precisa."
+            title={t('onboarding.awsStep4Title')}
+            desc={t('onboarding.awsStep4Desc')}
             filename="devship-permission-policy.json"
             code={permissionJson}
             copyKey="perm" copied={copied} onCopy={copy}
-            why={{ title: 'Permission Policy — o quê e porquê', body: 'A Trust Policy define quem pode assumir a role. A Permission Policy define o que essa role pode fazer. A DevShip só precisa de descrever clusters EKS — nada mais.' }}
+            why={{ title: t('onboarding.awsStep4WhyTitle'), body: t('onboarding.awsStep4WhyBody') }}
           />
 
           {/* Passo 5 — EKS Access Entry */}
           <CodeBlock
-            title="5 · EKS Access Entry"
-            desc="Corre estes comandos AWS CLI para registar a role no cluster. Substitui CLUSTER_NAME, ROLE_ARN e REGION pelos valores reais."
+            title={t('onboarding.awsStep5Title')}
+            desc={t('onboarding.awsStep5Desc')}
             filename="eks-access.sh"
             code={cliCode}
             copyKey="cli" copied={copied} onCopy={copy}
-            why={{ title: 'EKS Access Entry — o quê e porquê', body: 'A Trust Policy dá acesso à AWS API — mas o cluster Kubernetes tem autorização própria. O EKS Access Entry regista a IAM Role diretamente no cluster com permissões de leitura (AmazonEKSViewPolicy).' }}
+            why={{ title: t('onboarding.awsStep5WhyTitle'), body: t('onboarding.awsStep5WhyBody') }}
           />
         </div>
       )}
@@ -651,6 +667,7 @@ export function OnboardingAwsSetup() {
 // ═══════════════════════════════════════════════════════════════════════════════
 export function OnboardingCluster() {
   const nav = useNavigate();
+  const { t } = useLanguage();
   const [arn, setArn] = useState('');
   const [iam, setIam] = useState('');
   const [err, setErr] = useState('');
@@ -675,7 +692,7 @@ export function OnboardingCluster() {
         setErr('');
         // Show a hint about which cluster is configured
         setExtId(prev => prev); // keep extId
-        setArn(`(cluster configurado: ${d.cluster_name} · ${d.region})`);
+        setArn(`(${t('onboarding.clusterConfiguredHint')}: ${d.cluster_name} · ${d.region})`);
       })
       .catch(() => {}); // 404 = not configured yet, normal state
   }, [projectId]);
@@ -687,8 +704,8 @@ export function OnboardingCluster() {
   }
 
   async function validate() {
-    if (!arn.trim() || !iam.trim()) { setErr('Preenche o Cluster ARN e o IAM Role ARN.'); return; }
-    if (!projectId) { setErr('Projeto não encontrado — volta ao passo 2.'); return; }
+    if (!arn.trim() || !iam.trim()) { setErr(t('onboarding.errFillClusterFields')); return; }
+    if (!projectId) { setErr(t('onboarding.errProjectNotFoundStep2')); return; }
     setLoading(true); setErr(''); setSuccess(false);
     try {
       await apiFetch(`/projects/${projectId}/cluster`, {
@@ -703,24 +720,24 @@ export function OnboardingCluster() {
         setSuccess(true);
         setErr('');
       } else {
-        setErr(msg || 'Erro ao validar cluster.');
+        setErr(msg || t('onboarding.errClusterGeneric'));
       }
     } finally { setLoading(false); }
   }
 
   return (
     <>
-      <StepLabel n={4} label="Configurar Cluster" sub="Indica os ARNs e valida a ligação ao cluster." />
+      <StepLabel n={4} label={t('onboarding.clusterTitle')} sub={t('onboarding.clusterSub')} />
       <FormCard>
-        <FormField label="Cluster ARN *">
+        <FormField label={t('onboarding.clusterArnLabel')}>
           <input className="input-base input-mono" value={arn} onChange={e => setArn(e.target.value)} placeholder="arn:aws:eks:us-east-1:123456789012:cluster/prod-cluster" />
         </FormField>
-        <FormField label="IAM Role ARN *">
+        <FormField label={t('onboarding.iamRoleArnLabel')}>
           <input className="input-base input-mono" value={iam} onChange={e => setIam(e.target.value)} placeholder="arn:aws:iam::123456789012:role/DevShipAccess" />
         </FormField>
         {extId && (
           <div style={{ marginBottom: 17 }}>
-            <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 8 }}>ExternalId <span style={{ color: 'var(--text-3)' }}>(gerado automaticamente)</span></div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 8 }}>ExternalId <span style={{ color: 'var(--text-3)' }}>{t('onboarding.externalIdAuto')}</span></div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 9, padding: '9px 9px 9px 14px' }}>
               <code className="mono" style={{ fontSize: 13, color: 'var(--teal)', flex: 1 }}>{extId}</code>
               <CopyBtn text={extId} copyKey="ext4" copied={copied} onCopy={copy} />
@@ -729,16 +746,16 @@ export function OnboardingCluster() {
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 13, marginTop: 6 }}>
           <button onClick={validate} disabled={loading || success} className="btn-secondary" style={{ fontSize: 13, padding: '10px 18px', borderRadius: 9, opacity: success ? .5 : 1 }}>
-            {loading ? 'A validar…' : success ? 'Ligação validada ✓' : 'Validar ligação'}
+            {loading ? t('onboarding.validating') : success ? t('onboarding.linkValidated') : t('onboarding.validateConnection')}
           </button>
         </div>
         <ErrBanner msg={err} />
         {success && (
           <div style={{ display: 'flex', gap: 12, border: '1px solid rgba(52,199,89,.3)', background: 'rgba(52,199,89,.08)', borderRadius: 12, padding: '15px 17px', marginTop: 16 }}>
-            <span style={{ color: '#5dd57b', fontSize: 15 }}>✓</span>
+            <span style={{ color: 'var(--green)', fontSize: 15 }}>✓</span>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#7ee094' }}>Cluster ligado com sucesso</div>
-              <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 3 }}>A DevShip conseguiu aceder ao cluster e verificar a configuração.</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--green)' }}>{t('onboarding.clusterSuccessTitle')}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 3 }}>{t('onboarding.clusterSuccessBody')}</div>
             </div>
           </div>
         )}
@@ -761,6 +778,7 @@ interface RbacCheckResult {
 
 export function OnboardingArgocdMetrics() {
   const nav = useNavigate();
+  const { t } = useLanguage();
   const [result, setResult] = useState<RbacCheckResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
@@ -780,7 +798,7 @@ export function OnboardingArgocdMetrics() {
       const r = await apiFetch(`/projects/${projectId}/cluster/rbac-check`);
       setResult(r);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Erro ao testar RBAC.');
+      setErr(e instanceof Error ? e.message : t('onboarding.errTestRbac'));
     } finally { setLoading(false); }
   }
 
@@ -834,43 +852,40 @@ subjects:
 
   return (
     <>
-      <StepLabel n={5} label="Configurar ArgoCD e Metrics" sub="Sem isto o deploy continua a funcionar, mas perde sync do ArgoCD e CPU/memória dos pods." />
+      <StepLabel n={5} label={t('onboarding.argocdTitle')} sub={t('onboarding.argocdSub')} />
 
       <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '20px 22px', marginBottom: 14 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 10 }}>Porque é que o ARN da role não chega</div>
+        <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 10 }}>{t('onboarding.argocdWhyArnTitle')}</div>
         <p style={{ fontSize: 12.5, color: 'var(--text-2)', margin: 0, lineHeight: 1.6 }}>
-          O Access Entry do passo anterior autentica a role, mas o Kubernetes RBAC autoriza por uma identidade diferente —
-          a sessão assumida, não o ARN da role. Os manifestos abaixo já vêm com o subject certo, calculado a partir do
-          Role ARN que deste no passo 4. Isto não existe no painel da AWS: é sempre um objeto Kubernetes, aplicado via
-          <code className="mono" style={{ margin: '0 4px' }}>kubectl</code> — quer o tenhas configurado com Terraform, AWS CLI, ou à mão na consola.
+          {t('onboarding.argocdWhyArnBody')}
         </p>
       </div>
 
       <CodeBlock
-        title="1 · ClusterRole + ClusterRoleBinding — ArgoCD"
-        desc="Permite à DevShip ler o estado de sync das Applications do ArgoCD."
+        title={t('onboarding.argocdRbacTitle')}
+        desc={t('onboarding.argocdRbacDesc')}
         filename="devship-argocd-rbac.yaml"
         code={argocdYaml}
         copyKey="argocd-yaml" copied={copied} onCopy={copy}
-        why={{ title: 'RBAC do ArgoCD — o quê e porquê', body: 'Applications do ArgoCD são uma Custom Resource (argoproj.io), não um recurso nativo do Kubernetes — o AmazonEKSViewPolicy do passo 3 não cobre isto. Sem esta permissão, o pipeline de deploy não mostra o sync do GitOps e degrada silenciosamente para observação direta do K8s ao fim de ~60s.' }}
+        why={{ title: t('onboarding.argocdRbacWhyTitle'), body: t('onboarding.argocdRbacWhyBody') }}
       />
 
       <div style={{ height: 14 }} />
 
       <CodeBlock
-        title="2 · ClusterRole + ClusterRoleBinding — Metrics"
-        desc="Permite à DevShip ler CPU/memória dos pods (ecrã Pods/Health)."
+        title={t('onboarding.metricsRbacTitle')}
+        desc={t('onboarding.metricsRbacDesc')}
         filename="devship-metrics-rbac.yaml"
         code={metricsYaml}
         copyKey="metrics-yaml" copied={copied} onCopy={copy}
-        why={{ title: 'RBAC do Metrics API — o quê e porquê', body: 'metrics.k8s.io é outra aggregated API, servida pelo metrics-server — precisa do metrics-server instalado no cluster e desta permissão dedicada. Sem isto, o ecrã Pods mostra sempre "Metrics API indisponível", mesmo com o pod saudável.' }}
+        why={{ title: t('onboarding.metricsRbacWhyTitle'), body: t('onboarding.metricsRbacWhyBody') }}
       />
 
       <div style={{ height: 14 }} />
 
       <CodeBlock
-        title="3 · Aplicar com kubectl"
-        desc="Precisa de kubectl já configurado contra o cluster (aws eks update-kubeconfig, CloudShell, ou o teu terminal habitual)."
+        title={t('onboarding.applyKubectlTitle')}
+        desc={t('onboarding.applyKubectlDesc')}
         filename="apply.sh"
         code={applyCmd}
         copyKey="apply-cmd" copied={copied} onCopy={copy}
@@ -878,7 +893,7 @@ subjects:
 
       <div style={{ marginTop: 18, display: 'flex', alignItems: 'center', gap: 13 }}>
         <button onClick={test} disabled={loading} className="btn-secondary" style={{ fontSize: 13, padding: '10px 18px', borderRadius: 9 }}>
-          {loading ? 'A testar…' : 'Testar ligação'}
+          {loading ? t('onboarding.testingConnection') : t('onboarding.testConnection')}
         </button>
       </div>
       <ErrBanner msg={err} />
@@ -891,21 +906,21 @@ subjects:
       )}
 
       <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 14 }}>
-        Isto não bloqueia o onboarding — o deploy funciona sem isto, só perde sync do ArgoCD e métricas de CPU/memória.
-        Podes avançar e voltar aqui mais tarde.
+        {t('onboarding.argocdNotBlocking')}
       </div>
 
-      <NavRow onBack={() => nav('/onboarding/cluster')} onNext={() => nav('/onboarding/environments')} nextLabel="Continuar →" />
+      <NavRow onBack={() => nav('/onboarding/cluster')} onNext={() => nav('/onboarding/environments')} nextLabel={t('onboarding.continue')} />
     </>
   );
 }
 
 function RbacResultRow({ ok, label, error }: { ok: boolean; label: string; error: string | null }) {
+  const { t } = useLanguage();
   return (
     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', border: `1px solid ${ok ? 'rgba(52,199,89,.3)' : 'rgba(241,85,108,.3)'}`, background: ok ? 'rgba(52,199,89,.08)' : 'rgba(241,85,108,.08)', borderRadius: 12, padding: '13px 16px' }}>
-      <span style={{ color: ok ? '#5dd57b' : '#ff8497', fontSize: 14 }}>{ok ? '✓' : '✕'}</span>
+      <span style={{ color: ok ? 'var(--green)' : 'var(--red)', fontSize: 14 }}>{ok ? '✓' : '✕'}</span>
       <div>
-        <div style={{ fontSize: 13, fontWeight: 600, color: ok ? '#7ee094' : '#ff8497' }}>{label}{ok ? ' — acesso confirmado' : ' — sem acesso'}</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: ok ? 'var(--green)' : 'var(--red)' }}>{label}{ok ? ` — ${t('onboarding.accessConfirmed')}` : ` — ${t('onboarding.noAccess')}`}</div>
         {!ok && error && <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 3 }}>{error}</div>}
       </div>
     </div>
@@ -963,6 +978,7 @@ function mkEnv(pill: typeof PILLS[0]): EnvFormState {
 
 export function OnboardingEnvironments() {
   const nav = useNavigate();
+  const { t } = useLanguage();
   const [envs, setEnvs] = useState<EnvFormState[]>([]);
   const [results, setResults] = useState<EnvResult[] | null>(null);
   const [gitOpsUrl, setGitOpsUrl] = useState('');
@@ -1019,8 +1035,8 @@ export function OnboardingEnvironments() {
   function remove(key: string) { setEnvs(prev => prev.filter(e => e.key !== key)); }
 
   async function submit() {
-    if (envs.length === 0) { setErr('Adiciona pelo menos um environment.'); return; }
-    if (!projectId) { setErr('Projeto não encontrado — volta ao passo 2.'); return; }
+    if (envs.length === 0) { setErr(t('onboarding.envAddAtLeastOne')); return; }
+    if (!projectId) { setErr(t('onboarding.errProjectNotFoundStep2')); return; }
     setLoading(true); setErr(''); setRowErrors({});
     try {
       const body = envs.map(e => ({
@@ -1038,14 +1054,14 @@ export function OnboardingEnvironments() {
       const res: EnvResult[] = await apiFetch(`/projects/${projectId}/environments`, { method: 'POST', body: JSON.stringify(body) });
       setResults(res);
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : 'Erro ao criar environments.';
+      const message = e instanceof Error ? e.message : t('onboarding.errEnvGeneric');
       // 409 de colisão identifica o valor em conflito mas não diz qual dos environments do
       // lote é o dono — descobre-se comparando com o estado local para assinalar a row certa.
       const collision = parseCollisionDetail(message);
       const owner = collision && envs.find(env => env[collision.field] === collision.value);
       if (collision && owner) {
         setRowErrors({ [owner.key]: { [collision.field]: collision.detail } });
-        setErr('Conflito de configuração — corrige o campo assinalado abaixo.');
+        setErr(t('onboarding.conflictError'));
       } else {
         setErr(message);
       }
@@ -1056,7 +1072,7 @@ export function OnboardingEnvironments() {
 
   return (
     <>
-      <StepLabel n={6} label="Configurar Environments" sub="Adiciona os ambientes do projeto: DEV, STAGING, PROD." />
+      <StepLabel n={6} label={t('onboarding.envTitle')} sub={t('onboarding.envSub')} />
 
       {/* Result view after POST */}
       {results && (
@@ -1064,12 +1080,12 @@ export function OnboardingEnvironments() {
           <div style={{ marginBottom: 20 }}>
             {hasInvalid
               ? <div style={{ display: 'flex', gap: 9, border: '1px solid rgba(224,169,59,.35)', background: 'rgba(224,169,59,.07)', borderRadius: 9, padding: '10px 13px' }}>
-                  <span style={{ color: '#ecc26b' }}>⚠</span>
-                  <span style={{ fontSize: 12, color: '#f0cf86' }}>Alguns environments têm avisos de validação. Podes avançar mesmo assim — corrige os namespaces/branches mais tarde.</span>
+                  <span style={{ color: 'var(--amber)' }}>⚠</span>
+                  <span style={{ fontSize: 12, color: 'var(--amber)' }}>{t('onboarding.envSomeWarnings')}</span>
                 </div>
               : <div style={{ display: 'flex', gap: 9, border: '1px solid rgba(52,199,89,.3)', background: 'rgba(52,199,89,.08)', borderRadius: 9, padding: '10px 13px' }}>
-                  <span style={{ color: '#5dd57b' }}>✓</span>
-                  <span style={{ fontSize: 12, color: '#7ee094' }}>Todos os environments criados e validados.</span>
+                  <span style={{ color: 'var(--green)' }}>✓</span>
+                  <span style={{ fontSize: 12, color: 'var(--green)' }}>{t('onboarding.envAllValid')}</span>
                 </div>
             }
           </div>
@@ -1078,27 +1094,27 @@ export function OnboardingEnvironments() {
               <div key={r.id} style={{ border: `1px solid ${r.validation.overall_status === 'VALID' ? 'rgba(52,199,89,.3)' : 'rgba(224,169,59,.3)'}`, borderRadius: 13, background: 'var(--surface)', padding: '16px 20px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
                   <span className="mono" style={{ fontSize: 12, fontWeight: 500, padding: '3px 10px', borderRadius: 6, background: 'rgba(43,199,180,.1)', color: 'var(--teal)', border: '1px solid rgba(43,199,180,.28)' }}>{r.name}</span>
-                  <span style={{ marginLeft: 'auto', fontSize: 11.5, color: r.validation.overall_status === 'VALID' ? '#5dd57b' : '#ecc26b' }}>
-                    {r.validation.overall_status === 'VALID' ? '✓ válido' : '⚠ avisos'}
+                  <span style={{ marginLeft: 'auto', fontSize: 11.5, color: r.validation.overall_status === 'VALID' ? 'var(--green)' : 'var(--amber)' }}>
+                    {r.validation.overall_status === 'VALID' ? `✓ ${t('onboarding.valid')}` : `⚠ ${t('onboarding.warnings')}`}
                   </span>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10, fontSize: 12 }}>
-                  <div><span style={{ color: 'var(--text-3)' }}>Namespace</span><div style={{ marginTop: 4 }}><ValBadge status={r.validation.namespace_status} error={r.validation.namespace_error} /></div></div>
+                  <div><span style={{ color: 'var(--text-3)' }}>{t('onboarding.namespace')}</span><div style={{ marginTop: 4 }}><ValBadge status={r.validation.namespace_status} error={r.validation.namespace_error} /></div></div>
                   <div>
                     <span className="ds-tooltip" style={{ position: 'relative', color: 'var(--text-3)', cursor: 'default', borderBottom: '1px dotted var(--text-3)' }}>
-                      Source Branch
-                      <span className="ds-tooltip-bubble">Não é validado neste passo — ainda não existe nenhuma Application associada a este Environment, por isso não há repositório de código para confirmar que a branch existe. A validação passa a ser possível depois de importares Applications.</span>
+                      {t('onboarding.sourceBranch')}
+                      <span className="ds-tooltip-bubble">{t('onboarding.sourceBranchTooltip')}</span>
                     </span>
                     <div className="mono" style={{ marginTop: 4, color: 'var(--text-2)' }}>{envs.find(e => e.name === r.name)?.source_branch || '—'}</div>
                   </div>
-                  <div><span style={{ color: 'var(--text-3)' }}>GitOps Branch</span><div style={{ marginTop: 4 }}><ValBadge status={r.validation.branch_status} error={r.validation.branch_error} /></div></div>
-                  <div><span style={{ color: 'var(--text-3)' }}>GitOps Path</span><div style={{ marginTop: 4 }}><ValBadge status={r.validation.git_ops_path_status} error={r.validation.git_ops_path_error} /></div></div>
-                  <div><span style={{ color: 'var(--text-3)' }}>ArgoCD</span><div style={{ marginTop: 4 }}><ValBadge status={r.validation.argocd_status} error={r.validation.argocd_error} /></div></div>
+                  <div><span style={{ color: 'var(--text-3)' }}>{t('onboarding.gitopsBranch')}</span><div style={{ marginTop: 4 }}><ValBadge status={r.validation.branch_status} error={r.validation.branch_error} /></div></div>
+                  <div><span style={{ color: 'var(--text-3)' }}>{t('onboarding.gitopsPath')}</span><div style={{ marginTop: 4 }}><ValBadge status={r.validation.git_ops_path_status} error={r.validation.git_ops_path_error} /></div></div>
+                  <div><span style={{ color: 'var(--text-3)' }}>{t('onboarding.argocd')}</span><div style={{ marginTop: 4 }}><ValBadge status={r.validation.argocd_status} error={r.validation.argocd_error} /></div></div>
                 </div>
               </div>
             ))}
           </div>
-          <NavRow onBack={() => setResults(null)} onNext={() => nav('/onboarding/applications')} nextLabel="Continuar →" />
+          <NavRow onBack={() => setResults(null)} onNext={() => nav('/onboarding/applications')} nextLabel={t('onboarding.continue')} />
         </>
       )}
 
@@ -1113,24 +1129,24 @@ export function OnboardingEnvironments() {
             ))}
           </div>
           {envs.length === 0 && (
-            <div style={{ border: '1px dashed var(--border)', borderRadius: 14, padding: 34, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>Ainda sem environments. Adiciona um a partir das sugestões acima.</div>
+            <div style={{ border: '1px dashed var(--border)', borderRadius: 14, padding: 34, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>{t('onboarding.noEnvsYet')}</div>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {envs.map(env => (
               <div key={env.key} style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '20px 22px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                   <span className="mono" style={{ fontSize: 12, fontWeight: 500, padding: '4px 11px', borderRadius: 7, background: 'rgba(43,199,180,.1)', color: 'var(--teal)', border: '1px solid rgba(43,199,180,.28)' }}>{env.key}</span>
-                  <input value={env.display_name} onChange={e => update(env.key, 'display_name', e.target.value)} className="input-base" style={{ flex: 1, fontSize: 13 }} placeholder="Nome de apresentação" />
-                  <button onClick={() => remove(env.key)} style={{ border: 'none', background: 'transparent', color: 'var(--text-3)', fontSize: 12, cursor: 'pointer' }} className="hover-teal">Remover</button>
+                  <input value={env.display_name} onChange={e => update(env.key, 'display_name', e.target.value)} className="input-base" style={{ flex: 1, fontSize: 13 }} placeholder={t('onboarding.displayNamePlaceholder')} />
+                  <button onClick={() => remove(env.key)} style={{ border: 'none', background: 'transparent', color: 'var(--text-3)', fontSize: 12, cursor: 'pointer' }} className="hover-teal">{t('onboarding.remove')}</button>
                 </div>
                 <div className="responsive-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 15 }}>
-                  <FormField label="Namespace">
+                  <FormField label={t('onboarding.namespaceLabel')}>
                     <input className="input-base input-mono" value={env.namespace} onChange={e => update(env.key, 'namespace', e.target.value)} placeholder="app-dev" />
                     {rowErrors[env.key]?.namespace && (
-                      <div style={{ fontSize: 12, color: '#ff8497', marginTop: 4 }}>{rowErrors[env.key].namespace}</div>
+                      <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 4 }}>{rowErrors[env.key].namespace}</div>
                     )}
                   </FormField>
-                  <FormField label="GitOps Base Path">
+                  <FormField label={t('onboarding.gitopsBasePathLabel')}>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                       <input className="input-base input-mono" value={env.git_ops_base_path} onChange={e => update(env.key, 'git_ops_base_path', e.target.value)} placeholder="apps/dev" style={{ flex: 1 }} />
                       {gitOpsUrl && env.git_ops_base_path && (
@@ -1138,16 +1154,16 @@ export function OnboardingEnvironments() {
                       )}
                     </div>
                     {rowErrors[env.key]?.git_ops_base_path && (
-                      <div style={{ fontSize: 12, color: '#ff8497', marginTop: 4 }}>{rowErrors[env.key].git_ops_base_path}</div>
+                      <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 4 }}>{rowErrors[env.key].git_ops_base_path}</div>
                     )}
                   </FormField>
-                  <FormField label="Source Branch (repo de código)">
+                  <FormField label={t('onboarding.sourceBranchFullLabel')}>
                     <input className="input-base input-mono" value={env.source_branch} onChange={e => update(env.key, 'source_branch', e.target.value)} placeholder="main" />
                   </FormField>
-                  <FormField label="GitOps Branch (repo GitOps)">
+                  <FormField label={t('onboarding.gitopsBranchFullLabel')}>
                     <input className="input-base input-mono" value={env.gitops_branch} onChange={e => update(env.key, 'gitops_branch', e.target.value)} placeholder="main" />
                   </FormField>
-                  <FormField label="ArgoCD Application">
+                  <FormField label={t('onboarding.argocdAppLabel')}>
                     <input
                       className="input-base input-mono"
                       value={env.argocd_application_name}
@@ -1155,10 +1171,10 @@ export function OnboardingEnvironments() {
                       placeholder={`demo-app-${env.name.toLowerCase()}`}
                     />
                     {rowErrors[env.key]?.argocd_application_name && (
-                      <div style={{ fontSize: 12, color: '#ff8497', marginTop: 4 }}>{rowErrors[env.key].argocd_application_name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 4 }}>{rowErrors[env.key].argocd_application_name}</div>
                     )}
                   </FormField>
-                  <FormField label="Deployment Order">
+                  <FormField label={t('onboarding.deploymentOrderLabel')}>
                     <input className="input-base input-mono" type="number" min={1} value={env.deployment_order} onChange={e => update(env.key, 'deployment_order', Number(e.target.value))} style={{ maxWidth: 80 }} />
                   </FormField>
                 </div>
@@ -1170,7 +1186,7 @@ export function OnboardingEnvironments() {
                   >
                     <span style={{ position: 'absolute', top: 2, left: env.requires_approval ? 18 : 2, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left .15s' }} />
                   </button>
-                  <span style={{ fontSize: 13 }}>Requires Approval</span>
+                  <span style={{ fontSize: 13 }}>{t('onboarding.requiresApproval')}</span>
                   {/* Only render role selector when approval is on */}
                   {env.requires_approval && (
                     <select
@@ -1188,7 +1204,7 @@ export function OnboardingEnvironments() {
             ))}
           </div>
           <ErrBanner msg={err} />
-          <NavRow onBack={() => nav('/onboarding/argocd-metrics')} onNext={submit} loading={loading} nextDisabled={envs.length === 0} nextLabel="Criar environments →" />
+          <NavRow onBack={() => nav('/onboarding/argocd-metrics')} onNext={submit} loading={loading} nextDisabled={envs.length === 0} nextLabel={t('onboarding.createEnvironments')} />
         </>
       )}
     </>
@@ -1218,6 +1234,7 @@ interface EnvIdMap { [name: string]: string }
 
 export function OnboardingApplications() {
   const nav = useNavigate();
+  const { t } = useLanguage();
   const [candidates, setCandidates] = useState<ScanResult[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [ciWorkflow, setCiWorkflow] = useState<Record<string, string>>({});
@@ -1235,7 +1252,7 @@ export function OnboardingApplications() {
   const projectId = localStorage.getItem(OB_PROJECT_ID);
 
   useEffect(() => {
-    if (!projectId) { setScanErr('Projeto não encontrado.'); return; }
+    if (!projectId) { setScanErr(t('onboarding.errProjectNotFound')); return; }
     // Fetch environment IDs for mapping name→id
     apiFetch(`/projects/${projectId}/environments`).then((res: EnvResult[]) => {
       const map: EnvIdMap = {};
@@ -1277,7 +1294,7 @@ export function OnboardingApplications() {
           .finally(() => setWorkflowLoading(p => ({ ...p, [c.name]: false })));
       });
     } catch (e: unknown) {
-      setScanErr(e instanceof Error ? e.message : 'Erro ao fazer scan ao repositório.');
+      setScanErr(e instanceof Error ? e.message : t('onboarding.errScanGeneric'));
     } finally { setScanning(false); }
   }
 
@@ -1291,11 +1308,11 @@ export function OnboardingApplications() {
 
   async function submit() {
     const toImport = candidates.filter(c => selected.has(c.name));
-    if (toImport.length === 0) { setErr('Seleciona pelo menos uma application.'); return; }
-    if (!projectId) { setErr('Projeto não encontrado.'); return; }
+    if (toImport.length === 0) { setErr(t('onboarding.selectAtLeastOne')); return; }
+    if (!projectId) { setErr(t('onboarding.errProjectNotFound')); return; }
     const missingWorkflow = toImport.filter(c => !ciWorkflow[c.name]);
     if (missingWorkflow.length > 0) {
-      setErr('Falta indicar o CI Workflow File de: ' + missingWorkflow.map(c => c.name).join(', '));
+      setErr(t('onboarding.missingCiWorkflow') + ' ' + missingWorkflow.map(c => c.name).join(', '));
       return;
     }
     setLoading(true); setErr('');
@@ -1315,7 +1332,7 @@ export function OnboardingApplications() {
       }));
       const notFound = results.filter((n): n is string => n !== null);
       if (notFound.length > 0) {
-        setErr(`O ficheiro de workflow indicado não foi encontrado para: ${notFound.join(', ')}. Confirma o nome e a branch.`);
+        setErr(`${t('onboarding.errWorkflowNotFound')} ${notFound.join(', ')}${t('onboarding.confirmNameAndBranch')}`);
         setLoading(false);
         return;
       }
@@ -1340,7 +1357,7 @@ export function OnboardingApplications() {
       localStorage.removeItem(OB_NEW_PROJECT_ID);
       setDone(true);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Erro ao importar applications.');
+      setErr(e instanceof Error ? e.message : t('onboarding.errImportGeneric'));
     } finally { setLoading(false); }
   }
 
@@ -1351,49 +1368,49 @@ export function OnboardingApplications() {
       <>
         <div style={{ textAlign: 'center' }}>
           <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(52,199,89,.14)', border: '1.5px solid rgba(52,199,89,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '14px auto 20px' }}>
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none"><path d="M5 12.5L10 17.5L19 7" stroke="#5dd57b" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none"><path d="M5 12.5L10 17.5L19 7" stroke="var(--green)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </div>
-          <h1 style={{ fontSize: 27, fontWeight: 600, letterSpacing: '-.02em', margin: 0 }}>Tudo pronto</h1>
-          <p style={{ fontSize: 13.5, color: 'var(--text-2)', margin: '10px auto 0', maxWidth: 440 }}>O teu projeto está configurado e as applications foram importadas.</p>
+          <h1 style={{ fontSize: 27, fontWeight: 600, letterSpacing: '-.02em', margin: 0 }}>{t('onboarding.doneTitle')}</h1>
+          <p style={{ fontSize: 13.5, color: 'var(--text-2)', margin: '10px auto 0', maxWidth: 440 }}>{t('onboarding.doneBody')}</p>
         </div>
         <div style={{ border: '1px solid var(--border)', borderRadius: 16, background: 'var(--surface)', marginTop: 28, overflow: 'hidden' }}>
-          {[['Team', teamName], ['Project', projName], ['Applications importadas', String(selected.size)]].map(([k, v]) => (
+          {[[t('onboarding.doneTeam'), teamName], [t('onboarding.doneProject'), projName], [t('onboarding.doneAppsImported'), String(selected.size)]].map(([k, v]) => (
             <div key={k} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '16px 20px', borderBottom: '1px solid var(--border-soft)' }}>
               <span style={{ fontSize: 12, color: 'var(--text-3)', width: 160, flex: 'none' }}>{k}</span>
               <span className="mono" style={{ fontSize: 13 }}>{v}</span>
             </div>
           ))}
         </div>
-        <button onClick={() => nav('/app/home')} className="btn-primary hover-bright" style={{ width: '100%', fontSize: 14.5, padding: 14, borderRadius: 11, marginTop: 24 }}>Ir para a homepage →</button>
+        <button onClick={() => nav('/app/home')} className="btn-primary hover-bright" style={{ width: '100%', fontSize: 14.5, padding: 14, borderRadius: 11, marginTop: 24 }}>{t('onboarding.goToHomepage')}</button>
       </>
     );
   }
 
   return (
     <>
-      <StepLabel n={7} label="Importar Applications" sub="A DevShip percorreu o repositório GitOps em busca de Deployments." />
+      <StepLabel n={7} label={t('onboarding.appsTitle')} sub={t('onboarding.appsSub')} />
 
-      {scanning && <div style={{ color: 'var(--text-3)', fontSize: 13 }}>A fazer scan ao repositório…</div>}
+      {scanning && <div style={{ color: 'var(--text-3)', fontSize: 13 }}>{t('onboarding.scanning')}</div>}
       <ErrBanner msg={scanErr} />
 
       {!scanning && scanErr && (
         <div style={{ marginTop: 8 }}>
-          <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 10 }}>Causas prováveis:</div>
+          <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 10 }}>{t('onboarding.probableCauses')}</div>
           <ul style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.8, margin: 0, paddingLeft: 18 }}>
-            <li>URL do repositório GitOps incorreta (passo 2)</li>
-            <li>Repositório privado sem acesso configurado</li>
-            <li>Nenhum ficheiro com <code className="mono" style={{ color: 'var(--teal)' }}>kind: Deployment</code> encontrado</li>
+            <li>{t('onboarding.causeWrongUrl')}</li>
+            <li>{t('onboarding.causePrivateRepo')}</li>
+            <li>{t('onboarding.causeNoDeployment')}</li>
           </ul>
-          <button onClick={scan} className="btn-secondary" style={{ marginTop: 14, fontSize: 13, padding: '9px 18px', borderRadius: 9 }}>Tentar novamente</button>
+          <button onClick={scan} className="btn-secondary" style={{ marginTop: 14, fontSize: 13, padding: '9px 18px', borderRadius: 9 }}>{t('onboarding.tryAgain')}</button>
         </div>
       )}
 
       {!scanning && candidates.length > 0 && (
         <>
           <div style={{ display: 'flex', gap: 11, border: '1px solid rgba(77,156,246,.28)', background: 'rgba(77,156,246,.08)', borderRadius: 12, padding: '13px 15px', marginBottom: 18 }}>
-            <span style={{ color: '#7fb6f9' }}>ⓘ</span>
+            <span style={{ color: 'var(--blue)' }}>ⓘ</span>
             <span style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.55 }}>
-              Encontrados <strong>{candidates.length}</strong> Deployment{candidates.length !== 1 ? 's' : ''}. Seleciona os que queres importar.
+              {t('onboarding.foundDeployments')} <strong>{candidates.length}</strong> Deployment{candidates.length !== 1 ? 's' : ''}{t('onboarding.selectToImport')}
             </span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
@@ -1415,19 +1432,19 @@ export function OnboardingApplications() {
                     )}
                     <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       {c.environments.map(env => (
-                        <span key={env} className="mono" style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: envIds[env] ? 'rgba(52,199,89,.12)' : 'var(--surface-2)', color: envIds[env] ? '#5dd57b' : 'var(--text-3)', border: `1px solid ${envIds[env] ? 'rgba(52,199,89,.24)' : 'var(--border)'}` }}>
-                          {env}{!envIds[env] && ' · não configurado'}
+                        <span key={env} className="mono" style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: envIds[env] ? 'rgba(52,199,89,.12)' : 'var(--surface-2)', color: envIds[env] ? 'var(--green)' : 'var(--text-3)', border: `1px solid ${envIds[env] ? 'rgba(52,199,89,.24)' : 'var(--border)'}` }}>
+                          {env}{!envIds[env] && ` · ${t('common.notConfigured')}`}
                         </span>
                       ))}
                     </div>
                   </div>
                   {isSel && (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 13 }}>
-                      <FormField label="CI Workflow File">
+                      <FormField label={t('onboarding.ciWorkflowFile')}>
                         {workflowLoading[c.name] ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-3)', padding: '9px 0' }}>
                             <span style={{ width: 13, height: 13, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--teal)', animation: 'ds-spin .8s linear infinite', display: 'inline-block' }} />
-                            A procurar workflows no repositório…
+                            {t('onboarding.searchingWorkflows')}
                           </div>
                         ) : (workflowFiles[c.name]?.length ?? 0) > 1 ? (
                           <select
@@ -1435,7 +1452,7 @@ export function OnboardingApplications() {
                             value={ciWorkflow[c.name] ?? ''}
                             onChange={e => setCiWorkflow(p => ({ ...p, [c.name]: e.target.value }))}
                           >
-                            <option value="" disabled>Escolhe um workflow…</option>
+                            <option value="" disabled>{t('onboarding.chooseWorkflow')}</option>
                             {workflowFiles[c.name]!.map(f => <option key={f} value={f}>{f}</option>)}
                           </select>
                         ) : (
@@ -1443,11 +1460,11 @@ export function OnboardingApplications() {
                             className="input-base input-mono"
                             value={ciWorkflow[c.name] ?? ''}
                             onChange={e => setCiWorkflow(p => ({ ...p, [c.name]: e.target.value }))}
-                            placeholder={workflowFiles[c.name]?.length === 0 ? 'Não detetado — escreve o nome do ficheiro' : 'gitops-deploy.yml'}
+                            placeholder={workflowFiles[c.name]?.length === 0 ? t('onboarding.notDetectedPlaceholder') : 'gitops-deploy.yml'}
                           />
                         )}
                         {workflowBranchErr[c.name] && (
-                          <div style={{ fontSize: 11.5, color: '#ff9aaa', marginTop: 6 }}>⚠ {workflowBranchErr[c.name]}</div>
+                          <div style={{ fontSize: 11.5, color: 'var(--red)', marginTop: 6 }}>⚠ {workflowBranchErr[c.name]}</div>
                         )}
                         {ciWorkflow[c.name] && (
                           <div style={{ marginTop: 8 }}>
@@ -1467,14 +1484,14 @@ export function OnboardingApplications() {
             })}
           </div>
           <ErrBanner msg={err} />
-          <NavRow onBack={() => nav('/onboarding/environments')} onNext={submit} loading={loading} nextDisabled={selected.size === 0} nextLabel="Importar applications →" />
+          <NavRow onBack={() => nav('/onboarding/environments')} onNext={submit} loading={loading} nextDisabled={selected.size === 0} nextLabel={t('onboarding.importApplications')} />
         </>
       )}
 
       {!scanning && !scanErr && candidates.length === 0 && !scanning && (
         <div style={{ border: '1px dashed var(--border)', borderRadius: 14, padding: 34, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>
-          Nenhum Deployment encontrado no repositório GitOps.
-          <button onClick={scan} className="btn-secondary" style={{ display: 'block', margin: '14px auto 0', fontSize: 13, padding: '9px 18px', borderRadius: 9 }}>Refazer scan</button>
+          {t('onboarding.noDeploymentFound')}
+          <button onClick={scan} className="btn-secondary" style={{ display: 'block', margin: '14px auto 0', fontSize: 13, padding: '9px 18px', borderRadius: 9 }}>{t('onboarding.redoScan')}</button>
         </div>
       )}
     </>

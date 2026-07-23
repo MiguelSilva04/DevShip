@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { apiFetch } from '../../api/client';
 import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
+import { useLanguage } from '../../context/LanguageContext';
 
 type RequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
 
@@ -20,6 +21,7 @@ interface DeploymentRequest {
 
 export default function Approvals() {
   const nav = useNavigate();
+  const { t } = useLanguage();
   const [pending, setPending] = useState<DeploymentRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -31,20 +33,20 @@ export default function Approvals() {
   }, []);
 
   if (loading) return <Spinner />;
-  if (error) return <div style={{ color: '#ff8497', fontSize: 13, padding: '40px 0' }}>{error}</div>;
+  if (error) return <div style={{ color: 'var(--red)', fontSize: 13, padding: '40px 0' }}>{error}</div>;
 
   return (
     <div>
-      <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.01em', margin: '0 0 6px' }}>Aprovações</h1>
-      <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 24px' }}>Pedidos de deploy a aguardar decisão.</p>
+      <h1 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-.01em', margin: '0 0 6px' }}>{t('approvals.title')}</h1>
+      <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 24px' }}>{t('approvals.subtitle')}</p>
 
-      <h2 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 11px', color: '#ecc26b' }}>
-        Pendentes{' '}
-        <span style={{ background: 'rgba(224,169,59,.15)', color: '#ecc26b', fontSize: 11, padding: '1px 7px', borderRadius: 9, marginLeft: 6 }}>{pending.length}</span>
+      <h2 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 11px', color: 'var(--amber)' }}>
+        {t('approvals.pending')}{' '}
+        <span style={{ background: 'rgba(224,169,59,.15)', color: 'var(--amber)', fontSize: 11, padding: '1px 7px', borderRadius: 9, marginLeft: 6 }}>{pending.length}</span>
       </h2>
 
       {pending.length === 0 ? (
-        <div style={{ fontSize: 13, color: 'var(--text-3)', padding: '20px 0' }}>Sem pedidos pendentes.</div>
+        <div style={{ fontSize: 13, color: 'var(--text-3)', padding: '20px 0' }}>{t('approvals.noPending')}</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {pending.map(req => <RequestCard key={req.id} req={req} onOpen={() => nav(`/app/approvals/${req.id}`)} />)}
@@ -55,6 +57,7 @@ export default function Approvals() {
 }
 
 function RequestCard({ req, onOpen }: { req: DeploymentRequest; onOpen: () => void }) {
+  const { t } = useLanguage();
   const { appLabel, envLabel } = useAppEnvBreadcrumb(undefined, req.application_environment_id);
   return (
     <div style={{ border: '1px solid rgba(224,169,59,.25)', borderRadius: 13, background: 'var(--surface)', padding: '17px 20px' }}>
@@ -67,7 +70,7 @@ function RequestCard({ req, onOpen }: { req: DeploymentRequest; onOpen: () => vo
       </div>
       {req.requested_by_email && (
         <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 8 }}>
-          Pedido por <span style={{ color: 'var(--text-2)' }}>{req.requested_by_email}</span>
+          {t('approvals.requestedBy')} <span style={{ color: 'var(--text-2)' }}>{req.requested_by_email}</span>
         </div>
       )}
       {req.justification && (
@@ -81,7 +84,7 @@ function RequestCard({ req, onOpen }: { req: DeploymentRequest; onOpen: () => vo
           onClick={onOpen}
           style={{ marginLeft: 'auto', fontSize: 12, padding: '7px 14px', borderRadius: 8, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)', cursor: 'pointer' }}
         >
-          Ver detalhes →
+          {t('approvals.viewDetails')}
         </button>
       </div>
     </div>
@@ -89,5 +92,6 @@ function RequestCard({ req, onOpen }: { req: DeploymentRequest; onOpen: () => vo
 }
 
 function Spinner() {
-  return <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-3)', fontSize: 13, padding: '40px 0' }}><span style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--teal)', animation: 'ds-spin .9s linear infinite', display: 'inline-block' }} />A carregar…</div>;
+  const { t } = useLanguage();
+  return <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-3)', fontSize: 13, padding: '40px 0' }}><span style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--teal)', animation: 'ds-spin .9s linear infinite', display: 'inline-block' }} />{t('common.loading')}</div>;
 }

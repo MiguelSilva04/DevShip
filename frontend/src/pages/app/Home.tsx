@@ -81,7 +81,7 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusesKey]);
 
-  if (error) return <div style={{ color: '#ff8497', fontSize: 13, padding: '40px 0' }}>{error}</div>;
+  if (error) return <div style={{ color: 'var(--red)', fontSize: 13, padding: '40px 0' }}>{error}</div>;
   if (!data) return <Spinner />;
 
   return (
@@ -90,8 +90,8 @@ export default function Home() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 13, marginBottom: 26 }}>
         <StatCard label={t('home.activeDeploys')} value={String(data.total_application_environments)} />
-        <StatCard label={t('home.healthy')} value={String(data.healthy_count)} valueColor="#5dd57b" />
-        <StatCard label={t('home.degraded')} value={String(data.degraded_count)} valueColor="#ff8497" sub={data.degraded_count > 0 ? t('home.needsAttention') : undefined} highlight={data.degraded_count > 0} />
+        <StatCard label={t('home.healthy')} value={String(data.healthy_count)} valueColor="var(--green)" />
+        <StatCard label={t('home.degraded')} value={String(data.degraded_count)} valueColor="var(--red)" sub={data.degraded_count > 0 ? t('home.needsAttention') : undefined} highlight={data.degraded_count > 0} />
         <StatCard label={t('home.deploysToday')} value={String(data.deploys_today)} />
       </div>
 
@@ -146,7 +146,7 @@ export default function Home() {
                       {status ? LIFECYCLE_LABEL[status] : t('home.unknown')}
                       {status === null && (
                         <span className={`ds-tooltip-bubble${i === 0 ? ' ds-tooltip-bubble-below' : ''}`}>
-                          A aplicação "{app.name}" ainda não foi <em>deployada</em> em {ae.environment_name} através da DevShip — o estado fica Desconhecido até ao primeiro deploy.
+                          {t('appDetail.notDeployedTooltip1')} "{app.name}" {t('appDetail.notDeployedTooltip2')} <em>{t('appDetail.notDeployedTooltip2Emphasis')}</em> {t('appDetail.notDeployedTooltip3')} {ae.environment_name} {t('appDetail.notDeployedTooltip4')}
                         </span>
                       )}
                     </span>
@@ -192,7 +192,7 @@ export default function Home() {
                       disabled
                       title={t('home.alreadyDeployedTitle')}
                       className="mono"
-                      style={{ fontSize: 11.5, border: '1px solid rgba(52,199,89,.24)', background: 'rgba(52,199,89,.08)', color: '#5dd57b', padding: '6px 12px', borderRadius: 7, cursor: 'default' }}
+                      style={{ fontSize: 11.5, border: '1px solid rgba(52,199,89,.24)', background: 'rgba(52,199,89,.08)', color: 'var(--green)', padding: '6px 12px', borderRadius: 7, cursor: 'default' }}
                     >
                       {ae.environment_name} · {UP_TO_DATE_LABEL.UpToDate}
                     </button>
@@ -222,10 +222,10 @@ export default function Home() {
 function StatCard({ label, value, valueColor, sub, highlight }: { label: string; value: string; valueColor?: string; sub?: string; highlight?: boolean }) {
   return (
     <div style={{ border: `1px solid ${highlight ? 'rgba(241,85,108,.3)' : 'var(--border)'}`, borderRadius: 13, background: highlight ? 'linear-gradient(180deg,rgba(241,85,108,.07),var(--surface))' : 'var(--surface)', padding: '16px 18px' }}>
-      <div style={{ fontSize: 11.5, color: highlight ? '#ff8497' : 'var(--text-2)' }}>{label}</div>
+      <div style={{ fontSize: 11.5, color: highlight ? 'var(--red)' : 'var(--text-2)' }}>{label}</div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 10 }}>
         <span className="mono" style={{ fontSize: 28, fontWeight: 600, color: valueColor ?? 'var(--text)' }}>{value}</span>
-        {sub && <span style={{ fontSize: 10.5, color: '#ff8497' }}>{sub}</span>}
+        {sub && <span style={{ fontSize: 10.5, color: 'var(--red)' }}>{sub}</span>}
       </div>
     </div>
   );

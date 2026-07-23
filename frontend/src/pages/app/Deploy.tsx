@@ -5,6 +5,7 @@ import { apiFetch } from '../../api/client';
 import GithubIdentityPrompt, { GITHUB_IDENTITY_ERROR } from '../../components/GithubIdentityPrompt';
 import Breadcrumb from '../../components/Breadcrumb';
 import { UP_TO_DATE_LABEL } from '../../lib/lifecycle';
+import { useLanguage } from '../../context/LanguageContext';
 
 interface AEDetail {
   id: string;
@@ -30,18 +31,19 @@ interface PendingCommitsResponse {
 }
 
 const COMMIT_TYPE_COLOR: Record<string, string> = {
-  feat: '#5dd57b',
-  fix: '#ecc26b',
+  feat: 'var(--green)',
+  fix: 'var(--amber)',
   chore: 'var(--text-3)',
-  docs: '#7fb6f9',
+  docs: 'var(--blue)',
   refactor: '#c792ea',
-  test: '#7fb6f9',
+  test: 'var(--blue)',
 };
 
 export default function Deploy() {
   const { appId, aeId } = useParams<{ appId: string; aeId: string }>();
   const nav = useNavigate();
   const { user } = useUser();
+  const { t } = useLanguage();
 
   const [aeDetail, setAeDetail] = useState<AEDetail | null>(null);
   const [appName, setAppName] = useState('');
@@ -84,7 +86,7 @@ export default function Deploy() {
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes('409') || msg.toLowerCase().includes('em curso') || msg.toLowerCase().includes('already')) {
-        setError('Já existe um deploy em curso para este environment.');
+        setError(t('deploy.errDeployInProgress'));
       } else {
         setError(msg);
       }
@@ -104,35 +106,35 @@ export default function Deploy() {
       <Breadcrumb segments={[
         { label: appLabel, to: appId ? `/app/${appId}` : undefined },
         { label: envLabel, to: (appId && aeId) ? `/app/${appId}/${aeId}` : undefined },
-        { label: 'deploy' },
+        { label: t('deploy.breadcrumbDeploy') },
       ]} />
       <h1 style={{ fontSize: 22, fontWeight: 600, margin: '0 0 4px' }}>
-        {requiresApproval ? 'Solicitar deploy' : 'Deploy'} — <span style={{ color: 'var(--text-2)' }}>{envLabel}</span>
+        {requiresApproval ? t('deploy.requestDeploy') : t('deploy.deploy')} — <span style={{ color: 'var(--text-2)' }}>{envLabel}</span>
       </h1>
 
       {requiresApproval && (
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 13px', border: '1px solid rgba(224,169,59,.35)', borderRadius: 9, background: 'rgba(224,169,59,.07)', fontSize: 12, color: '#ecc26b', margin: '10px 0 18px' }}>
-          <span>⚠</span> Este environment requer aprovação antes de executar.
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 13px', border: '1px solid rgba(224,169,59,.35)', borderRadius: 9, background: 'rgba(224,169,59,.07)', fontSize: 12, color: 'var(--amber)', margin: '10px 0 18px' }}>
+          <span>⚠</span> {t('deploy.approvalNotice')}
         </div>
       )}
 
       {/* Nova versão */}
       <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '20px 22px', marginBottom: 16 }}>
-        <div style={{ fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 14 }}>Nova versão</div>
+        <div style={{ fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 14 }}>{t('deploy.newVersion')}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 18, fontSize: 13 }}>
           <div>
-            <span style={{ color: 'var(--text-3)', fontSize: 12 }}>Commit desta versão</span>
+            <span style={{ color: 'var(--text-3)', fontSize: 12 }}>{t('deploy.commitOfVersion')}</span>
             <div className="mono" style={{ marginTop: 3 }}>
               {aeDetail?.current_version
                 ? (aeDetail.current_version.source_commit_sha ?? pending?.current_sha ?? '').slice(0, 7) || '—'
-                : 'Sem deploy anterior'}
+                : t('deploy.noPreviousDeploy')}
             </div>
           </div>
           {pending?.head_sha && (
             <>
               <span style={{ color: 'var(--text-3)' }}>→</span>
               <div>
-                <span style={{ color: 'var(--text-3)', fontSize: 12 }}>HEAD ({envLabel.toUpperCase()})</span>
+                <span style={{ color: 'var(--text-3)', fontSize: 12 }}>{t('deploy.headForEnv')} ({envLabel.toUpperCase()})</span>
                 <div className="mono" style={{ marginTop: 3, color: 'var(--teal)', fontWeight: 600 }}>{pending.head_sha.slice(0, 7)}</div>
               </div>
             </>
@@ -143,12 +145,12 @@ export default function Deploy() {
       {/* Commits incluídos */}
       <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: '20px 22px', marginBottom: 16 }}>
         <div style={{ fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 14 }}>
-          Commits incluídos {pending && pending.commits.length > 0 && `(${pending.commits.length})`}
+          {t('deploy.commitsIncluded')} {pending && pending.commits.length > 0 && `(${pending.commits.length})`}
         </div>
         {pending?.reason ? (
           <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>{pending.reason}</div>
         ) : pending && pending.commits.length === 0 ? (
-          <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>Nenhum commit novo desde o último deploy.</div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>{t('deploy.noNewCommits')}</div>
         ) : pending ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {pending.commits.map(c => (
@@ -162,25 +164,25 @@ export default function Deploy() {
             ))}
           </div>
         ) : (
-          <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>A carregar…</div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-3)' }}>{t('deploy.loading')}</div>
         )}
       </div>
 
       <div style={{ marginBottom: 16 }}>
         <label style={{ fontSize: 12.5, color: 'var(--text-2)', display: 'block', marginBottom: 7 }}>
-          Justificação <span style={{ color: 'var(--text-3)' }}>(opcional)</span>
+          {t('deploy.justification')} <span style={{ color: 'var(--text-3)' }}>{t('deploy.optional')}</span>
         </label>
         <textarea
           value={justification}
           onChange={e => setJustification(e.target.value)}
-          placeholder={requiresApproval ? 'Descreve o motivo deste pedido de deploy…' : 'Notas sobre este deploy…'}
+          placeholder={requiresApproval ? t('deploy.justificationPlaceholderApproval') : t('deploy.justificationPlaceholderNormal')}
           rows={3}
           style={{ width: '100%', background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '11px 14px', color: 'var(--text)', fontSize: 13, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
         />
       </div>
 
       {error && (
-        <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 9, background: 'rgba(241,85,108,.08)', border: '1px solid rgba(241,85,108,.3)', fontSize: 12.5, color: '#ff8497', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 9, background: 'rgba(241,85,108,.08)', border: '1px solid rgba(241,85,108,.3)', fontSize: 12.5, color: 'var(--red)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span>{error}</span>
           {error === GITHUB_IDENTITY_ERROR && <GithubIdentityPrompt onConfigured={() => setError('')} />}
         </div>
@@ -189,13 +191,13 @@ export default function Deploy() {
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         {!pending ? (
           <button disabled style={{ fontSize: 13, padding: '10px 20px', borderRadius: 9, fontWeight: 600, background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)', cursor: 'default', opacity: .7 }}>
-            A verificar…
+            {t('deploy.checking')}
           </button>
         ) : isUpToDate ? (
           <button
             disabled
-            title="Já está tudo deployado — sem commits novos desde o último deploy."
-            style={{ fontSize: 13, padding: '10px 20px', borderRadius: 9, fontWeight: 600, background: 'rgba(52,199,89,.13)', color: '#5dd57b', border: '1px solid rgba(52,199,89,.24)', cursor: 'default' }}
+            title={t('deploy.alreadyDeployedTitle')}
+            style={{ fontSize: 13, padding: '10px 20px', borderRadius: 9, fontWeight: 600, background: 'rgba(52,199,89,.13)', color: 'var(--green)', border: '1px solid rgba(52,199,89,.24)', cursor: 'default' }}
           >
             {UP_TO_DATE_LABEL.UpToDate}
           </button>
@@ -206,12 +208,12 @@ export default function Deploy() {
             disabled={loading}
             style={{ fontSize: 13, padding: '10px 20px', borderRadius: 9, fontWeight: 600, opacity: loading ? 0.7 : 1, cursor: loading ? 'not-allowed' : 'pointer' }}
           >
-            {loading ? 'A enviar…' : requiresApproval ? 'Solicitar deploy →' : 'Confirmar deploy →'}
+            {loading ? t('deploy.sending') : requiresApproval ? t('deploy.requestDeployButton') : t('deploy.confirmDeployButton')}
           </button>
         )}
-        <button onClick={() => nav(`/app/${appId}/${aeId}`)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>Cancelar</button>
+        <button onClick={() => nav(`/app/${appId}/${aeId}`)} style={{ background: 'transparent', border: 'none', color: 'var(--text-3)', fontSize: 13, cursor: 'pointer', padding: '10px 4px' }}>{t('deploy.cancel')}</button>
         <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--text-3)' }}>
-          A fazer deploy como <span style={{ color: 'var(--text-2)' }}>{user?.name ?? '—'}</span>
+          {t('deploy.deployingAs')} <span style={{ color: 'var(--text-2)' }}>{user?.name ?? '—'}</span>
         </span>
       </div>
     </div>

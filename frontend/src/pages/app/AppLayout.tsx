@@ -209,13 +209,13 @@ export default function AppLayout() {
                 onClick={toggleTheme}
                 style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 10px', borderRadius:8, border:'1px solid var(--border)', background:'transparent', cursor:'pointer', fontSize:11.5, fontWeight:500, color:'var(--text)' }}
               >
-                {theme === 'dark' ? '🌙' : '☀️'} {theme === 'dark' ? 'Dark' : 'Light'}
+                {theme === 'dark' ? '🌙' : '☀️'} {theme === 'dark' ? t('common.dark') : t('common.light')}
               </button>
             </div>
 
             <button
               onClick={logout}
-              style={{ display:'flex', alignItems:'center', gap:9, borderTop:'1px solid var(--border-soft)', paddingTop:14, border:'none', background:'transparent', cursor:'pointer', color:'#ff8497', fontSize:12.5, width:'100%', textAlign:'left' }}
+              style={{ display:'flex', alignItems:'center', gap:9, borderTop:'1px solid var(--border-soft)', paddingTop:14, border:'none', background:'transparent', cursor:'pointer', color:'var(--red)', fontSize:12.5, width:'100%', textAlign:'left' }}
             >
               <IconLogout style={{ flex:'none', width:15, height:15 }} />
               {t('appLayout.logout')}
@@ -227,11 +227,11 @@ export default function AppLayout() {
       {/* Main */}
       <main style={{ flex:1, minWidth:0 }}>
         {/* Topbar */}
-        <div style={{ position:'sticky', top:0, zIndex:30, display:'flex', alignItems:'center', gap:14, padding:'14px 26px', background:'rgba(15,17,23,.85)', backdropFilter:'blur(12px)', borderBottom:'1px solid var(--border)' }}>
+        <div style={{ position:'sticky', top:0, zIndex:30, display:'flex', alignItems:'center', gap:14, padding:'14px 26px', background:'var(--topbar-bg)', backdropFilter:'blur(12px)', borderBottom:'1px solid var(--border)' }}>
           <button
             className="app-hamburger"
             onClick={() => setSidebarOpen(v => !v)}
-            aria-label="Abrir menu"
+            aria-label={t('appLayout.openMenu')}
             style={{ alignItems:'center', justifyContent:'center', width:34, height:34, borderRadius:8, border:'1px solid var(--border)', background:'var(--surface)', color:'var(--text)', cursor:'pointer', flex:'none' }}
           >
             <IconMenu style={{ width:16, height:16 }} />
@@ -247,7 +247,7 @@ export default function AppLayout() {
           <div className="app-topbar-actions" style={{ marginLeft:'auto', display:'flex', gap:8 }}>
             {canApprove && (
               <button onClick={() => nav('/app/approvals')} className="btn-secondary" style={{ display:'inline-flex', alignItems:'center', gap:7, fontSize:12, padding:'7px 12px', borderRadius:8 }}>
-                Aprovações
+                {t('appLayout.approvals')}
                 {pendingCount > 0 && (
                   <span style={{ background:'var(--teal)', color:'var(--teal-ink)', fontSize:10, fontWeight:600, minWidth:17, height:17, borderRadius:9, display:'inline-flex', alignItems:'center', justifyContent:'center' }}>{pendingCount}</span>
                 )}
@@ -255,13 +255,13 @@ export default function AppLayout() {
             )}
             {canViewTeam && (
               <button onClick={() => nav('/app/team')} className="btn-secondary" style={{ display:'inline-flex', alignItems:'center', gap:7, fontSize:12, padding:'7px 12px', borderRadius:8 }}>
-                Equipa
+                {t('appLayout.team')}
                 {canManageTeam && candidateCount > 0 && (
                   <span style={{ background:'var(--teal)', color:'var(--teal-ink)', fontSize:10, fontWeight:600, minWidth:17, height:17, borderRadius:9, display:'inline-flex', alignItems:'center', justifyContent:'center' }}>{candidateCount}</span>
                 )}
               </button>
             )}
-            {isCloud && <button onClick={() => nav('/app/settings')} className="btn-secondary" style={{ fontSize:12, padding:'7px 12px', borderRadius:8 }}>Definições</button>}
+            {isCloud && <button onClick={() => nav('/app/settings')} className="btn-secondary" style={{ fontSize:12, padding:'7px 12px', borderRadius:8 }}>{t('appLayout.settings')}</button>}
           </div>
         </div>
 

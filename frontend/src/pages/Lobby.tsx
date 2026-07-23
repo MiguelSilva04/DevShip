@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser, userFromBackend } from '../context/UserContext';
+import { useLanguage } from '../context/LanguageContext';
+import type { TranslationKey } from '../context/LanguageContext';
 import { apiFetch } from '../api/client';
 import { OB_TEAM_ID, OB_PROJECT_ID, OB_TEAM_NAME, OB_PROJ_NAME } from './Onboarding';
 
@@ -46,28 +48,32 @@ interface PendingTeamEntry {
   pending_user_email: string;
 }
 
-const ROLE_BADGE: Record<string, { bg: string; col: string; bord: string; label: string }> = {
-  CLOUD_ENGINEER: { bg:'rgba(43,199,180,.12)', col:'var(--teal)',   bord:'rgba(43,199,180,.3)', label:'Cloud Engineer' },
-  TECH_LEAD:      { bg:'rgba(77,156,246,.12)', col:'#7fb6f9',       bord:'rgba(77,156,246,.3)', label:'Tech Lead'      },
-  DEVELOPER:      { bg:'var(--surface-2)',      col:'var(--text-2)', bord:'var(--border)',       label:'Developer'      },
-};
+function roleBadge(role: string, t: (key: TranslationKey) => string): { bg: string; col: string; bord: string; label: string } {
+  const badges: Record<string, { bg: string; col: string; bord: string; label: string }> = {
+    CLOUD_ENGINEER: { bg:'rgba(43,199,180,.12)', col:'var(--teal)',   bord:'rgba(43,199,180,.3)', label:t('lobby.roleCloudEngineer') },
+    TECH_LEAD:      { bg:'rgba(77,156,246,.12)', col:'var(--blue)',       bord:'rgba(77,156,246,.3)', label:t('lobby.roleTechLead')      },
+    DEVELOPER:      { bg:'var(--surface-2)',      col:'var(--text-2)', bord:'var(--border)',       label:t('lobby.roleDeveloper')     },
+  };
+  return badges[role] ?? badges.DEVELOPER;
+}
 
-function setupStatus(entry: TeamEntry, activeProject: ProjectSummary | null) {
+function setupStatus(entry: TeamEntry, activeProject: ProjectSummary | null, t: (key: TranslationKey) => string) {
   if (entry.status === 'PENDING_CONFIRMATION') {
-    return { label:'Pendente de confirmação', color:'#ecc26b', bg:'rgba(224,169,59,.13)', bord:'rgba(224,169,59,.26)', dot:'#E0A93B', dashed:false };
+    return { label:t('lobby.statusPendingConfirmation'), color:'var(--amber)', bg:'rgba(224,169,59,.13)', bord:'rgba(224,169,59,.26)', dot:'var(--amber)', dashed:false };
   }
   if (!activeProject) {
-    return { label:'Onboarding por concluir', color:'var(--text-3)', bg:'transparent', bord:'var(--border)', dot:'', dashed:true };
+    return { label:t('lobby.statusOnboardingIncomplete'), color:'var(--text-3)', bg:'transparent', bord:'var(--border)', dot:'', dashed:true };
   }
   if (activeProject.setup_status === 'CONFIGURED') {
-    return { label:'Configurado', color:'#5dd57b', bg:'rgba(52,199,89,.13)', bord:'rgba(52,199,89,.24)', dot:'#34C759', dashed:false };
+    return { label:t('lobby.statusConfigured'), color:'var(--green)', bg:'rgba(52,199,89,.13)', bord:'rgba(52,199,89,.24)', dot:'var(--green)', dashed:false };
   }
-  return { label:'Onboarding por concluir', color:'var(--text-3)', bg:'transparent', bord:'var(--border)', dot:'', dashed:true };
+  return { label:t('lobby.statusOnboardingIncomplete'), color:'var(--text-3)', bg:'transparent', bord:'var(--border)', dot:'', dashed:true };
 }
 
 export default function Lobby() {
   const nav = useNavigate();
   const { user, token, logout, setUser } = useUser();
+  const { t } = useLanguage();
   const [teams, setTeams] = useState<TeamEntry[] | null>(null);
   const [domainStatus, setDomainStatus] = useState<DomainStatus | null>(null);
   const [loadErr, setLoadErr] = useState('');
@@ -111,14 +117,14 @@ export default function Lobby() {
             .catch(() => setPendingTeams([]));
         }
       })
-      .catch((e: unknown) => setLoadErr(e instanceof Error ? e.message : 'Erro ao carregar informação.'));
+      .catch((e: unknown) => setLoadErr(e instanceof Error ? e.message : t('lobby.errLoad')));
   }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function actOnPendingTeam(teamId: string, action: 'confirm' | 'reject') {
     setPendingActionErr('');
     apiFetch(`/teams/${teamId}/${action}`, { method: 'POST' })
       .then(() => setPendingTeams(prev => (prev ?? []).filter(p => p.team_id !== teamId)))
-      .catch((e: unknown) => setPendingActionErr(e instanceof Error ? e.message : 'Erro ao processar pedido.'));
+      .catch((e: unknown) => setPendingActionErr(e instanceof Error ? e.message : t('lobby.errPendingAction')));
   }
 
   // Real teams: token present
@@ -129,8 +135,8 @@ export default function Lobby() {
     let subtitle;
     if (activeTeams.length > 0) {
       subtitle = activeTeams[0].role === 'CLOUD_ENGINEER'
-        ? 'Escolhe um projeto para entrar ou continua o onboarding.'
-        : 'Escolhe o projeto em que participas.';
+        ? t('lobby.subtitleCloudEngineer')
+        : t('lobby.subtitleOther');
     }
 
     return (
@@ -138,17 +144,17 @@ export default function Lobby() {
         <div style={{ maxWidth:620, margin:'0 auto', padding:'56px 26px 90px' }}>
           <div style={{ display:'flex', alignItems:'center', gap:13, marginBottom:8 }}>
             <img src="/devship-logo.png" alt="DevShip" style={{ width:38, height:38 }} />
-            <h1 style={{ fontSize:23, fontWeight:600, letterSpacing:'-.01em', margin:0, flex:1 }}>Bem-vindo, {firstName}</h1>
-            <button onClick={() => { logout(); nav('/login'); }} style={{ background:'none', border:'1px solid var(--border)', borderRadius:8, padding:'6px 12px', fontSize:12, color:'var(--text-3)', cursor:'pointer' }}>Sair</button>
+            <h1 style={{ fontSize:23, fontWeight:600, letterSpacing:'-.01em', margin:0, flex:1 }}>{t('lobby.welcome')}, {firstName}</h1>
+            <button onClick={() => { logout(); nav('/login'); }} style={{ background:'none', border:'1px solid var(--border)', borderRadius:8, padding:'6px 12px', fontSize:12, color:'var(--text-3)', cursor:'pointer' }}>{t('lobby.logout')}</button>
           </div>
           <p style={{ fontSize:13, color:'var(--text-2)', lineHeight:1.7, margin:'0 0 26px' }}>{subtitle}</p>
 
           {loadErr && (
-            <div style={{ border:'1px solid rgba(241,85,108,.3)', background:'rgba(241,85,108,.08)', borderRadius:9, padding:'10px 13px', fontSize:12, color:'#ff9aaa', marginBottom:16 }}>{loadErr}</div>
+            <div style={{ border:'1px solid rgba(241,85,108,.3)', background:'rgba(241,85,108,.08)', borderRadius:9, padding:'10px 13px', fontSize:12, color:'var(--red)', marginBottom:16 }}>{loadErr}</div>
           )}
 
           {teams === null && !loadErr && (
-            <div style={{ color:'var(--text-3)', fontSize:13 }}>A carregar…</div>
+            <div style={{ color:'var(--text-3)', fontSize:13 }}>{t('lobby.loading')}</div>
           )}
 
           {/* Sem TeamMember ativo — dois casos: domínio já tem Company (pode candidatar-se
@@ -158,27 +164,25 @@ export default function Lobby() {
               <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
                 <div style={{ border:'1px solid rgba(224,169,59,.25)', borderRadius:13, padding:28, textAlign:'center', background:'rgba(224,169,59,.04)' }}>
                   <div style={{ fontSize:28, marginBottom:14 }}>⏳</div>
-                  <div style={{ fontSize:15, fontWeight:600, marginBottom:10 }}>A aguardar aprovação</div>
+                  <div style={{ fontSize:15, fontWeight:600, marginBottom:10 }}>{t('lobby.waitingApproval')}</div>
                   <div style={{ fontSize:13, color:'var(--text-2)', lineHeight:1.7, maxWidth:420, margin:'0 auto' }}>
-                    O domínio <span className="mono" style={{ color:'var(--text)' }}>@{domainStatus.domain}</span> já tem equipas na plataforma.
-                    Um Cloud Engineer pode adicionar-te no separador <strong>Equipa</strong>, ou podes criar a tua própria equipa.
+                    <span className="mono" style={{ color:'var(--text)' }}>@{domainStatus.domain}</span> {t('lobby.domainHasTeamsInfo')}
                   </div>
                 </div>
                 <button onClick={() => nav('/onboarding')} className="btn-secondary" style={{ fontSize:13, padding:'10px 22px', borderRadius:9, alignSelf:'center' }}>
-                  Criar nova equipa →
+                  {t('lobby.createNewTeam')}
                 </button>
               </div>
             ) : (
               // Domínio novo — bootstrap: pode iniciar onboarding e criar a primeira Team
               <div style={{ border:'1px solid var(--border)', borderRadius:13, padding:28, textAlign:'center' }}>
                 <div style={{ fontSize:28, marginBottom:14 }}>🚀</div>
-                <div style={{ fontSize:15, fontWeight:600, marginBottom:10 }}>Começa o onboarding</div>
+                <div style={{ fontSize:15, fontWeight:600, marginBottom:10 }}>{t('lobby.startOnboarding')}</div>
                 <div style={{ fontSize:13, color:'var(--text-2)', lineHeight:1.7, maxWidth:420, margin:'0 auto 20px' }}>
-                  O domínio <span className="mono" style={{ color:'var(--text)' }}>@{domainStatus.domain}</span> ainda não está na plataforma.
-                  Cria a tua equipa e liga o cluster AWS EKS para começar.
+                  <span className="mono" style={{ color:'var(--text)' }}>@{domainStatus.domain}</span> {t('lobby.domainNewInfo')}
                 </div>
                 <button onClick={() => nav('/onboarding')} className="btn-primary hover-bright" style={{ fontSize:13, padding:'10px 22px', borderRadius:9 }}>
-                  Criar equipa e configurar →
+                  {t('lobby.createTeamAndConfigure')}
                 </button>
               </div>
             )
@@ -186,19 +190,19 @@ export default function Lobby() {
 
           {pendingTeams !== null && pendingTeams.length > 0 && (
             <div style={{ marginBottom:26 }}>
-              <div className="mono" style={{ fontSize:10.5, letterSpacing:'.14em', textTransform:'uppercase', color:'var(--text-3)', marginBottom:13 }}>Teams pendentes de confirmação</div>
+              <div className="mono" style={{ fontSize:10.5, letterSpacing:'.14em', textTransform:'uppercase', color:'var(--text-3)', marginBottom:13 }}>{t('lobby.pendingTeamsHeader')}</div>
               {pendingActionErr && (
-                <div style={{ border:'1px solid rgba(241,85,108,.3)', background:'rgba(241,85,108,.08)', borderRadius:9, padding:'10px 13px', fontSize:12, color:'#ff9aaa', marginBottom:12 }}>{pendingActionErr}</div>
+                <div style={{ border:'1px solid rgba(241,85,108,.3)', background:'rgba(241,85,108,.08)', borderRadius:9, padding:'10px 13px', fontSize:12, color:'var(--red)', marginBottom:12 }}>{pendingActionErr}</div>
               )}
               <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
                 {pendingTeams.map(p => (
                   <div key={p.team_id} style={{ border:'1px solid rgba(224,169,59,.25)', background:'rgba(224,169,59,.04)', borderRadius:13, padding:16, display:'flex', alignItems:'center', gap:14 }}>
                     <div style={{ flex:1 }}>
                       <div style={{ fontSize:14, fontWeight:600 }}>{p.team_name}</div>
-                      <div style={{ fontSize:12, color:'var(--text-3)', marginTop:2 }}>Fundada por {p.pending_user_name} ({p.pending_user_email})</div>
+                      <div style={{ fontSize:12, color:'var(--text-3)', marginTop:2 }}>{t('lobby.foundedBy')} {p.pending_user_name} ({p.pending_user_email})</div>
                     </div>
-                    <button onClick={() => actOnPendingTeam(p.team_id, 'reject')} style={{ background:'none', border:'1px solid var(--border)', borderRadius:8, padding:'7px 14px', fontSize:12.5, color:'var(--text-2)', cursor:'pointer' }}>Rejeitar</button>
-                    <button onClick={() => actOnPendingTeam(p.team_id, 'confirm')} className="btn-primary hover-bright" style={{ fontSize:12.5, padding:'7px 14px', borderRadius:8 }}>Confirmar</button>
+                    <button onClick={() => actOnPendingTeam(p.team_id, 'reject')} style={{ background:'none', border:'1px solid var(--border)', borderRadius:8, padding:'7px 14px', fontSize:12.5, color:'var(--text-2)', cursor:'pointer' }}>{t('lobby.reject')}</button>
+                    <button onClick={() => actOnPendingTeam(p.team_id, 'confirm')} className="btn-primary hover-bright" style={{ fontSize:12.5, padding:'7px 14px', borderRadius:8 }}>{t('lobby.confirm')}</button>
                   </div>
                 ))}
               </div>
@@ -207,23 +211,23 @@ export default function Lobby() {
 
           {teams !== null && activeTeams.length > 0 && (
             <>
-              <div className="mono" style={{ fontSize:10.5, letterSpacing:'.14em', textTransform:'uppercase', color:'var(--text-3)', marginBottom:13 }}>As tuas teams</div>
+              <div className="mono" style={{ fontSize:10.5, letterSpacing:'.14em', textTransform:'uppercase', color:'var(--text-3)', marginBottom:13 }}>{t('lobby.yourTeams')}</div>
               <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
-                {activeTeams.map(t => {
-                  const badge = ROLE_BADGE[t.role] ?? ROLE_BADGE.DEVELOPER;
-                  const activeProject = resolveActiveProject(t);
-                  const st = setupStatus(t, activeProject);
-                  const initials = t.team_name.split(/[-_ ]/).map((w: string) => w[0]).slice(0, 2).join('').toUpperCase() || '??';
-                  const projectLine = activeProject?.name ?? 'projeto por configurar';
+                {activeTeams.map(te => {
+                  const badge = roleBadge(te.role, t);
+                  const activeProject = resolveActiveProject(te);
+                  const st = setupStatus(te, activeProject, t);
+                  const initials = te.team_name.split(/[-_ ]/).map((w: string) => w[0]).slice(0, 2).join('').toUpperCase() || '??';
+                  const projectLine = activeProject?.name ?? t('lobby.projectToConfigure');
 
                   function goTo() {
                     // CE pendente de confirmação não avança — nem Developers sem onboarding concluído
-                    if (t.status === 'PENDING_CONFIRMATION') return;
-                    if (activeProject?.setup_status !== 'CONFIGURED' && t.role !== 'CLOUD_ENGINEER') return;
+                    if (te.status === 'PENDING_CONFIRMATION') return;
+                    if (activeProject?.setup_status !== 'CONFIGURED' && te.role !== 'CLOUD_ENGINEER') return;
 
-                    if (user) setUser(userFromBackend(user.name, user.email, t.role));
-                    localStorage.setItem(OB_TEAM_ID, t.team_id);
-                    localStorage.setItem(OB_TEAM_NAME, t.team_name);
+                    if (user) setUser(userFromBackend(user.name, user.email, te.role));
+                    localStorage.setItem(OB_TEAM_ID, te.team_id);
+                    localStorage.setItem(OB_TEAM_NAME, te.team_name);
                     if (activeProject) {
                       localStorage.setItem(OB_PROJECT_ID, activeProject.id);
                       localStorage.setItem(OB_PROJ_NAME, activeProject.name);
@@ -241,13 +245,13 @@ export default function Lobby() {
                     nav(dest[activeProject.setup_status ?? ''] ?? '/onboarding/team');
                   }
 
-                  const clickable = t.status !== 'PENDING_CONFIRMATION' && (activeProject?.setup_status === 'CONFIGURED' || t.role === 'CLOUD_ENGINEER');
+                  const clickable = te.status !== 'PENDING_CONFIRMATION' && (activeProject?.setup_status === 'CONFIGURED' || te.role === 'CLOUD_ENGINEER');
 
                   return (
                     <TeamButton
-                      key={t.team_id}
+                      key={te.team_id}
                       initials={initials}
-                      name={t.team_name}
+                      name={te.team_name}
                       project={projectLine}
                       badge={badge}
                       status={st}
@@ -257,8 +261,8 @@ export default function Lobby() {
                   );
                 })}
               </div>
-              {activeTeams.some((t: TeamEntry) => t.role === 'CLOUD_ENGINEER') && (
-                <div style={{ fontSize:11, color:'var(--text-3)', marginTop:14, lineHeight:1.6 }}>Como Cloud Engineer podes criar e gerir múltiplas teams.</div>
+              {activeTeams.some((te: TeamEntry) => te.role === 'CLOUD_ENGINEER') && (
+                <div style={{ fontSize:11, color:'var(--text-3)', marginTop:14, lineHeight:1.6 }}>{t('lobby.cloudEngineerHint')}</div>
               )}
             </>
           )}
@@ -273,10 +277,10 @@ export default function Lobby() {
       <div style={{ maxWidth:620, margin:'0 auto', padding:'56px 26px 90px' }}>
         <div style={{ display:'flex', alignItems:'center', gap:13, marginBottom:8 }}>
           <img src="/devship-logo.png" alt="DevShip" style={{ width:38, height:38 }} />
-          <h1 style={{ fontSize:23, fontWeight:600, letterSpacing:'-.01em', margin:0 }}>Bem-vindo à DevShip</h1>
+          <h1 style={{ fontSize:23, fontWeight:600, letterSpacing:'-.01em', margin:0 }}>{t('lobby.welcomeGeneric')}</h1>
         </div>
-        <p style={{ fontSize:13, color:'var(--text-2)', lineHeight:1.7, margin:'0 0 26px' }}>Faz login para ver as tuas teams.</p>
-        <button onClick={() => nav('/login')} className="btn-primary hover-bright" style={{ fontSize:13, padding:'10px 20px', borderRadius:8 }}>Entrar →</button>
+        <p style={{ fontSize:13, color:'var(--text-2)', lineHeight:1.7, margin:'0 0 26px' }}>{t('lobby.loginToSeeTeams')}</p>
+        <button onClick={() => nav('/login')} className="btn-primary hover-bright" style={{ fontSize:13, padding:'10px 20px', borderRadius:8 }}>{t('lobby.login')}</button>
       </div>
     </div>
   );

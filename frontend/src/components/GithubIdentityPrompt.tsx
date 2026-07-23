@@ -37,7 +37,7 @@ export default function GithubIdentityPrompt({ onConfigured, configured, current
         onClick={() => { setUsername(currentUsername ?? ''); setEmail(currentEmail ?? ''); setOpen(true); }}
         style={configured
           ? { fontSize: 12, padding: '5px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer', flex: 'none', marginLeft: 10 }
-          : { fontSize: 12, padding: '5px 12px', borderRadius: 7, border: '1px solid rgba(241,85,108,.4)', background: 'transparent', color: '#ff8497', cursor: 'pointer', flex: 'none', marginLeft: 10 }}
+          : { fontSize: 12, padding: '5px 12px', borderRadius: 7, border: '1px solid rgba(241,85,108,.4)', background: 'transparent', color: 'var(--red)', cursor: 'pointer', flex: 'none', marginLeft: 10 }}
       >
         {configured ? 'Alterar' : 'Configurar'}
       </button>
@@ -52,7 +52,7 @@ export default function GithubIdentityPrompt({ onConfigured, configured, current
             <p style={{ fontSize: 12.5, color: 'var(--text-2)', margin: '0 0 18px', lineHeight: 1.6 }}>
               Necessária para fazer deploy ou rollback — usada para confirmar que és colaborador do repositório.
             </p>
-            {err && <div style={{ fontSize: 12, color: '#ff9aaa', marginBottom: 10 }}>{err}</div>}
+            {err && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 10 }}>{err}</div>}
             <label style={{ fontSize: 12.5, color: 'var(--text-2)', display: 'block', marginBottom: 7 }}>Username GitHub</label>
             <input
               value={username}

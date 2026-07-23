@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { type LifecycleStatus, type UpToDateStatus, lifecycleColor, LIFECYCLE_LABEL, UP_TO_DATE_LABEL } from '../../lib/lifecycle';
 import Breadcrumb from '../../components/Breadcrumb';
+import { useLanguage } from '../../context/LanguageContext';
 
 interface AEStatus {
   id: string;
@@ -25,6 +26,7 @@ function statusPill(s: LifecycleStatus | null) {
 export default function AppDetail() {
   const { appId } = useParams<{ appId: string }>();
   const nav = useNavigate();
+  const { t } = useLanguage();
   const [data, setData] = useState<AppDetail | null>(null);
   const [error, setError] = useState('');
   const [upToDate, setUpToDate] = useState<Record<string, UpToDateStatus>>({});
@@ -49,13 +51,13 @@ export default function AppDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusesKey]);
 
-  if (error) return <div style={{ color: '#ff8497', fontSize: 13, padding: '40px 0' }}>{error}</div>;
+  if (error) return <div style={{ color: 'var(--red)', fontSize: 13, padding: '40px 0' }}>{error}</div>;
   if (!data) return <Spinner />;
 
   return (
     <div>
       <Breadcrumb segments={[
-        { label: 'aplicações', to: '/app/home' },
+        { label: t('appDetail.breadcrumbApps'), to: '/app/home' },
         { label: data.name },
       ]} />
       <div style={{ marginBottom: 22 }}>
@@ -72,11 +74,11 @@ export default function AppDetail() {
       <div className="responsive-table-grid" style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)' }}>
         <div style={{ minWidth: 560, borderRadius: 14, overflow: 'hidden' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '160px 130px 1fr 200px', gap: 12, padding: '13px 20px', borderBottom: '1px solid var(--border)', fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--text-3)' }}>
-          <span>Environment</span><span>Estado</span><span></span><span style={{ textAlign: 'right' }}>Ações</span>
+          <span>{t('appDetail.environmentCol')}</span><span>{t('appDetail.statusCol')}</span><span></span><span style={{ textAlign: 'right' }}>{t('appDetail.actionsCol')}</span>
         </div>
 
         {data.environments.length === 0 && (
-          <div style={{ padding: '20px', fontSize: 13, color: 'var(--text-3)' }}>Sem environments configurados.</div>
+          <div style={{ padding: '20px', fontSize: 13, color: 'var(--text-3)' }}>{t('appDetail.noEnvironments')}</div>
         )}
 
         {data.environments.map((ae, i) => {
@@ -90,10 +92,10 @@ export default function AppDetail() {
                   style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 10px', borderRadius: 999, fontSize: 11, background: p.bg, color: p.col, border: `1px solid ${p.bord}` }}
                 >
                   <span style={{ width: 6, height: 6, borderRadius: '50%', background: p.dot, animation: ae.lifecycle_status === 'Deploying' ? 'ds-pulse 1.4s infinite' : 'none' }} />
-                  {ae.lifecycle_status ? LIFECYCLE_LABEL[ae.lifecycle_status] : 'Desconhecido'}
+                  {ae.lifecycle_status ? LIFECYCLE_LABEL[ae.lifecycle_status] : t('appDetail.unknown')}
                   {ae.lifecycle_status === null && (
                     <span className={`ds-tooltip-bubble${i === 0 ? ' ds-tooltip-bubble-below' : ''}`}>
-                      A aplicação "{data.name}" ainda não foi <em>deployada</em> em {ae.environment_name} através da DevShip — o estado fica Desconhecido até ao primeiro deploy.
+                      {t('appDetail.notDeployedTooltip1')} "{data.name}" {t('appDetail.notDeployedTooltip2')} <em>{t('appDetail.notDeployedTooltip2Emphasis')}</em> {t('appDetail.notDeployedTooltip3')} {ae.environment_name} {t('appDetail.notDeployedTooltip4')}
                     </span>
                   )}
                 </span>
@@ -102,20 +104,20 @@ export default function AppDetail() {
               <span style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 {!upToDate[ae.id] ? (
                   <button disabled style={{ fontSize: 11.5, padding: '6px 13px', borderRadius: 7, background: 'var(--surface-2)', color: 'var(--text-3)', border: '1px solid var(--border)', cursor: 'default', opacity: .7 }}>
-                    A verificar…
+                    {t('appDetail.checking')}
                   </button>
                 ) : upToDate[ae.id] === 'UpToDate' ? (
                   <button
                     disabled
-                    title="Já está tudo deployado — sem commits novos desde o último deploy."
-                    style={{ fontSize: 11.5, padding: '6px 13px', borderRadius: 7, background: 'rgba(52,199,89,.13)', color: '#5dd57b', border: '1px solid rgba(52,199,89,.24)', cursor: 'default' }}
+                    title={t('appDetail.alreadyDeployedTitle')}
+                    style={{ fontSize: 11.5, padding: '6px 13px', borderRadius: 7, background: 'rgba(52,199,89,.13)', color: 'var(--green)', border: '1px solid rgba(52,199,89,.24)', cursor: 'default' }}
                   >
                     {UP_TO_DATE_LABEL.UpToDate}
                   </button>
                 ) : (
-                  <button onClick={() => nav(`/app/${appId}/${ae.id}/deploy`)} className="btn-primary" style={{ fontSize: 11.5, padding: '6px 13px', borderRadius: 7 }}>Deploy</button>
+                  <button onClick={() => nav(`/app/${appId}/${ae.id}/deploy`)} className="btn-primary" style={{ fontSize: 11.5, padding: '6px 13px', borderRadius: 7 }}>{t('appDetail.deploy')}</button>
                 )}
-                <button onClick={() => nav(`/app/${appId}/${ae.id}`)} className="btn-secondary" style={{ fontSize: 11.5, padding: '6px 13px', borderRadius: 7 }}>Ver detalhes</button>
+                <button onClick={() => nav(`/app/${appId}/${ae.id}`)} className="btn-secondary" style={{ fontSize: 11.5, padding: '6px 13px', borderRadius: 7 }}>{t('appDetail.viewDetails')}</button>
               </span>
             </div>
           );
@@ -127,5 +129,6 @@ export default function AppDetail() {
 }
 
 function Spinner() {
-  return <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-3)', fontSize: 13, padding: '40px 0' }}><span style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--teal)', animation: 'ds-spin .9s linear infinite', display: 'inline-block' }} />A carregar…</div>;
+  const { t } = useLanguage();
+  return <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-3)', fontSize: 13, padding: '40px 0' }}><span style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--teal)', animation: 'ds-spin .9s linear infinite', display: 'inline-block' }} />{t('common.loading')}</div>;
 }

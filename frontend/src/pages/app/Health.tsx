@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
 import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
 import Breadcrumb from '../../components/Breadcrumb';
+import { useLanguage } from '../../context/LanguageContext';
+import type { TranslationKey } from '../../context/LanguageContext';
 
 interface ProbeSpec {
   path: string | null;
@@ -29,21 +31,22 @@ interface ContainerProbeStatus {
   liveness_probe: ProbeSpec | null;
 }
 
-function relativeTime(iso: string | null): string {
+function relativeTime(iso: string | null, t: (key: TranslationKey) => string): string {
   if (!iso) return '';
   const diffMs = Date.now() - new Date(iso).getTime();
   const mins = Math.round(diffMs / 60000);
-  if (mins < 1) return 'agora mesmo';
-  if (mins < 60) return `há ${mins} min`;
+  if (mins < 1) return t('health.justNow');
+  if (mins < 60) return `${t('health.minAgo')} ${mins} ${t('health.minAgoUnit')}`.trim();
   const hours = Math.round(mins / 60);
-  if (hours < 24) return `há ${hours}h`;
-  return `há ${Math.round(hours / 24)}d`;
+  if (hours < 24) return `${t('health.minAgo')} ${hours}${t('health.hAgo')}`.trim();
+  return `${t('health.minAgo')} ${Math.round(hours / 24)}${t('health.dAgo')}`.trim();
 }
 
 export default function Health() {
   const { appId, aeId } = useParams<{ appId:string; aeId:string }>();
   const { appLabel, envLabel, appId: resolvedAppId } = useAppEnvBreadcrumb(appId, aeId);
   const nav = useNavigate();
+  const { t } = useLanguage();
   const [containers, setContainers] = useState<ContainerProbeStatus[] | null>(null);
   const [error, setError] = useState('');
 
@@ -59,18 +62,18 @@ export default function Health() {
       <Breadcrumb segments={[
         { label: appLabel, to: resolvedAppId ? `/app/${resolvedAppId}` : undefined },
         { label: envLabel, to: (resolvedAppId && aeId) ? `/app/${resolvedAppId}/${aeId}` : undefined },
-        { label: 'health' },
+        { label: t('health.breadcrumbHealth') },
       ]} />
-      <h1 style={{ fontSize:22, fontWeight:600, margin:'0 0 20px' }}>Health details</h1>
+      <h1 style={{ fontSize:22, fontWeight:600, margin:'0 0 20px' }}>{t('health.title')}</h1>
 
       <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 16px', borderRadius:10, background:'var(--bg-2)', border:'1px solid var(--border-soft)', fontSize:12.5, color:'var(--text-2)', marginBottom:20 }}>
         <span style={{ flex:'none' }}>ⓘ</span>
-        Os dados são lidos em tempo real da Kubernetes API.
+        {t('health.liveDataNote')}
       </div>
 
-      {error && <div style={{ color:'#ff8497', fontSize:13 }}>{error}</div>}
-      {!error && containers === null && <div style={{ color:'var(--text-3)', fontSize:13 }}>A carregar…</div>}
-      {containers && containers.length === 0 && <div style={{ color:'var(--text-3)', fontSize:13 }}>Sem pods em execução.</div>}
+      {error && <div style={{ color:'var(--red)', fontSize:13 }}>{error}</div>}
+      {!error && containers === null && <div style={{ color:'var(--text-3)', fontSize:13 }}>{t('health.loading')}</div>}
+      {containers && containers.length === 0 && <div style={{ color:'var(--text-3)', fontSize:13 }}>{t('health.noPodsRunning')}</div>}
 
       {containers?.map(c => (
         <div key={`${c.pod_name}-${c.container_name}`} style={{ marginBottom:22 }}>
@@ -79,21 +82,21 @@ export default function Health() {
           )}
           <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
             <ProbeCard
-              title="Startup probe"
+              title={t('health.startupProbe')}
               spec={c.startup_probe}
               passing={c.state === 'Running' || c.ready}
               errorInfo={c.state !== 'Running' && c.restart_count === 0 ? { reason: c.reason, message: c.message, at: c.error_at } : null}
               onViewLog={() => nav(`/app/${appId}/${aeId}/logs?pod=${encodeURIComponent(c.pod_name)}`)}
             />
             <ProbeCard
-              title="Readiness probe"
+              title={t('health.readinessProbe')}
               spec={c.readiness_probe}
               passing={c.ready}
               errorInfo={!c.ready ? { reason: c.reason, message: c.message, at: c.error_at ?? c.ready_transition_at } : null}
               onViewLog={() => nav(`/app/${appId}/${aeId}/logs?pod=${encodeURIComponent(c.pod_name)}`)}
             />
             <ProbeCard
-              title="Liveness probe"
+              title={t('health.livenessProbe')}
               spec={c.liveness_probe}
               passing={c.state === 'Running' && c.restart_count === 0}
               errorInfo={c.restart_count > 0 ? { reason: c.reason, message: c.message, at: c.error_at } : null}
@@ -113,8 +116,9 @@ function ProbeCard({ title, spec, passing, errorInfo, onViewLog }: {
   errorInfo: { reason: string | null; message: string | null; at: string | null } | null;
   onViewLog: () => void;
 }) {
+  const { t } = useLanguage();
   const lastError = errorInfo && (errorInfo.message || errorInfo.reason)
-    ? `${errorInfo.message ?? errorInfo.reason}${errorInfo.at ? ` (${relativeTime(errorInfo.at)})` : ''}`
+    ? `${errorInfo.message ?? errorInfo.reason}${errorInfo.at ? ` (${relativeTime(errorInfo.at, t)})` : ''}`
     : null;
 
   // Sem spec, o container não tem este probe configurado — não é "a passar" nem "a
@@ -131,12 +135,12 @@ function ProbeCard({ title, spec, passing, errorInfo, onViewLog }: {
         <span style={{ fontSize:14, fontWeight:600 }}>{title}</span>
         <span style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'3px 10px', borderRadius:999, fontSize:11.5,
           background: !configured ? 'var(--surface-3)' : passing ? 'rgba(52,199,89,.13)' : 'rgba(241,85,108,.13)',
-          color: !configured ? 'var(--text-3)' : passing ? '#5dd57b' : '#ff8497',
+          color: !configured ? 'var(--text-3)' : passing ? 'var(--green)' : 'var(--red)',
           border: !configured ? '1px solid var(--border)' : passing ? '1px solid rgba(52,199,89,.24)' : '1px solid rgba(241,85,108,.26)' }}>
-          <span style={{ width:6, height:6, borderRadius:'50%', background: !configured ? 'var(--text-3)' : passing ? '#34C759' : '#F1556C' }}></span>
-          {!configured ? 'Não configurada' : passing ? 'A passar' : 'A falhar'}
+          <span style={{ width:6, height:6, borderRadius:'50%', background: !configured ? 'var(--text-3)' : passing ? 'var(--green)' : 'var(--red)' }}></span>
+          {!configured ? t('health.notConfigured') : passing ? t('health.passing') : t('health.failing')}
         </span>
-        <span onClick={onViewLog} style={{ marginLeft:'auto', fontSize:11.5, color:'var(--teal)', cursor:'pointer' }}>Ver log →</span>
+        <span onClick={onViewLog} style={{ marginLeft:'auto', fontSize:11.5, color:'var(--teal)', cursor:'pointer' }}>{t('health.viewLog')}</span>
       </div>
 
       {spec ? (
@@ -145,13 +149,13 @@ function ProbeCard({ title, spec, passing, errorInfo, onViewLog }: {
           {'  '}delay {spec.initial_delay_seconds}s{'  '}period {spec.period_seconds}s{'  '}timeout {spec.timeout_seconds}s{'  '}thresholds {spec.success_threshold}/{spec.failure_threshold}
         </div>
       ) : (
-        <div style={{ fontSize:12, color:'var(--text-3)' }}>Probe não configurada neste container.</div>
+        <div style={{ fontSize:12, color:'var(--text-3)' }}>{t('health.probeNotConfigured')}</div>
       )}
 
       {lastError ? (
-        <div className="mono" style={{ fontSize:12, color:'#ff8497', marginTop:8 }}>Último erro: {lastError}</div>
+        <div className="mono" style={{ fontSize:12, color:'var(--red)', marginTop:8 }}>{t('health.lastError')} {lastError}</div>
       ) : (
-        <div style={{ fontSize:12, color:'var(--text-3)', marginTop:8 }}>Sem erros recentes.</div>
+        <div style={{ fontSize:12, color:'var(--text-3)', marginTop:8 }}>{t('health.noRecentErrors')}</div>
       )}
     </div>
   );
