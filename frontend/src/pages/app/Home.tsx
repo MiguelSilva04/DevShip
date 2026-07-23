@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
-import { type LifecycleStatus, type UpToDateStatus, lifecycleColor, LIFECYCLE_LABEL, UP_TO_DATE_LABEL } from '../../lib/lifecycle';
+import { type LifecycleStatus, type UpToDateStatus, lifecycleColor, lifecycleLabel, upToDateLabel } from '../../lib/lifecycle';
 import { useLanguage } from '../../context/LanguageContext';
 
 interface AEStatus {
@@ -40,6 +40,8 @@ function effectiveStatus(ae: AEStatus): LifecycleStatus | null {
 export default function Home() {
   const nav = useNavigate();
   const { t } = useLanguage();
+  const LIFECYCLE_LABEL = lifecycleLabel(t);
+  const UP_TO_DATE_LABEL = upToDateLabel(t);
   const [data, setData] = useState<HomepageData | null>(null);
   const [error, setError] = useState('');
   const [open, setOpen] = useState<Record<string, boolean>>({});

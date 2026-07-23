@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import { apiFetch } from '../../api/client';
+import { apiFetch, type ApiError } from '../../api/client';
 import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
 import Breadcrumb from '../../components/Breadcrumb';
 import { useLanguage } from '../../context/LanguageContext';
+import AccessDenied from '../../components/AccessDenied';
 
 interface Pod {
   name: string;
@@ -34,20 +35,24 @@ export default function Pods() {
   const [metricsAvailable, setMetricsAvailable] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [forbidden, setForbidden] = useState(false);
 
   const load = useCallback(() => {
     if (!aeId) return;
     setLoading(true);
     setError('');
+    setForbidden(false);
     apiFetch(`/application-environments/${aeId}/pods`)
       .then(d => { setPods(d.pods); setMetricsAvailable(d.metrics_available); })
-      .catch(e => setError(e.message))
+      .catch((e: ApiError) => { if (e.status === 403) setForbidden(true); else setError(e.message); })
       .finally(() => setLoading(false));
   }, [aeId]);
 
   useEffect(() => { load(); }, [load]);
 
   const running = pods.filter(p => p.phase === 'Running').length;
+
+  if (forbidden) return <AccessDenied />;
 
   return (
     <div>

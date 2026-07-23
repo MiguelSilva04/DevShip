@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../api/client';
-import { type LifecycleStatus, type UpToDateStatus, lifecycleColor, LIFECYCLE_LABEL, UP_TO_DATE_LABEL } from '../../lib/lifecycle';
+import { type LifecycleStatus, type UpToDateStatus, lifecycleColor, lifecycleLabel, upToDateLabel } from '../../lib/lifecycle';
 import Breadcrumb from '../../components/Breadcrumb';
 import { useLanguage } from '../../context/LanguageContext';
 
@@ -27,6 +27,8 @@ export default function AppDetail() {
   const { appId } = useParams<{ appId: string }>();
   const nav = useNavigate();
   const { t } = useLanguage();
+  const LIFECYCLE_LABEL = lifecycleLabel(t);
+  const UP_TO_DATE_LABEL = upToDateLabel(t);
   const [data, setData] = useState<AppDetail | null>(null);
   const [error, setError] = useState('');
   const [upToDate, setUpToDate] = useState<Record<string, UpToDateStatus>>({});

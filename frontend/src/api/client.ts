@@ -1,6 +1,10 @@
 // ponytail: relative paths — vite proxy handles /auth, /users, /teams, /projects in dev
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
+export interface ApiError extends Error {
+  status?: number;
+}
+
 export async function apiFetch(path: string, options: RequestInit = {}) {
   const token = localStorage.getItem('devship_token');
   let response: Response;
@@ -33,9 +37,13 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
       ? body.detail.map((e: { msg?: string }) => e.msg).filter(Boolean).join('; ')
       : body.detail;
     if (response.status >= 500) {
-      throw new Error(detail || 'Erro interno do servidor. Tenta novamente mais tarde.');
+      const err: ApiError = new Error(detail || 'Erro interno do servidor. Tenta novamente mais tarde.');
+      err.status = response.status;
+      throw err;
     }
-    throw new Error(detail || `Erro ${response.status}`);
+    const err: ApiError = new Error(detail || `Erro ${response.status}`);
+    err.status = response.status;
+    throw err;
   }
   // 204 No Content (ex: DELETE) tem corpo vazio — response.json() rebenta com
   // "Unexpected end of JSON input" se tentado incondicionalmente.

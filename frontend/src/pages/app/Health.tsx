@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { apiFetch } from '../../api/client';
+import { apiFetch, type ApiError } from '../../api/client';
 import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
 import Breadcrumb from '../../components/Breadcrumb';
 import { useLanguage } from '../../context/LanguageContext';
 import type { TranslationKey } from '../../context/LanguageContext';
+import AccessDenied from '../../components/AccessDenied';
 
 interface ProbeSpec {
   path: string | null;

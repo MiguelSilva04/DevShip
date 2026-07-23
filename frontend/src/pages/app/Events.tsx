@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import { apiFetch } from '../../api/client';
+import { apiFetch, type ApiError } from '../../api/client';
 import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
 import Breadcrumb from '../../components/Breadcrumb';
 import { useLanguage } from '../../context/LanguageContext';
+import AccessDenied from '../../components/AccessDenied';
 
 interface K8sEvent {
   type: string;
@@ -30,18 +31,22 @@ export default function Events() {
   const [events, setEvents] = useState<K8sEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [forbidden, setForbidden] = useState(false);
 
   const load = useCallback(() => {
     if (!aeId) return;
     setLoading(true);
     setError('');
+    setForbidden(false);
     apiFetch(`/application-environments/${aeId}/events`)
       .then(setEvents)
-      .catch(e => setError(e.message))
+      .catch((e: ApiError) => { if (e.status === 403) setForbidden(true); else setError(e.message); })
       .finally(() => setLoading(false));
   }, [aeId]);
 
   useEffect(() => { load(); }, [load]);
+
+  if (forbidden) return <AccessDenied />;
 
   return (
     <div>

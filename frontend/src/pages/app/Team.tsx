@@ -73,7 +73,7 @@ function MemberAccessButton({ m, isBusy, highlighted, onOpen }: { m: Member; isB
         disabled={isBusy}
         style={{ fontSize: 11.5, padding: '5px 11px', borderRadius: 7, border: `1px solid ${highlighted ? 'var(--teal)' : 'var(--border)'}`, background: 'transparent', color: 'var(--text-2)', cursor: isBusy ? 'default' : 'pointer', textAlign: 'left' }}
       >
-        {m.application_ids.length} app{m.application_ids.length !== 1 ? 's' : ''} · editar
+        {m.application_ids.length} {m.application_ids.length !== 1 ? t('team.appCountPlural') : t('team.appCountSingular')} · {t('team.editLink')}
       </button>
       {highlighted && btnRef.current && (
         <HighlightTooltip anchor={btnRef.current}>
@@ -373,7 +373,7 @@ export default function Team() {
                       onOpen={() => { openAccess(m); setHighlightMemberId(null); }}
                     />
                   ) : (
-                    <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{m.application_ids.length} app{m.application_ids.length !== 1 ? 's' : ''}</span>
+                    <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{m.application_ids.length} {m.application_ids.length !== 1 ? t('team.appCountPlural') : t('team.appCountSingular')}</span>
                   )
                 ) : (
                   <span style={{ fontSize: 12, color: 'var(--text-3)' }}>—</span>

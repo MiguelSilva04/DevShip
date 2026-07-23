@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { apiFetch } from '../../api/client';
-import { type LifecycleStatus, type UpToDateStatus, lifecycleColor, LIFECYCLE_LABEL, UP_TO_DATE_LABEL } from '../../lib/lifecycle';
+import { apiFetch, type ApiError } from '../../api/client';
+import { type LifecycleStatus, type UpToDateStatus, lifecycleColor, lifecycleLabel, upToDateLabel } from '../../lib/lifecycle';
 import Breadcrumb from '../../components/Breadcrumb';
 import { useLanguage } from '../../context/LanguageContext';
+import AccessDenied from '../../components/AccessDenied';
 
 interface UpToDateResult {
   status: UpToDateStatus;
@@ -15,7 +16,7 @@ interface UpToDateResult {
   gitops_reason: string | null;
 }
 
-function upToDatePill(s: UpToDateStatus) {
+function upToDatePill(s: UpToDateStatus, UP_TO_DATE_LABEL: Record<UpToDateStatus, string>) {
   const map: Record<UpToDateStatus, { bg: string; col: string; bord: string; label: string }> = {
     UpToDate: { bg: 'rgba(52,199,89,.13)',  col: 'var(--green)', bord: 'rgba(52,199,89,.24)',  label: UP_TO_DATE_LABEL.UpToDate },
     Outdated: { bg: 'rgba(224,169,59,.13)', col: 'var(--amber)', bord: 'rgba(224,169,59,.26)', label: UP_TO_DATE_LABEL.Outdated },
@@ -53,11 +54,14 @@ export default function EnvDetail() {
   const { appId, aeId } = useParams<{ appId: string; aeId: string }>();
   const nav = useNavigate();
   const { t } = useLanguage();
+  const LIFECYCLE_LABEL = lifecycleLabel(t);
+  const UP_TO_DATE_LABEL = upToDateLabel(t);
   const [data, setData] = useState<AEDetail | null>(null);
   const [envName, setEnvName] = useState('');
   const [appName, setAppName] = useState('');
   const [requiresApproval, setRequiresApproval] = useState(false);
   const [error, setError] = useState('');
+  const [forbidden, setForbidden] = useState(false);
   const [techOpen, setTechOpen] = useState(false);
   const [upToDate, setUpToDate] = useState<UpToDateResult | null>(null);
   const [utdLoading, setUtdLoading] = useState(false);
@@ -112,9 +116,10 @@ export default function EnvDetail() {
           }
         });
       })
-      .catch(e => setError(e.message));
+      .catch((e: ApiError) => { if (e.status === 403) setForbidden(true); else setError(e.message); });
   }, [aeId]);
 
+  if (forbidden) return <AccessDenied />;
   if (error) return <div style={{ color: 'var(--red)', fontSize: 13, padding: '40px 0' }}>{error}</div>;
   if (!data) return <Spinner />;
 
@@ -170,7 +175,7 @@ export default function EnvDetail() {
             {t('envDetail.checking')}
           </button>
         ) : upToDate?.status === 'UpToDate' ? (() => {
-          const u = upToDatePill(upToDate.status);
+          const u = upToDatePill(upToDate.status, UP_TO_DATE_LABEL);
           return (
             <button
               disabled

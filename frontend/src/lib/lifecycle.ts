@@ -2,14 +2,16 @@
 // Home and History.
 export type LifecycleStatus = 'Deploying' | 'Healthy' | 'Degraded' | 'Failed' | 'RolledBack' | 'Superseded';
 
-export const LIFECYCLE_LABEL: Record<LifecycleStatus, string> = {
-  Deploying: 'A implementar',
-  Healthy: 'Saudável',
-  Degraded: 'Degradado',
-  Failed: 'Falhou',
-  RolledBack: 'Revertido',
-  Superseded: 'Substituído',
-};
+export function lifecycleLabel(t: (key: string) => string): Record<LifecycleStatus, string> {
+  return {
+    Deploying: t('common.lifecycleDeploying'),
+    Healthy: t('common.lifecycleHealthy'),
+    Degraded: t('common.lifecycleDegraded'),
+    Failed: t('common.lifecycleFailed'),
+    RolledBack: t('common.lifecycleRolledBack'),
+    Superseded: t('common.lifecycleSuperseded'),
+  };
+}
 
 export interface LifecycleColor {
   bg: string;
@@ -33,8 +35,10 @@ export function lifecycleColor(s: LifecycleStatus | null | undefined, fallback: 
 
 export type UpToDateStatus = 'UpToDate' | 'Outdated' | 'Unknown';
 
-export const UP_TO_DATE_LABEL: Record<UpToDateStatus, string> = {
-  UpToDate: 'Atualizado',
-  Outdated: 'Desatualizado',
-  Unknown: 'Desconhecido',
-};
+export function upToDateLabel(t: (key: string) => string): Record<UpToDateStatus, string> {
+  return {
+    UpToDate: t('common.upToDate'),
+    Outdated: t('common.outdated'),
+    Unknown: t('common.upToDateUnknown'),
+  };
+}

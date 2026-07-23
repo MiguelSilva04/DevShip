@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useUser } from '../../context/UserContext';
-import { apiFetch } from '../../api/client';
+import { apiFetch, type ApiError } from '../../api/client';
 import GithubIdentityPrompt, { GITHUB_IDENTITY_ERROR } from '../../components/GithubIdentityPrompt';
 import { useLanguage } from '../../context/LanguageContext';
+import AccessDenied from '../../components/AccessDenied';
 
 interface DeploymentVersionDetail {
   id: string;
@@ -34,6 +35,7 @@ export default function Rollback() {
   const [justification, setJustification] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [forbidden, setForbidden] = useState(false);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -61,7 +63,10 @@ export default function Rollback() {
       const env = (envs as { id: string; name: string; requires_approval: boolean }[]).find(e => e.id === ae.environment_id);
       if (env) { setEnvName(env.name); setRequiresApproval(env.requires_approval); }
       setReady(true);
-    })().catch(e => { setError(e.message); setReady(true); });
+    })().catch((e: ApiError) => {
+      if (e.status === 403) setForbidden(true); else setError(e.message);
+      setReady(true);
+    });
   }, [aeId]);
 
   async function submit() {
@@ -88,6 +93,8 @@ export default function Rollback() {
   const envLabel = envName || aeId || '';
   const targetingRolledBack = target?.lifecycle_status === 'RolledBack';
   const approvalNeeded = requiresApproval || targetingRolledBack;
+
+  if (forbidden) return <AccessDenied />;
 
   return (
     <div style={{ maxWidth: 660 }}>

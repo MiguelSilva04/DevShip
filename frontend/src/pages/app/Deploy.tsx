@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useUser } from '../../context/UserContext';
-import { apiFetch } from '../../api/client';
+import { apiFetch, type ApiError } from '../../api/client';
 import GithubIdentityPrompt, { GITHUB_IDENTITY_ERROR } from '../../components/GithubIdentityPrompt';
 import Breadcrumb from '../../components/Breadcrumb';
-import { UP_TO_DATE_LABEL } from '../../lib/lifecycle';
+import { upToDateLabel } from '../../lib/lifecycle';
 import { useLanguage } from '../../context/LanguageContext';
+import AccessDenied from '../../components/AccessDenied';
 
 interface AEDetail {
   id: string;
@@ -44,6 +45,7 @@ export default function Deploy() {
   const nav = useNavigate();
   const { user } = useUser();
   const { t } = useLanguage();
+  const UP_TO_DATE_LABEL = upToDateLabel(t);
 
   const [aeDetail, setAeDetail] = useState<AEDetail | null>(null);
   const [appName, setAppName] = useState('');
@@ -52,6 +54,7 @@ export default function Deploy() {
   const [justification, setJustification] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [forbidden, setForbidden] = useState(false);
   const [pending, setPending] = useState<PendingCommitsResponse | null>(null);
 
   useEffect(() => {
@@ -69,7 +72,7 @@ export default function Deploy() {
       const env = (envs as { id: string; name: string; requires_approval: boolean }[]).find(e => e.id === d.environment_id);
       if (env) { setEnvName(env.name); setRequiresApproval(env.requires_approval); }
       setPending(pendingCommits);
-    })().catch(e => setError(e.message));
+    })().catch((e: ApiError) => { if (e.status === 403) setForbidden(true); else setError(e.message); });
   }, [aeId]);
 
   async function submit() {
@@ -100,6 +103,8 @@ export default function Deploy() {
   // primeiro deploy); com deploy anterior e pending-commits a devolver 0 commits novos,
   // não há nada para enviar — mesma regra usada no botão da lista em EnvDetail.tsx.
   const isUpToDate = !!aeDetail?.current_version && !!pending && !pending.reason && pending.commits.length === 0;
+
+  if (forbidden) return <AccessDenied />;
 
   return (
     <div style={{ maxWidth: 720 }}>

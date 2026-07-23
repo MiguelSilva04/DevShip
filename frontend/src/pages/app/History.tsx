@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { apiFetch } from '../../api/client';
+import { apiFetch, type ApiError } from '../../api/client';
 import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
 import Breadcrumb from '../../components/Breadcrumb';
-import { type LifecycleStatus, LIFECYCLE_COLOR, LIFECYCLE_LABEL } from '../../lib/lifecycle';
+import { type LifecycleStatus, LIFECYCLE_COLOR, lifecycleLabel } from '../../lib/lifecycle';
 import { useLanguage } from '../../context/LanguageContext';
+import AccessDenied from '../../components/AccessDenied';
 
 interface DeploymentVersionDetail {
   id: string;
@@ -25,19 +26,25 @@ export default function History() {
   const { appId, aeId } = useParams<{ appId?: string; aeId?: string }>();
   const { appLabel, envLabel, appId: resolvedAppId } = useAppEnvBreadcrumb(appId, aeId);
   const { t } = useLanguage();
+  const LIFECYCLE_LABEL = lifecycleLabel(t);
   const [versions, setVersions] = useState<DeploymentVersionDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [forbidden, setForbidden] = useState(false);
 
   useEffect(() => {
     if (!aeId) { setError(t('history.errNoAe')); setLoading(false); return; }
     apiFetch(`/application-environments/${aeId}/history?limit=50`)
       .then((data: DeploymentVersionDetail[]) => { setVersions(data); setLoading(false); })
-      .catch(e => { setError(e.message); setLoading(false); });
+      .catch((e: ApiError) => {
+        if (e.status === 403) setForbidden(true); else setError(e.message);
+        setLoading(false);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aeId]);
 
   if (loading) return <Spinner />;
+  if (forbidden) return <AccessDenied />;
   if (error) return <div style={{ color: 'var(--red)', fontSize: 13, padding: '40px 0' }}>{error}</div>;
 
   return (

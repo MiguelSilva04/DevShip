@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import { apiFetch } from '../../api/client';
+import { apiFetch, type ApiError } from '../../api/client';
 import { useAppEnvBreadcrumb } from '../../hooks/useAppEnvBreadcrumb';
 import Breadcrumb from '../../components/Breadcrumb';
 import { useLanguage } from '../../context/LanguageContext';
+import AccessDenied from '../../components/AccessDenied';
 
 interface LogLine {
   timestamp: string | null;
@@ -35,6 +36,7 @@ export default function Logs() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [forbidden, setForbidden] = useState(false);
 
   useEffect(() => {
     if (!aeId) return;
@@ -44,7 +46,7 @@ export default function Logs() {
         setPods(names);
         if (names.length > 0) setPod(names[0]);
       })
-      .catch(e => setError(e.message));
+      .catch((e: ApiError) => { if (e.status === 403) setForbidden(true); else setError(e.message); });
   }, [aeId]);
 
   const load = useCallback(() => {
@@ -53,7 +55,7 @@ export default function Logs() {
     setError('');
     apiFetch(`/application-environments/${aeId}/logs?pod=${encodeURIComponent(pod)}`)
       .then(d => setLines(d.lines))
-      .catch(e => setError(e.message))
+      .catch((e: ApiError) => { if (e.status === 403) setForbidden(true); else setError(e.message); })
       .finally(() => setLoading(false));
   }, [aeId, pod]);
 
@@ -66,6 +68,8 @@ export default function Logs() {
     (filter === 'ALL' || (l.level ?? 'RAW') === filter) &&
     (!search || l.message.toLowerCase().includes(search.toLowerCase()))
   );
+
+  if (forbidden) return <AccessDenied />;
 
   return (
     <div>
