@@ -50,13 +50,16 @@ export default function Health() {
   const { t } = useLanguage();
   const [containers, setContainers] = useState<ContainerProbeStatus[] | null>(null);
   const [error, setError] = useState('');
+  const [forbidden, setForbidden] = useState(false);
 
   useEffect(() => {
     if (!aeId) return;
     apiFetch(`/application-environments/${aeId}/health-probes`)
       .then(d => setContainers(d.containers))
-      .catch(e => setError(e.message));
+      .catch((e: ApiError) => { if (e.status === 403) setForbidden(true); else setError(e.message); });
   }, [aeId]);
+
+  if (forbidden) return <AccessDenied />;
 
   return (
     <div>

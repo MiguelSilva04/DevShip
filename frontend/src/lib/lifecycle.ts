@@ -1,8 +1,10 @@
 // Shared LifecycleStatus type + color map — was duplicated across AppDetail, EnvDetail,
 // Home and History.
+import type { TranslationKey } from '../context/LanguageContext';
+
 export type LifecycleStatus = 'Deploying' | 'Healthy' | 'Degraded' | 'Failed' | 'RolledBack' | 'Superseded';
 
-export function lifecycleLabel(t: (key: string) => string): Record<LifecycleStatus, string> {
+export function lifecycleLabel(t: (key: TranslationKey) => string): Record<LifecycleStatus, string> {
   return {
     Deploying: t('common.lifecycleDeploying'),
     Healthy: t('common.lifecycleHealthy'),
@@ -35,7 +37,7 @@ export function lifecycleColor(s: LifecycleStatus | null | undefined, fallback: 
 
 export type UpToDateStatus = 'UpToDate' | 'Outdated' | 'Unknown';
 
-export function upToDateLabel(t: (key: string) => string): Record<UpToDateStatus, string> {
+export function upToDateLabel(t: (key: TranslationKey) => string): Record<UpToDateStatus, string> {
   return {
     UpToDate: t('common.upToDate'),
     Outdated: t('common.outdated'),
