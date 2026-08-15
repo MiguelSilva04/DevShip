@@ -119,9 +119,9 @@ export default function Landing() {
           <p style={{ fontSize:14.5, color:'var(--text-2)', lineHeight:1.7, maxWidth:600, margin:'16px 0 0' }}>{t('landing.problemBody')}</p>
           <figure style={{ margin:'30px 0 0', border:'1px solid var(--line-2)', borderRadius:10, overflow:'hidden', background:'var(--panel)' }}>
             <figcaption className="mono" style={{ display:'flex', alignItems:'center', gap:10, fontSize:10.5, color:'var(--text-3)', padding:'9px 14px', borderBottom:'1px solid var(--line)' }}>
-              <span style={{ color:'var(--teal)' }}>FIG.01</span><span>antes_vs_depois.png</span><span style={{ marginLeft:'auto', color:'var(--text-2)' }}>{t('landing.problemFigCaption')}</span>
+              <span style={{ color:'var(--teal)' }}>FIG.01</span><span>{t('landing.problemFigFile')}</span><span style={{ marginLeft:'auto', color:'var(--text-2)' }}>{t('landing.problemFigCaption')}</span>
             </figcaption>
-            <img src="/landing-dev.png" alt="A jornada de deploy: sem DevShip vs com DevShip" style={{ width:'100%', display:'block' }} />
+            <img src={language === 'pt' ? '/landing-dev_pt.png' : '/landing-dev_eng.png'} alt={t('landing.problemFigCaption')} style={{ width:'100%', display:'block' }} />
           </figure>
         </div>
       </section>
@@ -172,9 +172,9 @@ export default function Landing() {
           </p>
           <figure style={{ margin:'30px 0 0', border:'1px solid var(--line-2)', borderRadius:10, overflow:'hidden', background:'var(--panel)' }}>
             <figcaption className="mono" style={{ display:'flex', alignItems:'center', gap:10, fontSize:10.5, color:'var(--text-3)', padding:'9px 14px', borderBottom:'1px solid var(--line)' }}>
-              <span style={{ color:'var(--teal)' }}>FIG.03</span><span>pre_requisitos.png</span><span style={{ marginLeft:'auto', color:'var(--text-2)' }}>{t('landing.prereqsFigCaption')}</span>
+              <span style={{ color:'var(--teal)' }}>FIG.03</span><span>{t('landing.prereqsFigFile')}</span><span style={{ marginLeft:'auto', color:'var(--text-2)' }}>{t('landing.prereqsFigCaption')}</span>
             </figcaption>
-            <img src="/landing_req.png" alt="Pré-requisitos DevShip" style={{ width:'100%', display:'block' }} />
+            <img src={language === 'pt' ? '/landing_req_pt.png' : '/landing_req_eng.png'} alt={t('landing.prereqsFigCaption')} style={{ width:'100%', display:'block' }} />
           </figure>
           <p style={{ fontSize:12.5, color:'var(--text-3)', fontStyle:'italic', lineHeight:1.6, maxWidth:640, margin:'18px 0 0' }}>
             {t('landing.prereqsFootnote')}
@@ -329,9 +329,9 @@ spec:
           <h2 style={{ fontSize:'clamp(22px, 5vw, 30px)', fontWeight:700, letterSpacing:'-.02em', margin:0, maxWidth:640, lineHeight:1.18 }}>{t('landing.archTitle')}</h2>
           <figure style={{ margin:'30px 0 0', border:'1px solid var(--line-2)', borderRadius:10, overflow:'hidden', background:'var(--panel)' }}>
             <figcaption className="mono" style={{ display:'flex', alignItems:'center', gap:10, fontSize:10.5, color:'var(--text-3)', padding:'9px 14px', borderBottom:'1px solid var(--line)' }}>
-              <span style={{ color:'var(--teal)' }}>FIG.02</span><span>devship_em_acao.png</span><span style={{ marginLeft:'auto', color:'var(--text-2)' }}>{t('landing.archFigCaption')}</span>
+              <span style={{ color:'var(--teal)' }}>FIG.02</span><span>{t('landing.archFigFile')}</span><span style={{ marginLeft:'auto', color:'var(--text-2)' }}>{t('landing.archFigCaption')}</span>
             </figcaption>
-            <img src="/landing-arch.png" alt="DevShip em ação — arquitetura completa" style={{ width:'100%', display:'block' }} />
+            <img src={language === 'pt' ? '/landing-arch_pt.png' : '/landing-arch_eng.png'} alt={t('landing.archFigCaption')} style={{ width:'100%', display:'block' }} />
           </figure>
         </div>
       </section>

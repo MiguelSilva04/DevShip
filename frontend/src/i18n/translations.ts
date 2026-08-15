@@ -99,6 +99,7 @@ export const translations = {
       problemTitle: 'Entre o developer e o cluster há demasiada espera',
       problemBody: 'Sem uma plataforma interna, publicar uma aplicação significa pedir, esperar e depender de quem domina a infraestrutura. O Cloud Engineer torna-se um gargalo; o developer perde o controlo do que acontece depois do "deploy".',
       problemFigCaption: 'o custo operacional da espera',
+      problemFigFile: 'antes_vs_depois.png',
 
       pipelineLabel: 'Pipeline de Deployment',
       pipelineTitle: 'Um clique. Sete passos rastreáveis.',
@@ -124,6 +125,7 @@ export const translations = {
       prereqsLead: 'A DevShip não substitui a tua infraestrutura — assenta em cima dela. Aqui está tudo o que precisas de ter pronto.',
       prereqsBody: 'A DevShip não é mágica: é uma camada de coordenação sobre ferramentas que já usas ou vais usar — Git, CI/CD, um registo de imagens, um cluster Kubernetes, GitOps. Se a tua equipa já segue estas boas práticas, o setup demora minutos. Se ainda não segue todas, o onboarding guiado leva-te passo a passo por cada uma.',
       prereqsFigCaption: 'o que é validado automaticamente vs. configuração manual',
+      prereqsFigFile: 'pre_requisitos.png',
       prereqsFootnote: 'Nem tudo isto é obrigatório para o primeiro deploy funcionar — mas sem o ArgoCD e o Metrics API configurados corretamente, perdes a sincronização GitOps visível e as métricas de CPU/memória, silenciosamente.',
 
       translationLabel: 'Traduzir, não esconder',
@@ -191,6 +193,7 @@ export const translations = {
       archLabel: 'Arquitetura completa',
       archTitle: 'A ponte entre quem escreve código e o cluster que o corre',
       archFigCaption: 'abstração sem perda de controlo',
+      archFigFile: 'devship_em_acao.png',
 
       ctaTitle: 'Pronto para deixar de ser o gargalo?',
       ctaSubtitle: 'login como Cloud Engineer · Tech Lead · Developer — a vista adapta-se',
@@ -1111,6 +1114,7 @@ export const translations = {
       problemTitle: 'Too much waiting between the developer and the cluster',
       problemBody: 'Without an internal platform, shipping an application means asking, waiting, and depending on whoever knows the infrastructure. The Cloud Engineer becomes a bottleneck; the developer loses control of what happens after "deploy".',
       problemFigCaption: 'the operational cost of waiting',
+      problemFigFile: 'before_vs_after.png',
 
       pipelineLabel: 'Deployment Pipeline',
       pipelineTitle: 'One click. Seven traceable steps.',
@@ -1136,6 +1140,7 @@ export const translations = {
       prereqsLead: "DevShip doesn't replace your infrastructure — it builds on top of it. Here's everything you need to have ready.",
       prereqsBody: "DevShip isn't magic: it's a coordination layer over tools you already use or will use — Git, CI/CD, an image registry, a Kubernetes cluster, GitOps. If your team already follows these practices, setup takes minutes. If it doesn't yet, the guided onboarding walks you through each one.",
       prereqsFigCaption: 'what is validated automatically vs. manual configuration',
+      prereqsFigFile: 'prerequisites.png',
       prereqsFootnote: "Not all of this is required for the first deploy to work — but without ArgoCD and the Metrics API configured correctly, you silently lose visible GitOps sync and CPU/memory metrics.",
 
       translationLabel: "Translate, don't hide",
@@ -1203,6 +1208,7 @@ export const translations = {
       archLabel: 'Full architecture',
       archTitle: 'The bridge between whoever writes the code and the cluster that runs it',
       archFigCaption: 'abstraction without losing control',
+      archFigFile: 'devship_in_action.png',
 
       ctaTitle: 'Ready to stop being the bottleneck?',
       ctaSubtitle: 'log in as Cloud Engineer · Tech Lead · Developer — the view adapts',
