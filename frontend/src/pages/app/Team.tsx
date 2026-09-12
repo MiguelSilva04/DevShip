@@ -359,7 +359,7 @@ export default function Team() {
                     style={{ fontSize: 12.5 }}
                   >
                     <option value="DEVELOPER">Developer</option>
-                    <option value="TECH_LEAD">Tech Lead</option>
+                    {user?.role === 'cloud' && <option value="TECH_LEAD">Tech Lead</option>}
                   </select>
                 ) : (
                   <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{ROLE_LABEL[m.role] ?? m.role}</span>
