@@ -573,6 +573,12 @@ def update_team_member(
     target = _get_team_member_or_404(db, team_id, team_member_id)
     _require_manageable_target(caller, target)
 
+    if body.role is not None and caller.role == TeamMemberRole.TECH_LEAD and body.role != TeamMemberRole.DEVELOPER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Um Tech Lead só pode atribuir o cargo de Developer.",
+        )
+
     if body.role is not None:
         if body.role != TeamMemberRole.DEVELOPER:
             db.query(ApplicationTeamMember).filter(ApplicationTeamMember.team_member_id == target.id).delete()

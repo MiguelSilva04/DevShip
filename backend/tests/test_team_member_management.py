@@ -142,6 +142,20 @@ class TestPatchRoleChange:
         assert r.json()["role"] == "DEVELOPER"
         assert r.json()["application_ids"] == [str(scenario["app_a"].id)]
 
+    def test_tech_lead_cannot_promote_developer_to_tech_lead(self, client, db_session, scenario):
+        tl_user = _make_user(db_session)
+        _make_member(db_session, scenario["team"], tl_user, TeamMemberRole.TECH_LEAD)
+        dev_user = _make_user(db_session)
+        dev_member = _make_member(db_session, scenario["team"], dev_user, TeamMemberRole.DEVELOPER)
+        token = _token_for(tl_user)
+
+        r = client.patch(
+            f"/teams/{scenario['team'].id}/members/{dev_member.id}",
+            json={"role": "TECH_LEAD"},
+            headers=_auth(token),
+        )
+        assert r.status_code == 403
+
     def test_empty_payload_is_noop(self, client, db_session, scenario):
         dev_user = _make_user(db_session)
         dev_member = _make_member(db_session, scenario["team"], dev_user, TeamMemberRole.DEVELOPER)
