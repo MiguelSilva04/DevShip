@@ -33,13 +33,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      - name: Build test image
+        run: docker build --target test -t devship-backend-test -f backend/Dockerfile .
 
-      - run: pip install --no-cache-dir -r requirements-dev.txt
-
-      - run: pytest
+      - name: Run tests inside the container
+        run: docker run --rm --network host -e TEST_DATABASE_URL -e DEVSHIP_AWS_ACCOUNT_ID devship-backend-test pytest
 
   deploy:
     needs: test
