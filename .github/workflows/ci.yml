@@ -38,3 +38,43 @@ jobs:
       - run: pip install --no-cache-dir -r requirements-dev.txt
 
       - run: pytest
+
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/principal'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Deploy via SSM (no SSH, no open ports)
+        run: |
+          COMMAND_ID=$(aws ssm send-command \
+            --targets "Key=tag:Name,Values=devship-platform" \
+            --document-name "AWS-RunShellScript" \
+            --comment "DevShip deploy ${{ github.sha }}" \
+            --parameters commands='[
+              "set -eux",
+              "mkdir -p /opt/devship",
+              "cd /opt/devship",
+              "if [ -d .git ]; then git fetch origin principal && git reset --hard origin/principal; else git clone --branch principal https://github.com/MiguelSilva04/DevShip.git .; fi",
+              "docker compose -f docker-compose.prod.yml up -d --build",
+              "docker image prune -f"
+            ]' \
+            --query "Command.CommandId" --output text)
+
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$(aws ec2 describe-instances --filters Name=tag:Name,Values=devship-platform Name=instance-state-name,Values=running --query 'Reservations[0].Instances[0].InstanceId' --output text)" \
+            || true
+
+          aws ssm list-command-invocations --command-id "$COMMAND_ID" --details \
+            --query "CommandInvocations[0].{Status:Status,Output:CommandPlugins[0].Output}" \
+            --output text
+
+          STATUS=$(aws ssm list-command-invocations --command-id "$COMMAND_ID" --query "CommandInvocations[0].Status" --output text)
+          [ "$STATUS" = "Success" ]
