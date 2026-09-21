@@ -7,7 +7,7 @@ Covers: _latest_versions_subquery correctness, all 6 endpoints, edge cases
 """
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
@@ -97,16 +97,20 @@ def _make_ae(db, app, env):
 
 
 _version_counter = 0
+# Anchored in the past (not "now() + offset") so accumulated offsets across many
+# _make_version() calls never drift into the future and race real live-check
+# timestamps (e.g. health_checked_at set by /refresh), which broke the
+# "trust the live check over stale events" guard in _refresh_lifecycle_from_events.
+_base_ts = datetime.now(timezone.utc) - timedelta(hours=1)
 
 
 def _make_version(db, ae, lifecycle=LifecycleStatus.HEALTHY, image_tag=None):
     global _version_counter
     _version_counter += 1
-    # Explicit created_at with microsecond offset so DISTINCT ON ordering is deterministic
+    # Explicit created_at with millisecond offset so DISTINCT ON ordering is deterministic
     # within a transaction (server_default=func.now() gives the same timestamp for all rows
     # in the same transaction, making DISTINCT ON pick non-deterministically).
-    from datetime import timedelta
-    ts = datetime.now(timezone.utc) + timedelta(microseconds=_version_counter * 1000)
+    ts = _base_ts + timedelta(milliseconds=_version_counter)
     v = DeploymentVersion(
         application_environment_id=ae.id,
         lifecycle_status=lifecycle,
