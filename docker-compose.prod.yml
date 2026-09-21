@@ -27,6 +27,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      target: runtime
     container_name: devship-backend
     env_file: .env
     environment:
